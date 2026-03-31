@@ -298,11 +298,11 @@ export default function ApplyPage() {
             <CardContent className="pt-6">
               <h2 className="font-semibold text-lg mb-1">Let&apos;s check your membership</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Enter your email or phone number to check if you already have an AMASI membership.
+                Search by email, phone number, name, or AMASI membership number to check your membership status.
               </p>
               <form onSubmit={handleCheckMembership} className="space-y-4">
                 <Input
-                  placeholder="Enter email address or mobile number"
+                  placeholder="Email, mobile number, name, or membership number"
                   value={checkQuery}
                   onChange={(e) => setCheckQuery(e.target.value)}
                   className="h-12 text-base"
@@ -343,7 +343,8 @@ export default function ApplyPage() {
 
   // ===== EXISTING MEMBER PHASE =====
   if (phase === "existing" && existingMember) {
-    const m = existingMember
+    const m = existingMember as any
+    const isIncomplete = m.profile_incomplete
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -352,13 +353,34 @@ export default function ApplyPage() {
       >
         <Card>
           <CardContent className="pt-6 text-center">
-            <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="h-8 w-8 text-success" />
+            <div className={`h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4 ${isIncomplete ? "bg-warning/10" : "bg-success/10"}`}>
+              {isIncomplete ? (
+                <AlertCircle className="h-8 w-8 text-warning" />
+              ) : (
+                <CheckCircle className="h-8 w-8 text-success" />
+              )}
             </div>
-            <h2 className="text-xl font-bold mb-1">You&apos;re already a member!</h2>
-            <p className="text-muted-foreground text-sm mb-6">
-              We found your AMASI membership. Here are your details:
+            <h2 className="text-xl font-bold mb-1">
+              {isIncomplete ? "Profile Incomplete" : "You're already a member!"}
+            </h2>
+            <p className="text-muted-foreground text-sm mb-4">
+              {isIncomplete
+                ? "We found your membership, but your profile is missing important details. Please update your documents and information."
+                : "We found your AMASI membership. Here are your details:"}
             </p>
+
+            {isIncomplete && (
+              <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4 text-left">
+                <p className="text-sm font-medium text-warning mb-2">Missing Information:</p>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  {!m.mci_council_number && <li>- MCI / State Medical Council Number</li>}
+                  {!m.pg_degree && <li>- PG Degree details</li>}
+                  {!m.date_of_birth && <li>- Date of Birth</li>}
+                  {!m.gender && <li>- Gender</li>}
+                  <li>- Document uploads (MCI Certificate, PG Degree)</li>
+                </ul>
+              </div>
+            )}
 
             <div className="text-left bg-muted/50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
@@ -368,10 +390,6 @@ export default function ApplyPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Membership No</span>
                 <span className="font-bold text-primary">{m.membership_no}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Application No</span>
-                <span>{m.application_no}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Type</span>
@@ -387,13 +405,64 @@ export default function ApplyPage() {
                 <span className="text-muted-foreground">Email</span>
                 <span>{m.email}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Mobile</span>
-                <span>{m.mobile_code} {m.mobile}</span>
-              </div>
+              {m.mobile && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Mobile</span>
+                  <span>{m.mobile_code} {m.mobile}</span>
+                </div>
+              )}
+              {m.pg_degree && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">PG Degree</span>
+                  <span>{m.pg_degree}</span>
+                </div>
+              )}
+              {m.mci_council_number && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">MCI Number</span>
+                  <span>{m.mci_council_number}</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 space-y-2">
+              {isIncomplete && (
+                <Button className="w-full gap-2" onClick={() => {
+                  // Pre-fill form with existing data and go to upload
+                  setFormData(prev => ({
+                    ...prev,
+                    email: m.email || "",
+                    firstName: m.first_name || "",
+                    lastName: m.last_name || "",
+                    mobile: m.mobile || "",
+                    membershipType: m.application_name?.includes("Life Member [LM]") ? "LM" : m.application_name?.includes("ALM") ? "ALM" : m.application_name?.includes("ACM") ? "ACM" : "ALM",
+                  }))
+                  setSelectedType(getMembershipType(
+                    m.application_name?.includes("Life Member [LM]") && !m.application_name?.includes("ALM") ? "LM" : m.application_name?.includes("ALM") ? "ALM" : m.application_name?.includes("ACM") ? "ACM" : "ALM"
+                  ) || null)
+                  setPhase("upload")
+                  toast.info("Please upload your documents to complete your profile")
+                }}>
+                  <Upload className="h-4 w-4" /> Update Profile & Upload Documents
+                </Button>
+              )}
+              {!isIncomplete && m.application_name?.includes("ALM") && (
+                <Button className="w-full gap-2" onClick={() => {
+                  setFormData(prev => ({
+                    ...prev,
+                    email: m.email || "",
+                    firstName: m.first_name || "",
+                    lastName: m.last_name || "",
+                    mobile: m.mobile || "",
+                    membershipType: "LM",
+                  }))
+                  setSelectedType(getMembershipType("LM") || null)
+                  setPhase("upload")
+                  toast.info("To upgrade to Life Member, you need an ASI Membership Certificate")
+                }}>
+                  <ArrowRight className="h-4 w-4" /> Upgrade to Life Member (LM)
+                </Button>
+              )}
               <Button variant="outline" className="w-full" onClick={() => { setExistingMember(null); setCheckQuery(""); setPhase("check") }}>
                 Check Another
               </Button>
@@ -956,6 +1025,102 @@ export default function ApplyPage() {
             </div>
           )}
           <FieldInput field="imrRegNo" label="IMR Registration Number (Optional)" />
+          <div className="pt-2">
+            <p className="text-xs font-medium text-muted-foreground mb-2">International Organisations</p>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={formData.intlOrgSAGES} onChange={(e) => updateField("intlOrgSAGES", e.target.checked as any)} className="rounded" />
+                SAGES
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={formData.intlOrgELSA} onChange={(e) => updateField("intlOrgELSA", e.target.checked as any)} className="rounded" />
+                ELSA
+              </label>
+              <FieldInput field="intlOrgOther" label="Other (specify)" />
+            </div>
+          </div>
+        </Section>
+
+        <Section id="clinic" title="Clinic / Practice Details" icon={Stethoscope}>
+          <FieldInput field="clinicName" label="Clinic / Hospital Name" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FieldInput field="clinicStreetLine1" label="Address Line 1" />
+            <FieldInput field="clinicStreetLine2" label="Address Line 2" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FieldInput field="clinicCity" label="City" />
+            <SelectInput field="clinicState" label="State" options={INDIAN_STATES} />
+            <FieldInput field="clinicPin" label="PIN Code" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex gap-2">
+              <div className="w-24">
+                <Label className="text-xs">STD Code</Label>
+                <Input value={formData.stdCode} onChange={(e) => updateField("stdCode", e.target.value)} placeholder="STD" />
+              </div>
+              <div className="flex-1">
+                <Label className="text-xs">Landline</Label>
+                <Input value={formData.landline} onChange={(e) => updateField("landline", e.target.value)} placeholder="Landline number" />
+              </div>
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={formData.useAsMailingAddress} onChange={(e) => setFormData(prev => ({ ...prev, useAsMailingAddress: e.target.checked }))} className="rounded" />
+                Use as mailing address
+              </label>
+            </div>
+          </div>
+        </Section>
+
+        <Section id="experience" title="Work Experience" icon={GraduationCap}>
+          {formData.experience.map((exp, i) => (
+            <div key={i} className="border rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Experience #{i + 1}</p>
+                <button type="button" onClick={() => {
+                  const updated = formData.experience.filter((_, idx) => idx !== i)
+                  setFormData(prev => ({ ...prev, experience: updated }))
+                }} className="text-xs text-destructive hover:underline">Remove</button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs">Position</Label>
+                  <Input value={exp.position} onChange={(e) => {
+                    const updated = [...formData.experience]
+                    updated[i] = { ...updated[i], position: e.target.value }
+                    setFormData(prev => ({ ...prev, experience: updated }))
+                  }} placeholder="e.g., Consultant Surgeon" />
+                </div>
+                <div>
+                  <Label className="text-xs">From</Label>
+                  <Input type="date" value={exp.from} onChange={(e) => {
+                    const updated = [...formData.experience]
+                    updated[i] = { ...updated[i], from: e.target.value }
+                    setFormData(prev => ({ ...prev, experience: updated }))
+                  }} />
+                </div>
+                <div>
+                  <Label className="text-xs">To</Label>
+                  <Input type="date" value={exp.to} onChange={(e) => {
+                    const updated = [...formData.experience]
+                    updated[i] = { ...updated[i], to: e.target.value }
+                    setFormData(prev => ({ ...prev, experience: updated }))
+                  }} />
+                </div>
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setFormData(prev => ({
+              ...prev,
+              experience: [...prev.experience, { position: "", from: "", to: "", years: "" }]
+            }))}
+          >
+            + Add Experience
+          </Button>
         </Section>
 
         {/* Documents Summary */}

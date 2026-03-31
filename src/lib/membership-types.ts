@@ -200,7 +200,31 @@ export interface ApplicationFormData {
   imrRegNo: string
   asiMembershipNo: string
   asiState: string
+  // Clinic / Mailing Address
+  clinicName: string
+  clinicStreetLine1: string
+  clinicStreetLine2: string
+  clinicCity: string
+  clinicState: string
+  clinicPin: string
+  clinicCountry: string
+  landline: string
+  stdCode: string
+  useAsMailingAddress: boolean
+  // International Organisations
+  intlOrgSAGES: boolean
+  intlOrgELSA: boolean
+  intlOrgOther: string
+  // Work Experience
+  experience: ExperienceEntry[]
   documents: Record<string, DocumentUpload>
+}
+
+export interface ExperienceEntry {
+  position: string
+  from: string
+  to: string
+  years: string
 }
 
 export interface DocumentUpload {
@@ -255,5 +279,19 @@ export const INITIAL_FORM_DATA: ApplicationFormData = {
   imrRegNo: "",
   asiMembershipNo: "",
   asiState: "",
+  clinicName: "",
+  clinicStreetLine1: "",
+  clinicStreetLine2: "",
+  clinicCity: "",
+  clinicState: "",
+  clinicPin: "",
+  clinicCountry: "India",
+  landline: "",
+  stdCode: "",
+  useAsMailingAddress: false,
+  intlOrgSAGES: false,
+  intlOrgELSA: false,
+  intlOrgOther: "",
+  experience: [],
   documents: {},
 }

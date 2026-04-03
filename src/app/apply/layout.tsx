@@ -12,7 +12,7 @@ export default function ApplyLayout({ children }: { children: React.ReactNode })
               <p className="text-[10px] text-muted-foreground">Membership Application</p>
             </div>
           </div>
-          <a href="/" className="text-xs text-muted-foreground hover:text-foreground">← Admin</a>
+          <a href="https://collegeofmas.org.in" target="_blank" className="text-xs text-muted-foreground hover:text-foreground">collegeofmas.org.in</a>
         </div>
         {children}
       </div>

@@ -31,8 +31,7 @@ export async function GET(request: NextRequest) {
 
     return Response.json({ status: true, data })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Internal server error"
     console.error("Status lookup error:", error)
-    return Response.json({ status: false, message }, { status: 500 })
+    return Response.json({ status: false, message: "Unable to check application status. Please try again." }, { status: 500 })
   }
 }

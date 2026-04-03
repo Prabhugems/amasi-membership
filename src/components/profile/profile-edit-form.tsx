@@ -1026,7 +1026,7 @@ function Select({ label, value, onChange, options, required, searchable, allowCu
   const isCustomValue = value && !options.includes(value)
 
   return (
-    <div className="relative">
+    <div className={`relative ${open ? "z-[60]" : ""}`}>
       <Label className="text-sm font-medium">
         {label} {required && <span className="text-destructive">*</span>}
       </Label>
@@ -1050,7 +1050,7 @@ function Select({ label, value, onChange, options, required, searchable, allowCu
             <CheckCircle2 className="absolute right-3 top-[calc(50%+3px)] h-3.5 w-3.5 text-green-500" />
           )}
           {open && (
-            <div className="absolute z-50 mt-1 w-full max-h-52 overflow-auto rounded-lg border bg-popover shadow-lg ring-1 ring-black/5">
+            <div className="absolute z-[60] mt-1 w-full max-h-52 overflow-auto rounded-lg border bg-popover shadow-lg ring-1 ring-black/5">
               {filtered.length === 0 && (
                 <p className="px-3 py-2.5 text-sm text-muted-foreground">No results found</p>
               )}

@@ -36,6 +36,51 @@ const COLLEGE_OPTIONS = MEDICAL_COLLEGES_INDIA.map(c => ({
   university: c.university,
 }))
 
+// Stable form field components — defined OUTSIDE the main component to prevent focus loss on re-render
+function StableFieldInput({ field, label, required, value, error, placeholder, helpText, isFilled, onChange }: {
+  field: string; label: string; required?: boolean; value: string; error?: string; placeholder?: string; helpText?: string; isFilled?: boolean; onChange: (field: string, value: string) => void
+}) {
+  return (
+    <div>
+      <Label className="text-xs flex items-center gap-1">
+        {label}
+        {required && <span className="text-destructive">*</span>}
+        {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
+      </Label>
+      <Input
+        value={value}
+        onChange={(e) => onChange(field, e.target.value)}
+        placeholder={placeholder || ""}
+        className={error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : ""}
+      />
+      {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
+    </div>
+  )
+}
+
+function StableSelectInput({ field, label, options, required, value, error, isFilled, onChange }: {
+  field: string; label: string; options: readonly string[]; required?: boolean; value: string; error?: string; isFilled?: boolean; onChange: (field: string, value: string) => void
+}) {
+  return (
+    <div>
+      <Label className="text-xs flex items-center gap-1">
+        {label}
+        {required && <span className="text-destructive">*</span>}
+        {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
+      </Label>
+      <select
+        className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
+        value={value}
+        onChange={(e) => onChange(field, e.target.value)}
+      >
+        <option value="">Select...</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
+    </div>
+  )
+}
+
 type Phase = "check" | "existing" | "landing" | "verify" | "upload" | "review" | "confirm" | "success"
 type UploadEntry = {
   file: File
@@ -108,8 +153,7 @@ export default function ApplyPage() {
     if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
   }, [selectedType])
   const [emailVerified, setEmailVerified] = useState(false)
-  const [mobileVerified, setMobileVerified] = useState(false)
-  const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "mobile_otp" | "done">("input")
+  const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "done">("input")
   const [otpCode, setOtpCode] = useState("")
   const [otpCooldown, setOtpCooldown] = useState(0)
   const [verifying, setVerifying] = useState(false)
@@ -303,9 +347,9 @@ export default function ApplyPage() {
     } catch (err: any) {
       setUploads((prev) => ({
         ...prev,
-        [docType]: { file, preview, status: "uploaded", extracted: {}, message: "OCR failed - please try again" },
+        [docType]: { file, preview, status: "uploaded", extracted: {}, message: "Could not read this document. Please try a clearer photo." },
       }))
-      toast.error("Failed to process document. Please try again.")
+      toast.error("Could not read this document. Please try uploading a clearer photo.")
     }
   }, [formData, uploads])
 
@@ -616,7 +660,6 @@ export default function ApplyPage() {
                   value={checkQuery}
                   onChange={(e) => setCheckQuery(e.target.value)}
                   className="h-12 text-base"
-                  autoFocus
                 />
                 <Button type="submit" className="w-full h-12 text-base font-semibold gap-2" disabled={checking || !checkQuery.trim()}>
                   {checking ? (
@@ -776,8 +819,8 @@ export default function ApplyPage() {
               <Button variant="outline" className="w-full" onClick={() => { setExistingMember(null); setCheckQuery(""); setPhase("check") }}>
                 Check Another
               </Button>
-              <Button variant="ghost" className="w-full" onClick={() => window.location.href = "/"}>
-                Go to Dashboard
+              <Button variant="ghost" className="w-full" onClick={() => window.location.href = "https://collegeofmas.org.in"}>
+                Visit AMASI Website
               </Button>
             </div>
           </CardContent>
@@ -916,15 +959,6 @@ export default function ApplyPage() {
       } catch { toast.error("Failed to send OTP") }
     }
 
-    const sendMobileOtp = async () => {
-      try {
-        const res = await fetch("/api/otp/send-sms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mobile: formData.mobile, email: formData.email }) })
-        const data = await res.json()
-        if (data.status) { setVerifyStep("mobile_otp"); setOtpCode(""); startCooldown(); toast.success("Mobile verification code sent to your email") }
-        else toast.error(data.message || "Failed to send SMS OTP")
-      } catch { toast.error("Failed to send SMS OTP") }
-    }
-
     const handleOtpVerify = async (code: string) => {
       if (code.length !== 6) return
       setVerifying(true)
@@ -947,12 +981,11 @@ export default function ApplyPage() {
     }
 
     const maskedEmail = formData.email.replace(/^(.{3})(.*)(@.*)$/, "$1***$3")
-    const maskedMobile = formData.mobile ? `${formData.mobile.slice(0, 3)}****${formData.mobile.slice(7)}` : ""
 
     return (
       <div className="max-w-md mx-auto px-4 py-10 sm:py-12">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false); setMobileVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
+          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
@@ -965,23 +998,6 @@ export default function ApplyPage() {
 
           {selectedType && <Badge className="mb-4">{selectedType.name}</Badge>}
           <h2 className="text-2xl font-bold mb-1">Verify Your Identity</h2>
-
-          {/* Progress steps */}
-          <div className="flex items-center gap-3 my-5">
-            <div className="flex flex-col items-center gap-1">
-              <div className={`flex items-center justify-center h-8 w-8 rounded-full text-xs font-bold transition-colors ${emailVerified ? "bg-green-500 text-white" : verifyStep === "email_otp" || verifyStep === "input" ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
-                {emailVerified ? "✓" : "1"}
-              </div>
-              <span className={`text-xs font-medium ${emailVerified ? "text-green-600" : verifyStep === "email_otp" || verifyStep === "input" ? "text-primary" : "text-muted-foreground"}`}>Email</span>
-            </div>
-            <div className={`flex-1 h-0.5 rounded-full mt-[-18px] ${emailVerified ? "bg-green-500" : "bg-muted"}`} />
-            <div className="flex flex-col items-center gap-1">
-              <div className={`flex items-center justify-center h-8 w-8 rounded-full text-xs font-bold transition-colors ${mobileVerified ? "bg-green-500 text-white" : verifyStep === "mobile_otp" ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
-                {mobileVerified ? "✓" : "2"}
-              </div>
-              <span className={`text-xs font-medium ${mobileVerified ? "text-green-600" : verifyStep === "mobile_otp" ? "text-primary" : "text-muted-foreground"}`}>Mobile</span>
-            </div>
-          </div>
 
           <Card className="shadow-sm">
             <CardContent className="p-6 space-y-4">
@@ -1000,8 +1016,9 @@ export default function ApplyPage() {
                     </div>
                   </div>
                   <Button onClick={sendEmailOtp} className="w-full h-11 font-semibold" disabled={!formData.email || formData.mobile.length !== 10}>
-                    Send Email OTP
+                    Verify Email
                   </Button>
+                  <p className="text-xs text-muted-foreground text-center">We&apos;ll send a 6-digit code to your email</p>
                 </>
               )}
 
@@ -1009,8 +1026,8 @@ export default function ApplyPage() {
               {verifyStep === "email_otp" && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center"><span className="text-primary font-bold text-xs">1</span></div>
-                    <span>Enter code sent to <strong>{maskedEmail}</strong></span>
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center"><span className="text-primary font-bold text-xs">&#9993;</span></div>
+                    <span>Enter the code sent to <strong>{maskedEmail}</strong></span>
                   </div>
                   <Input
                     value={otpCode}
@@ -1026,35 +1043,6 @@ export default function ApplyPage() {
                     </Button>
                     <Button onClick={() => handleOtpVerify(otpCode)} disabled={otpCode.length !== 6 || verifying} size="sm">
                       {verifying ? "Verifying..." : "Verify Email"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Step: Mobile OTP */}
-              {verifyStep === "mobile_otp" && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-green-600 bg-green-50 rounded-lg px-3 py-2 text-sm">
-                    <CheckCircle className="h-4 w-4" /> Email verified
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center"><span className="text-primary font-bold text-xs">2</span></div>
-                    <span>Enter code sent to your email to verify <strong>+91 {maskedMobile}</strong></span>
-                  </div>
-                  <Input
-                    value={otpCode}
-                    onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setOtpCode(v); if (v.length === 6) handleOtpVerify(v) }}
-                    placeholder="000000"
-                    className="text-center text-2xl font-bold tracking-[0.5em] h-14"
-                    maxLength={6}
-                    autoFocus
-                  />
-                  <div className="flex items-center justify-between">
-                    <Button variant="ghost" size="sm" onClick={sendMobileOtp} disabled={otpCooldown > 0}>
-                      {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend"}
-                    </Button>
-                    <Button onClick={() => handleOtpVerify(otpCode)} disabled={otpCode.length !== 6 || verifying} size="sm">
-                      {verifying ? "Verifying..." : "Verify Mobile"}
                     </Button>
                   </div>
                 </div>
@@ -1421,56 +1409,6 @@ export default function ApplyPage() {
       pin: "e.g. 411001",
     }
 
-    const FieldInput = ({ field, label, required }: { field: string; label: string; required?: boolean }) => {
-      const val = (formData as any)[field] || ""
-      const hasError = errors[field]
-      const isFilled = required && val
-      const helpText = FIELD_HELP[field]
-      return (
-        <div>
-          <Label className="text-xs flex items-center gap-1">
-            {label}
-            {required && <span className="text-destructive">*</span>}
-            {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
-            {helpText && <FieldHelp text={helpText} />}
-          </Label>
-          <Input
-            value={val}
-            onChange={(e) => updateField(field, e.target.value)}
-            placeholder={PLACEHOLDERS[field] || ""}
-            className={hasError ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : ""}
-          />
-          {hasError && <p className="text-xs text-destructive mt-0.5">{hasError}</p>}
-        </div>
-      )
-    }
-
-    const SelectInput = ({ field, label, options, required }: { field: string; label: string; options: readonly string[]; required?: boolean }) => {
-      const val = (formData as any)[field] || ""
-      const hasError = errors[field]
-      const isFilled = required && val
-      const helpText = FIELD_HELP[field]
-      return (
-        <div>
-          <Label className="text-xs flex items-center gap-1">
-            {label}
-            {required && <span className="text-destructive">*</span>}
-            {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
-            {helpText && <FieldHelp text={helpText} />}
-          </Label>
-          <select
-            className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${hasError ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
-            value={val}
-            onChange={(e) => updateField(field, e.target.value)}
-          >
-            <option value="">Select...</option>
-            {options.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-          {hasError && <p className="text-xs text-destructive mt-0.5">{hasError}</p>}
-        </div>
-      )
-    }
-
     // Collect ALL missing required fields into one flat list
     const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
     const missingCount = Object.keys(allErrors).length
@@ -1558,7 +1496,7 @@ export default function ApplyPage() {
                 <p className="text-sm font-semibold text-amber-800">Fill these to complete your application</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {!formData.firstName && <FieldInput field="firstName" label="First Name" required />}
+                {!formData.firstName && <StableFieldInput field="firstName" label="First Name" required value={formData.firstName || ""} error={errors.firstName} placeholder={PLACEHOLDERS.firstName || ""} isFilled={!!formData.firstName} onChange={updateField} />}
                 {!formData.dob && (
                   <div>
                     <Label className="text-xs">Date of Birth <span className="text-destructive">*</span></Label>
@@ -1578,12 +1516,12 @@ export default function ApplyPage() {
                   </div>
                 )}
                 {!formData.eduPostgradDegree && type?.requiresPG && (
-                  <SelectInput field="eduPostgradDegree" label="PG Degree" options={[
+                  <StableSelectInput field="eduPostgradDegree" label="PG Degree" options={[
                     "MS General Surgery", "MS Obstetrics & Gynaecology",
                     "MCh Surgical Oncology", "MCh Urology", "MCh Cardiothoracic Surgery", "MCh Neurosurgery", "MCh Plastic Surgery", "MCh GI Surgery",
                     "DNB General Surgery", "DNB Obstetrics & Gynaecology", "DNB Surgical Oncology", "DNB Urology",
                     "FRCS", "MRCS",
-                  ]} required />
+                  ]} required value={(formData as any).eduPostgradDegree || ""} error={errors.eduPostgradDegree} isFilled={!!formData.eduPostgradDegree} onChange={updateField} />
                 )}
                 {!formData.eduPostgradCollege && type?.requiresPG && (
                   <div>
@@ -1603,10 +1541,10 @@ export default function ApplyPage() {
                     />
                   </div>
                 )}
-                {!formData.eduPostgradUniversity && type?.requiresPG && <FieldInput field="eduPostgradUniversity" label="PG University" required />}
-                {!formData.eduPostgradYear && type?.requiresPG && <SelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required />}
-                {!formData.mciCouncilNumber && formData.membershipType !== "ILM" && <FieldInput field="mciCouncilNumber" label="MCI/Council Number" required />}
-                {!formData.asiMembershipNo && type?.requiresASI && <FieldInput field="asiMembershipNo" label="ASI Membership No" required />}
+                {!formData.eduPostgradUniversity && type?.requiresPG && <StableFieldInput field="eduPostgradUniversity" label="PG University" required value={formData.eduPostgradUniversity || ""} error={errors.eduPostgradUniversity} placeholder={PLACEHOLDERS.eduPostgradUniversity || ""} isFilled={!!formData.eduPostgradUniversity} onChange={updateField} />}
+                {!formData.eduPostgradYear && type?.requiresPG && <StableSelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required value={formData.eduPostgradYear || ""} error={errors.eduPostgradYear} isFilled={!!formData.eduPostgradYear} onChange={updateField} />}
+                {!formData.mciCouncilNumber && formData.membershipType !== "ILM" && <StableFieldInput field="mciCouncilNumber" label="MCI/Council Number" required value={formData.mciCouncilNumber || ""} error={errors.mciCouncilNumber} placeholder={PLACEHOLDERS.mciCouncilNumber || ""} isFilled={!!formData.mciCouncilNumber} onChange={updateField} />}
+                {!formData.asiMembershipNo && type?.requiresASI && <StableFieldInput field="asiMembershipNo" label="ASI Membership No" required value={formData.asiMembershipNo || ""} error={errors.asiMembershipNo} placeholder={PLACEHOLDERS.asiMembershipNo || ""} isFilled={!!formData.asiMembershipNo} onChange={updateField} />}
               </div>
             </CardContent>
           </Card>
@@ -1630,7 +1568,7 @@ export default function ApplyPage() {
 
         {/* All sections - collapsible for editing */}
         <Card className="shadow-sm overflow-visible">
-          <div className="divide-y">
+          <div className="divide-y overflow-visible">
             {/* Personal */}
             <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "personal" ? null : "personal")}>
               <div className="flex items-center gap-2.5 text-sm font-semibold">
@@ -1642,9 +1580,9 @@ export default function ApplyPage() {
             {editSection === "personal" && (
               <div className="p-4 space-y-3 bg-muted/30">
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <SelectInput field="salutation" label="Salutation" options={["Dr.", "Prof.", "Mr.", "Mrs.", "Ms."]} />
-                  <FieldInput field="firstName" label="First Name" required />
-                  <FieldInput field="lastName" label="Last Name" />
+                  <StableSelectInput field="salutation" label="Salutation" options={["Dr.", "Prof.", "Mr.", "Mrs.", "Ms."]} value={formData.salutation || ""} error={errors.salutation} isFilled={!!formData.salutation} onChange={updateField} />
+                  <StableFieldInput field="firstName" label="First Name" required value={formData.firstName || ""} error={errors.firstName} placeholder={PLACEHOLDERS.firstName || ""} isFilled={!!formData.firstName} onChange={updateField} />
+                  <StableFieldInput field="lastName" label="Last Name" value={formData.lastName || ""} error={errors.lastName} placeholder={PLACEHOLDERS.lastName || ""} isFilled={!!formData.lastName} onChange={updateField} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div>
@@ -1664,7 +1602,7 @@ export default function ApplyPage() {
                       ))}
                     </div>
                   </div>
-                  <FieldInput field="fatherName" label="Father's Name" />
+                  <StableFieldInput field="fatherName" label="Father's Name" value={formData.fatherName || ""} error={errors.fatherName} placeholder={PLACEHOLDERS.fatherName || ""} isFilled={!!formData.fatherName} onChange={updateField} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -1685,13 +1623,13 @@ export default function ApplyPage() {
                       if (pin.length === 6) { try { const r = await fetch(`/api/pincode?pin=${pin}`); const d = await r.json(); if (d.status) { if (d.city) updateField("city", d.city); if (d.state) { const m = INDIAN_STATES.find(s => s.toLowerCase() === d.state.toLowerCase()); if (m) { updateField("state", m); updateField("zone", STATE_TO_ZONE[m] || "") } } } } catch {} }
                     }} placeholder="6-digit" maxLength={6} />
                   </div>
-                  <FieldInput field="city" label="City" />
-                  <SelectInput field="state" label="State" options={INDIAN_STATES} />
+                  <StableFieldInput field="city" label="City" value={formData.city || ""} error={errors.city} placeholder={PLACEHOLDERS.city || ""} isFilled={!!formData.city} onChange={updateField} />
+                  <StableSelectInput field="state" label="State" options={INDIAN_STATES} value={formData.state || ""} error={errors.state} isFilled={!!formData.state} onChange={updateField} />
                   <div><Label className="text-xs">Zone</Label><Input value={formData.zone} disabled className="bg-muted" /></div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <FieldInput field="streetLine1" label="Street Line 1" />
-                  <FieldInput field="streetLine2" label="Street Line 2" />
+                  <StableFieldInput field="streetLine1" label="Street Line 1" value={formData.streetLine1 || ""} error={errors.streetLine1} placeholder={PLACEHOLDERS.streetLine1 || ""} isFilled={!!formData.streetLine1} onChange={updateField} />
+                  <StableFieldInput field="streetLine2" label="Street Line 2" value={formData.streetLine2 || ""} error={errors.streetLine2} placeholder={PLACEHOLDERS.streetLine2 || ""} isFilled={!!formData.streetLine2} onChange={updateField} />
                 </div>
               </div>
             )}
@@ -1705,12 +1643,12 @@ export default function ApplyPage() {
               <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${editSection === "education" ? "rotate-90" : ""}`} />
             </button>
             {editSection === "education" && (
-              <div className="p-4 space-y-3 bg-muted/30">
+              <div className="p-4 space-y-3 bg-muted/30 overflow-visible">
                 {type?.requiresPG && (
                   <>
                     <p className="text-xs font-medium text-muted-foreground">Postgraduate</p>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <FieldInput field="eduPostgradDegree" label="Degree" required />
+                      <StableFieldInput field="eduPostgradDegree" label="Degree" required value={formData.eduPostgradDegree || ""} error={errors.eduPostgradDegree} placeholder={PLACEHOLDERS.eduPostgradDegree || ""} isFilled={!!formData.eduPostgradDegree} onChange={updateField} />
                       <div>
                         <Label className="text-xs">College <span className="text-destructive">*</span></Label>
                         <Autocomplete
@@ -1727,8 +1665,8 @@ export default function ApplyPage() {
                           placeholder="Type college name..."
                         />
                       </div>
-                      <FieldInput field="eduPostgradUniversity" label="University" required />
-                      <SelectInput field="eduPostgradYear" label="Year" options={YEAR_OPTIONS} required />
+                      <StableFieldInput field="eduPostgradUniversity" label="University" required value={formData.eduPostgradUniversity || ""} error={errors.eduPostgradUniversity} placeholder={PLACEHOLDERS.eduPostgradUniversity || ""} isFilled={!!formData.eduPostgradUniversity} onChange={updateField} />
+                      <StableSelectInput field="eduPostgradYear" label="Year" options={YEAR_OPTIONS} required value={formData.eduPostgradYear || ""} error={errors.eduPostgradYear} isFilled={!!formData.eduPostgradYear} onChange={updateField} />
                     </div>
                   </>
                 )}
@@ -1749,8 +1687,8 @@ export default function ApplyPage() {
                           placeholder="Type college name..."
                         />
                       </div>
-                      <FieldInput field="eduUndergradUniversity" label="University" required />
-                      <SelectInput field="eduUndergradYear" label="Year" options={YEAR_OPTIONS} required />
+                      <StableFieldInput field="eduUndergradUniversity" label="University" required value={formData.eduUndergradUniversity || ""} error={errors.eduUndergradUniversity} placeholder={PLACEHOLDERS.eduUndergradUniversity || ""} isFilled={!!formData.eduUndergradUniversity} onChange={updateField} />
+                      <StableSelectInput field="eduUndergradYear" label="Year" options={YEAR_OPTIONS} required value={formData.eduUndergradYear || ""} error={errors.eduUndergradYear} isFilled={!!formData.eduUndergradYear} onChange={updateField} />
                     </div>
                   </>
                 )}
@@ -1773,7 +1711,7 @@ export default function ApplyPage() {
                       <Label className="text-xs">MCI/Council Number <span className="text-destructive">*</span><FieldHelp text={FIELD_HELP.mciCouncilNumber} /></Label>
                       <Input value={formData.mciCouncilNumber} onChange={(e) => updateField("mciCouncilNumber", e.target.value)} className={errors.mciCouncilNumber ? "border-destructive" : ""} />
                     </div>
-                    <SelectInput field="mciCouncilState" label="Council State" options={INDIAN_STATES} required />
+                    <StableSelectInput field="mciCouncilState" label="Council State" options={INDIAN_STATES} required value={formData.mciCouncilState || ""} error={errors.mciCouncilState} isFilled={!!formData.mciCouncilState} onChange={updateField} />
                   </div>
                 )}
                 {type?.requiresASI && (
@@ -1782,10 +1720,10 @@ export default function ApplyPage() {
                       <Label className="text-xs">ASI Membership No <span className="text-destructive">*</span><FieldHelp text={FIELD_HELP.asiMembershipNo} /></Label>
                       <Input value={formData.asiMembershipNo} onChange={(e) => updateField("asiMembershipNo", e.target.value)} className={errors.asiMembershipNo ? "border-destructive" : ""} />
                     </div>
-                    <SelectInput field="asiState" label="ASI State" options={INDIAN_STATES} />
+                    <StableSelectInput field="asiState" label="ASI State" options={INDIAN_STATES} value={formData.asiState || ""} error={errors.asiState} isFilled={!!formData.asiState} onChange={updateField} />
                   </div>
                 )}
-                <FieldInput field="imrRegNo" label="IMR Registration Number (Optional)" />
+                <StableFieldInput field="imrRegNo" label="IMR Registration Number (Optional)" value={formData.imrRegNo || ""} error={errors.imrRegNo} placeholder={PLACEHOLDERS.imrRegNo || ""} isFilled={!!formData.imrRegNo} onChange={updateField} />
               </div>
             )}
           </div>
@@ -2019,8 +1957,8 @@ export default function ApplyPage() {
           <Button className="w-full h-11 font-semibold gap-2" onClick={() => window.location.href = `/apply/status?ref=${refNumber}`}>
             Track Application Status <ArrowRight className="h-4 w-4" />
           </Button>
-          <Button variant="outline" className="w-full h-11" onClick={() => window.location.href = "/"}>
-            Go to Dashboard
+          <Button variant="outline" className="w-full h-11" onClick={() => window.location.href = "https://collegeofmas.org.in"}>
+            Visit AMASI Website
           </Button>
         </div>
       </motion.div>

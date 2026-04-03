@@ -55,7 +55,6 @@ export function ProfileIdentify({ onFound, isLoading, error }: ProfileIdentifyPr
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-10 h-11"
-                autoFocus
               />
             </div>
             <Button type="submit" disabled={isLoading || !query.trim()} className="w-full h-11 font-semibold">

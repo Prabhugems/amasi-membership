@@ -386,6 +386,6 @@ export async function POST(request: Request) {
     })
   } catch (error: any) {
     console.error("OCR API error:", error)
-    return Response.json({ success: false, error: error.message || "OCR processing failed" }, { status: 500 })
+    return Response.json({ success: false, error: "Could not process this document. Please try a clearer image." }, { status: 500 })
   }
 }

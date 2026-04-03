@@ -38,11 +38,13 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query
 
     if (error) {
-      return Response.json({ status: false, message: error.message }, { status: 500 })
+      console.error("Members list error:", error.message)
+      return Response.json({ status: false, message: "Unable to load members. Please try again." }, { status: 500 })
     }
 
     return Response.json({ status: true, data: data || [], total: count || 0 })
   } catch (error: any) {
-    return Response.json({ status: false, message: error.message }, { status: 500 })
+    console.error("Members list error:", error.message)
+    return Response.json({ status: false, message: "Unable to load members. Please try again." }, { status: 500 })
   }
 }

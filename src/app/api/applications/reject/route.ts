@@ -68,6 +68,6 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: true, message: "Application rejected" })
   } catch (error: any) {
     console.error("Reject error:", error)
-    return Response.json({ status: false, message: error.message }, { status: 500 })
+    return Response.json({ status: false, message: "Failed to reject application. Please try again." }, { status: 500 })
   }
 }

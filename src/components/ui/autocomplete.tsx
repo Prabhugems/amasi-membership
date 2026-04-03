@@ -57,7 +57,7 @@ export function Autocomplete({ value, onChange, options, placeholder, className,
         autoComplete="off"
       />
       {open && filtered.length > 0 && (
-        <div ref={listRef} className="absolute z-50 mt-1 w-full max-h-[200px] overflow-y-auto rounded-md border bg-popover shadow-lg">
+        <div ref={listRef} className="absolute z-[60] mt-1 w-full max-h-[200px] overflow-y-auto rounded-md border bg-popover shadow-lg">
           {filtered.map((opt, i) => (
             <button
               key={i}

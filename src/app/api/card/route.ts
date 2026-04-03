@@ -63,6 +63,6 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Card API error:", error)
-    return Response.json({ status: false, message: error.message }, { status: 500 })
+    return Response.json({ status: false, message: "Unable to load membership card. Please try again." }, { status: 500 })
   }
 }

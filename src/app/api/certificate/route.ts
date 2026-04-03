@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Certificate API error:", error)
     return Response.json(
-      { status: false, message: error.message },
+      { status: false, message: "Unable to generate certificate. Please try again later." },
       { status: 500 }
     )
   }

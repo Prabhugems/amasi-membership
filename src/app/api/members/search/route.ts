@@ -60,22 +60,32 @@ export async function GET(request: NextRequest) {
         message: "Member found",
         data: data.map((m: any) => ({
           ...m,
+          _id: m.id, // Supabase row ID for update API
           profile_incomplete: !m.pg_degree && !m.mci_council_number && !m.date_of_birth && !m.gender,
           // Map to match old API field names for compatibility
           membership_no: m.amasi_number,
           first_name: m.name?.split(" ")[0] || "",
           middle_name: "",
           last_name: m.name?.split(" ").slice(1).join(" ") || "",
-          salutation: "Dr.",
+          salutation: m.salutation || "Dr.",
           mobile: String(m.phone || ""),
           mobile_code: m.mobile_code || "+91",
+          dob: m.date_of_birth || "",
           application_no: m.application_no || "",
-          application_name: m.membership_type || "",
+          membership_type: m.membership_type || "",
+          application_name: (() => {
+            const t = m.membership_type
+            if (t === "LM") return "Life Member"
+            if (t === "ALM") return "Associate Life Member"
+            if (t === "ACM") return "Associate Candidate Member"
+            if (t === "ILM") return "International Life Member"
+            return t || ""
+          })(),
           status_name: m.status === "active" ? "Membership Number Allotted" : m.status,
           state_name: m.state || "",
           mci_council_number: m.mci_council_number || "",
           member_reg_date: m.application_date || m.created_at,
-          joining_date: m.created_at,
+          joining_date: m.joining_date || m.created_at,
           zone: m.zone || "",
         })),
       })

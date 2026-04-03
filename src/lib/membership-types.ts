@@ -6,6 +6,7 @@ export interface MembershipType {
   fee: number
   feeCurrency: "INR" | "USD"
   processingFeePercent: number
+  processingFeeFixed: number
   eligibility: string
   description: string
   requiredDocs: DocType[]
@@ -44,7 +45,8 @@ export const MEMBERSHIP_TYPES: MembershipType[] = [
     appPrefix: "L",
     fee: 4130,
     feeCurrency: "INR",
-    processingFeePercent: 2.5,
+    processingFeePercent: 0,
+  processingFeeFixed: 100,
     eligibility: "General surgeon practicing in India or SAARC countries, must be ASI member",
     description:
       "Full membership with voting rights. Can contest elections and participate in policy making.",
@@ -63,7 +65,8 @@ export const MEMBERSHIP_TYPES: MembershipType[] = [
     appPrefix: "AL",
     fee: 4130,
     feeCurrency: "INR",
-    processingFeePercent: 2.5,
+    processingFeePercent: 0,
+  processingFeeFixed: 100,
     eligibility: "Qualified surgeon, ASI membership not required",
     description:
       "Associate membership. Can convert to Life Member upon obtaining ASI membership.",
@@ -82,7 +85,8 @@ export const MEMBERSHIP_TYPES: MembershipType[] = [
     appPrefix: "AC",
     fee: 4130,
     feeCurrency: "INR",
-    processingFeePercent: 2.5,
+    processingFeePercent: 0,
+  processingFeeFixed: 100,
     eligibility: "Doctors currently pursuing postgraduate training",
     description:
       "For PG trainees. Becomes eligible for full Life Member upon completing qualifications.",
@@ -101,7 +105,8 @@ export const MEMBERSHIP_TYPES: MembershipType[] = [
     appPrefix: "IL",
     fee: 300,
     feeCurrency: "USD",
-    processingFeePercent: 2.5,
+    processingFeePercent: 0,
+  processingFeeFixed: 100,
     eligibility: "Surgeons practicing outside India",
     description: "For international surgeons interested in minimal access surgery.",
     requiredDocs: ["active_license", "pg_degree_certificate", "profile"],
@@ -125,7 +130,7 @@ export function calculateFee(type: MembershipType): {
   currency: string
 } {
   const baseFee = type.fee
-  const processingFee = Math.round(baseFee * (type.processingFeePercent / 100))
+  const processingFee = type.processingFeeFixed || Math.round(baseFee * (type.processingFeePercent / 100))
   return {
     baseFee,
     processingFee,

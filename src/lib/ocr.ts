@@ -5,7 +5,7 @@ type OCRResult = {
 }
 
 export async function extractTextFromImage(imageBuffer: Buffer, filename: string): Promise<OCRResult> {
-  const apiKey = process.env.OCR_SPACE_API_KEY
+  const apiKey = process.env.OCR_SPACE_API_KEY?.trim()
 
   if (!apiKey) {
     return { success: false, text: "", error: "OCR API key not configured" }
@@ -53,5 +53,5 @@ export async function extractTextFromImage(imageBuffer: Buffer, filename: string
 }
 
 export function isOCREnabled(): boolean {
-  return !!process.env.OCR_SPACE_API_KEY
+  return !!process.env.OCR_SPACE_API_KEY?.trim()
 }

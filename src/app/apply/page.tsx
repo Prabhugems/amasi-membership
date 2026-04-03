@@ -23,8 +23,20 @@ import type { ExtractionResult } from "@/lib/ai-extract"
 import { validatePersonalDetails, validateEducation, validateRegistration } from "@/lib/validators"
 import { detectFace, preloadFaceDetection } from "@/lib/face-detect"
 import type { MemberData } from "@/lib/api"
+import { Autocomplete } from "@/components/ui/autocomplete"
+import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
+import { generateRefNumber, FIELD_HELP } from "@/lib/application-utils"
+import { FieldHelp } from "@/components/ui/field-help"
+import { ProgressBar } from "@/components/apply/progress-bar"
 
-type Phase = "check" | "existing" | "landing" | "upload" | "review" | "confirm" | "success"
+const COLLEGE_OPTIONS = MEDICAL_COLLEGES_INDIA.map(c => ({
+  label: c.name,
+  sublabel: `${c.state} — ${c.university}`,
+  state: c.state,
+  university: c.university,
+}))
+
+type Phase = "check" | "existing" | "landing" | "verify" | "upload" | "review" | "confirm" | "success"
 type UploadEntry = {
   file: File
   preview: string
@@ -34,17 +46,73 @@ type UploadEntry = {
   message?: string
 }
 
+// Auto-capitalize first letter of each word
+function autoCapitalize(str: string): string {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+// Calculate age from DOB
+function calcAge(dob: string): number | null {
+  if (!dob) return null
+  const birth = new Date(dob)
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) age--
+  return age > 0 && age < 120 ? age : null
+}
+
+// Year options for dropdowns
+const YEAR_OPTIONS = Array.from({ length: 50 }, (_, i) => String(new Date().getFullYear() - i))
+
 export default function ApplyPage() {
-  const [phase, setPhase] = useState<Phase>("check")
+  // Restore form data from localStorage on mount
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("amasi_apply_phase")
+      if (saved && ["check", "landing", "upload", "review"].includes(saved)) return saved as Phase
+    }
+    return "check"
+  })
   const [checkQuery, setCheckQuery] = useState("")
   const [checking, setChecking] = useState(false)
   const [existingMember, setExistingMember] = useState<MemberData | null>(null)
-  const [formData, setFormData] = useState<ApplicationFormData>(INITIAL_FORM_DATA)
+  const [formData, setFormData] = useState<ApplicationFormData>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("amasi_apply_form")
+        if (saved) return { ...INITIAL_FORM_DATA, ...JSON.parse(saved) }
+      } catch {}
+    }
+    return INITIAL_FORM_DATA
+  })
   const [uploads, setUploads] = useState<Record<string, UploadEntry>>({})
   const [processing, setProcessing] = useState(false)
-  const [selectedType, setSelectedType] = useState<MembershipType | null>(null)
+  const [selectedType, setSelectedType] = useState<MembershipType | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("amasi_apply_type")
+      if (saved) return MEMBERSHIP_TYPES.find(t => t.id === saved) || null
+    }
+    return null
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [editSection, setEditSection] = useState<string | null>(null)
+
+  // Auto-save form data to localStorage
+  useEffect(() => {
+    localStorage.setItem("amasi_apply_form", JSON.stringify(formData))
+  }, [formData])
+  useEffect(() => {
+    if (phase !== "check" && phase !== "verify") localStorage.setItem("amasi_apply_phase", phase)
+  }, [phase])
+  useEffect(() => {
+    if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
+  }, [selectedType])
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [mobileVerified, setMobileVerified] = useState(false)
+  const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "mobile_otp" | "done">("input")
+  const [otpCode, setOtpCode] = useState("")
+  const [otpCooldown, setOtpCooldown] = useState(0)
+  const [verifying, setVerifying] = useState(false)
 
   // Pre-warm Face Detection on mount
   useEffect(() => {
@@ -66,11 +134,14 @@ export default function ApplyPage() {
       const res = await fetch("/api/ocr", { method: "POST", body: uploadData })
       const result = await res.json()
 
-      // Reject irrelevant documents
+      // Reject irrelevant documents — show as red rejected card
       if (result.isIrrelevant || !result.success) {
-        URL.revokeObjectURL(preview)
-        setUploads((prev) => { const c = { ...prev }; delete c[docType]; return c })
-        toast.error(result.message || result.error || "This doesn't appear to be a valid medical document.")
+        const rejectMessage = result.message || result.error || "This doesn't appear to be a valid medical document. Please upload the correct certificate."
+        setUploads((prev) => ({
+          ...prev,
+          [docType]: { file, preview, status: "rejected", extracted: {}, message: rejectMessage },
+        }))
+        toast.error(rejectMessage)
         return
       }
 
@@ -86,46 +157,63 @@ export default function ApplyPage() {
         return
       }
 
-      // Auto-fill form fields from extracted data
+      // Auto-fill form fields from ALL extracted data
       const updates: Partial<ApplicationFormData> = {}
+
+      // --- Name extraction with validation ---
       if (extracted.name) {
         const cleanName = extracted.name
           .replace(/^(Dr\.?|Prof\.?|Mr\.?|Mrs\.?|Ms\.?|Shri\.?)\s*/gi, "")
-          .replace(/\s+/g, " ")
-          .trim()
-
-        // Validate: reject garbage text (must look like a real name)
+          .replace(/\s+/g, " ").trim()
         const junkWords = ["the", "of", "and", "for", "this", "that", "with", "from", "qualification", "certificate", "registration", "additional", "medical", "council", "not visible", "null", "n/a"]
         const nameParts = cleanName.split(/\s+/)
-        const isValidName = nameParts.length >= 1 &&
-          nameParts.length <= 5 &&
-          cleanName.length >= 3 &&
-          cleanName.length <= 60 &&
-          !junkWords.includes(nameParts[0].toLowerCase()) &&
-          /^[A-Za-z]/.test(nameParts[0])
-
+        const isValidName = nameParts.length >= 1 && nameParts.length <= 5 &&
+          cleanName.length >= 3 && cleanName.length <= 60 &&
+          !junkWords.includes(nameParts[0].toLowerCase()) && /^[A-Za-z]/.test(nameParts[0])
         if (isValidName) {
           if (nameParts[0]) updates.firstName = nameParts[0]
           if (nameParts.length === 2) updates.lastName = nameParts[1]
-          if (nameParts.length >= 3) {
-            updates.middleName = nameParts[1]
-            updates.lastName = nameParts.slice(2).join(" ")
-          }
+          if (nameParts.length >= 3) { updates.middleName = nameParts[1]; updates.lastName = nameParts.slice(2).join(" ") }
         }
       }
+
+      // --- MCI Certificate fields ---
       if (extracted.registration_number) updates.mciCouncilNumber = extracted.registration_number
       if (extracted.council_state) {
-        const state = extracted.council_state.replace(/\s*(medical|council|state)\s*/gi, "").trim()
         const matchedState = INDIAN_STATES.find(s => extracted.council_state.toLowerCase().includes(s.toLowerCase()))
         if (matchedState) {
           updates.mciCouncilState = matchedState
-          updates.state = matchedState
-          updates.zone = STATE_TO_ZONE[matchedState] || ""
+          if (!formData.state) { updates.state = matchedState; updates.zone = STATE_TO_ZONE[matchedState] || "" }
         }
       }
-      if (extracted.date_of_birth) updates.dob = extracted.date_of_birth
-      if (extracted.gender) updates.gender = extracted.gender
-      if (extracted.father_name) updates.fatherName = extracted.father_name.replace(/^(Mr\.?|Shri\.?|Late\.?)\s*/i, "").trim()
+      // DOB: handle multiple formats
+      if (extracted.date_of_birth && extracted.date_of_birth !== "null") {
+        let dob = extracted.date_of_birth
+        // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
+        const ddmmyyyy = dob.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})$/)
+        if (ddmmyyyy) dob = `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) updates.dob = dob
+      }
+      if (extracted.gender && extracted.gender !== "null") updates.gender = extracted.gender
+      if (extracted.father_name && extracted.father_name !== "null") {
+        updates.fatherName = extracted.father_name.replace(/^(Mr\.?|Shri\.?|Late\.?|S\/o|D\/o|W\/o)\s*/i, "").trim()
+      }
+      // Address from MCI certificate
+      if (extracted.address && extracted.address !== "null" && !formData.streetLine1) {
+        updates.streetLine1 = extracted.address.length > 100 ? extracted.address.slice(0, 100) : extracted.address
+      }
+      if (extracted.city && extracted.city !== "null" && !formData.city) updates.city = extracted.city
+      if (extracted.pin_code && extracted.pin_code !== "null" && !formData.pin) updates.pin = extracted.pin_code
+      // Qualifications from MCI cert can tell us about degrees
+      if (extracted.qualifications && extracted.qualifications !== "null") {
+        const quals = extracted.qualifications.toLowerCase()
+        if (!formData.eduPostgradDegree) {
+          const pgMatch = quals.match(/(m\.?s\.?\s*\([^)]+\)|m\.?ch\.?\s*\([^)]+\)|m\.?d\.?\s*\([^)]+\)|d\.?n\.?b\.?\s*\([^)]+\))/i)
+          if (pgMatch) updates.eduPostgradDegree = pgMatch[1].trim()
+        }
+      }
+
+      // --- Degree Certificate fields ---
       if (extracted.degree) {
         if (docType === "pg_degree_certificate") updates.eduPostgradDegree = extracted.degree
         else updates.eduUndergradDegree = extracted.degree
@@ -139,10 +227,24 @@ export default function ApplyPage() {
         else updates.eduUndergradCollege = extracted.college
       }
       if (extracted.year_of_passing) {
-        if (docType === "pg_degree_certificate") updates.eduPostgradYear = String(extracted.year_of_passing)
-        else updates.eduUndergradYear = String(extracted.year_of_passing)
+        const year = String(extracted.year_of_passing)
+        if (/^\d{4}$/.test(year)) {
+          if (docType === "pg_degree_certificate") updates.eduPostgradYear = year
+          else updates.eduUndergradYear = year
+        }
       }
+
+      // --- ASI Certificate fields ---
       if (extracted.asi_membership_number) updates.asiMembershipNo = extracted.asi_membership_number
+      if (extracted.asi_state) {
+        const matchedState = INDIAN_STATES.find(s => extracted.asi_state.toLowerCase().includes(s.toLowerCase()))
+        if (matchedState) updates.asiState = matchedState
+      }
+
+      // --- Smart defaults ---
+      if (!formData.nationality && !updates.nationality) updates.nationality = "Indian"
+      if (!formData.mobileCode && !updates.mobileCode) updates.mobileCode = "+91"
+      if (!formData.salutation && !updates.salutation) updates.salutation = "Dr."
 
       if (Object.keys(updates).length > 0) {
         setFormData((prev) => ({ ...prev, ...updates }))
@@ -178,7 +280,26 @@ export default function ApplyPage() {
         },
       }))
 
-      toast.success(`${DOC_LABELS[docType as DocType]}: extracted ${fieldCount} fields`)
+      // Show what was extracted in a detailed toast
+      const extractedLabels: string[] = []
+      if (updates.firstName) extractedLabels.push("Name")
+      if (updates.dob) extractedLabels.push("DOB")
+      if (updates.gender) extractedLabels.push("Gender")
+      if (updates.fatherName) extractedLabels.push("Father")
+      if (updates.mciCouncilNumber) extractedLabels.push("MCI Number")
+      if (updates.mciCouncilState) extractedLabels.push("Council State")
+      if (updates.eduPostgradDegree) extractedLabels.push("PG Degree")
+      if (updates.eduPostgradCollege) extractedLabels.push("PG College")
+      if (updates.eduPostgradUniversity) extractedLabels.push("University")
+      if (updates.eduPostgradYear) extractedLabels.push("Year")
+      if (updates.city) extractedLabels.push("City")
+      if (updates.state) extractedLabels.push("State")
+      if (updates.asiMembershipNo) extractedLabels.push("ASI Number")
+      if (extractedLabels.length > 0) {
+        toast.success(`AI extracted: ${extractedLabels.join(", ")}`)
+      } else {
+        toast.success(`${DOC_LABELS[docType as DocType]} verified`)
+      }
     } catch (err: any) {
       setUploads((prev) => ({
         ...prev,
@@ -217,31 +338,220 @@ export default function ApplyPage() {
     setPhase("review")
   }
 
-  const handleSubmit = () => {
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [refNumber, setRefNumber] = useState("")
+
+  const [approvalResult, setApprovalResult] = useState<{ approved: boolean; amasiNumber?: number } | null>(null)
+
+  const handleSubmit = async () => {
     const personalErrors = validatePersonalDetails(formData)
     const eduErrors = validateEducation(formData)
     const regErrors = validateRegistration(formData)
-    const allErrors = { ...personalErrors, ...eduErrors, ...regErrors }
+    const allSubmitErrors = { ...personalErrors, ...eduErrors, ...regErrors }
 
-    if (Object.keys(allErrors).length > 0) {
-      setErrors(allErrors)
+    if (Object.keys(allSubmitErrors).length > 0) {
+      setErrors(allSubmitErrors)
       toast.error("Please fill in the required fields highlighted in red")
       return
     }
-    setPhase("success")
-    toast.success("Application submitted!")
+
+    if (!termsAccepted) {
+      toast.error("Please accept the terms and conditions")
+      return
+    }
+
+    setSubmitting(true)
+
+    // Check for duplicate
+    try {
+      const dupRes = await fetch("/api/applications/check-duplicate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, mobile: formData.mobile }),
+      })
+      const dupData = await dupRes.json()
+      if (dupData.isDuplicate) {
+        toast.error(dupData.message || "A duplicate application was found")
+        setSubmitting(false)
+        return
+      }
+    } catch {}
+
+    const ref = generateRefNumber()
+    setRefNumber(ref)
+
+    const type = selectedType || getMembershipType(formData.membershipType)
+    const fee = type ? calculateFee(type) : null
+    const totalAmount = fee ? fee.totalFee : 4230
+
+    // Step 1: Create Razorpay order
+    let orderId = ""
+    try {
+      const orderRes = await fetch("/api/payments/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: totalAmount,
+          currency: fee?.currency === "$" ? "USD" : "INR",
+          referenceNumber: ref,
+          email: formData.email,
+          name: `${formData.firstName} ${formData.lastName}`.trim(),
+          membershipType: type?.name || formData.membershipType,
+        }),
+      })
+      const orderData = await orderRes.json()
+      if (!orderData.status || !orderData.orderId) {
+        toast.error(orderData.message || "Failed to create payment order")
+        setSubmitting(false)
+        return
+      }
+      orderId = orderData.orderId
+    } catch {
+      toast.error("Payment service unavailable. Please try again.")
+      setSubmitting(false)
+      return
+    }
+
+    // Step 2: Open Razorpay checkout
+    const rzpKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
+    if (!rzpKeyId || typeof window === "undefined") {
+      toast.error("Payment not configured")
+      setSubmitting(false)
+      return
+    }
+
+    // Load Razorpay script if not loaded
+    if (!(window as any).Razorpay) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script")
+        script.src = "https://checkout.razorpay.com/v1/checkout.js"
+        script.onload = () => resolve()
+        script.onerror = () => reject()
+        document.body.appendChild(script)
+      })
+    }
+
+    const rzp = new (window as any).Razorpay({
+      key: rzpKeyId,
+      amount: totalAmount * 100,
+      currency: fee?.currency === "$" ? "USD" : "INR",
+      name: "AMASI",
+      description: `${type?.name || "Membership"} Application — ${ref}`,
+      order_id: orderId,
+      prefill: {
+        name: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),
+        email: formData.email,
+        contact: `+91${formData.mobile}`,
+      },
+      theme: { color: "#0f766e" },
+      handler: async (response: any) => {
+        // Step 3: Verify payment
+        try {
+          const verifyRes = await fetch("/api/payments/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              referenceNumber: ref,
+              amount: totalAmount,
+              currency: fee?.currency === "$" ? "USD" : "INR",
+            }),
+          })
+          const verifyData = await verifyRes.json()
+
+          if (!verifyData.status) {
+            toast.error("Payment verification failed")
+            setSubmitting(false)
+            return
+          }
+
+          toast.success("Payment successful!")
+
+          // Step 4: Submit application + trigger AI/manual approval
+          const uploadData = Object.fromEntries(
+            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
+          )
+
+          const submitRes = await fetch("/api/applications/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              formData,
+              referenceNumber: ref,
+              paymentId: response.razorpay_payment_id,
+              uploads: uploadData,
+            }),
+          })
+          const submitData = await submitRes.json()
+
+          if (submitData.status) {
+            setApprovalResult({
+              approved: submitData.approved,
+              amasiNumber: submitData.amasiNumber,
+            })
+            setPhase("success")
+            toast.success(submitData.approved ? "Membership approved!" : "Application submitted for review!")
+          } else {
+            toast.error(submitData.message || "Failed to submit application")
+          }
+        } catch {
+          toast.error("Something went wrong. Please contact support.")
+        }
+        setSubmitting(false)
+      },
+      modal: {
+        ondismiss: () => {
+          toast.info("Payment cancelled")
+          setSubmitting(false)
+        },
+      },
+    })
+
+    rzp.open()
   }
 
   const updateField = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    if (field === "state") {
-      setFormData((prev) => ({ ...prev, zone: STATE_TO_ZONE[value] || "" }))
+    let processed = value
+
+    // Auto-capitalize name fields
+    if (["firstName", "middleName", "lastName", "fatherName"].includes(field)) {
+      processed = autoCapitalize(value)
     }
+
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: processed }
+
+      // State → auto-fill zone
+      if (field === "state") {
+        updated.zone = STATE_TO_ZONE[value] || ""
+        // Auto-fill MCI council state if empty
+        if (!prev.mciCouncilState) updated.mciCouncilState = value
+      }
+
+      // MCI council state → auto-fill address state if empty
+      if (field === "mciCouncilState" && !prev.state) {
+        updated.state = value
+        updated.zone = STATE_TO_ZONE[value] || ""
+      }
+
+      return updated
+    })
+
     setErrors((prev) => {
       const copy = { ...prev }
       delete copy[field]
       return copy
     })
+  }
+
+  // Clear saved data on successful submission
+  const clearSavedForm = () => {
+    localStorage.removeItem("amasi_apply_form")
+    localStorage.removeItem("amasi_apply_phase")
+    localStorage.removeItem("amasi_apply_type")
   }
 
   const handleCheckMembership = async (e: React.FormEvent) => {
@@ -255,15 +565,15 @@ export default function ApplyPage() {
         setExistingMember(data.data[0])
         setPhase("existing")
       } else {
-        // Not found — prefill email/phone and proceed to apply
+        // Not found — prefill email/phone and proceed to verify
         const isEmail = checkQuery.includes("@")
+        const isPhone = /^\d{10}$/.test(checkQuery.trim())
         setFormData((prev) => ({
           ...prev,
           email: isEmail ? checkQuery.trim() : prev.email,
-          mobile: !isEmail ? checkQuery.trim() : prev.mobile,
+          mobile: isPhone ? checkQuery.trim() : prev.mobile,
         }))
-        toast.info("No existing membership found. Let's create your application!")
-        setPhase("landing")
+        setPhase("verify")
       }
     } catch {
       toast.error("Could not check membership. Please try again.")
@@ -274,17 +584,17 @@ export default function ApplyPage() {
   // ===== CHECK PHASE =====
   if (phase === "check") {
     return (
-      <div className="max-w-lg mx-auto py-16">
+      <div className="max-w-lg mx-auto px-4 py-12 sm:py-16">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
+          className="text-center mb-10"
         >
-          <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+          <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
             <Stethoscope className="h-8 w-8 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold mb-2">AMASI Membership</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-2">AMASI Membership</h1>
+          <p className="text-muted-foreground text-base">
             Association of Minimal Access Surgeons of India
           </p>
         </motion.div>
@@ -294,10 +604,10 @@ export default function ApplyPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
         >
-          <Card>
-            <CardContent className="pt-6">
+          <Card className="shadow-sm">
+            <CardContent className="p-6">
               <h2 className="font-semibold text-lg mb-1">Let&apos;s check your membership</h2>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-sm text-muted-foreground mb-5">
                 Search by email, phone number, name, or AMASI membership number to check your membership status.
               </p>
               <form onSubmit={handleCheckMembership} className="space-y-4">
@@ -308,7 +618,7 @@ export default function ApplyPage() {
                   className="h-12 text-base"
                   autoFocus
                 />
-                <Button type="submit" className="w-full h-12 text-base gap-2" disabled={checking || !checkQuery.trim()}>
+                <Button type="submit" className="w-full h-12 text-base font-semibold gap-2" disabled={checking || !checkQuery.trim()}>
                   {checking ? (
                     <><Loader2 className="h-5 w-5 animate-spin" /> Checking...</>
                   ) : (
@@ -324,16 +634,16 @@ export default function ApplyPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="grid gap-4 md:grid-cols-3 mt-8 text-center"
+          className="flex items-center justify-center gap-6 sm:gap-8 mt-10 text-center"
         >
           {[
             { icon: Shield, label: "18,000+ Members" },
             { icon: Award, label: "35+ Years" },
             { icon: Clock, label: "2 Min to Apply" },
           ].map((item, i) => (
-            <div key={i} className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <item.icon className="h-4 w-4 text-primary" />
-              {item.label}
+            <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+              <item.icon className="h-4 w-4 text-primary shrink-0" />
+              <span>{item.label}</span>
             </div>
           ))}
         </motion.div>
@@ -479,11 +789,11 @@ export default function ApplyPage() {
   // ===== LANDING PHASE =====
   if (phase === "landing") {
     return (
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center py-12"
+          className="text-center py-10 sm:py-14"
         >
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium mb-6">
             <Sparkles className="h-4 w-4" /> AI-Powered Application
@@ -504,15 +814,15 @@ export default function ApplyPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid gap-4 md:grid-cols-3 mb-12"
+          className="grid gap-4 sm:grid-cols-3 mb-12"
         >
           {[
             { icon: Upload, title: "Upload Documents", desc: "Drop your MCI certificate and degree" },
             { icon: Sparkles, title: "AI Extracts Details", desc: "Name, registration, education — auto-filled" },
             { icon: CheckCircle, title: "Review & Submit", desc: "Verify, pay, and you're a member" },
           ].map((item, i) => (
-            <Card key={i} className="text-center border-2 hover:border-primary/30 transition-colors">
-              <CardContent className="pt-6">
+            <Card key={i} className="text-center border hover:border-primary/30 hover:shadow-md transition-all">
+              <CardContent className="p-6">
                 <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                   <item.icon className="h-6 w-6 text-primary" />
                 </div>
@@ -527,44 +837,47 @@ export default function ApplyPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 mb-12"
         >
-          {MEMBERSHIP_TYPES.map((type) => {
-            const fee = calculateFee(type)
-            return (
-              <button
-                key={type.id}
-                onClick={() => {
-                  setSelectedType(type)
-                  setFormData((prev) => ({ ...prev, membershipType: type.id }))
-                  setPhase("upload")
-                }}
-                className="group rounded-xl border-2 p-5 text-left transition-all hover:border-primary hover:shadow-lg"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <Badge variant="secondary" className="text-xs">{type.shortName}</Badge>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                </div>
-                <h3 className="font-semibold mb-1">{type.name}</h3>
-                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{type.eligibility}</p>
-                <p className="text-lg font-bold text-primary">
-                  {fee.currency}{fee.totalFee.toLocaleString()}
-                </p>
-                {type.votingRights && (
-                  <div className="mt-2 flex items-center gap-1 text-xs text-primary">
-                    <Star className="h-3 w-3" /> Voting Rights
+          <h2 className="text-lg font-semibold text-center mb-4">Choose Your Membership</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-14">
+            {MEMBERSHIP_TYPES.map((type) => {
+              const fee = calculateFee(type)
+              return (
+                <button
+                  key={type.id}
+                  onClick={() => {
+                    setSelectedType(type)
+                    setFormData((prev) => ({ ...prev, membershipType: type.id }))
+                    setPhase(emailVerified ? "upload" : "verify")
+                  }}
+                  className="group rounded-xl border-2 p-5 text-left transition-all hover:border-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <Badge variant="secondary" className="text-xs font-semibold">{type.shortName}</Badge>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                   </div>
-                )}
-              </button>
-            )
-          })}
+                  <h3 className="font-semibold mb-1 text-sm">{type.name}</h3>
+                  <p className="text-xs text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">{type.eligibility}</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {fee.currency}{fee.totalFee.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">incl. GST</p>
+                  {type.votingRights && (
+                    <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary">
+                      <Star className="h-3 w-3" /> Voting Rights
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </motion.div>
 
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="grid gap-6 md:grid-cols-4 text-center py-8 border-t"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center py-8 border-t"
         >
           {[
             { icon: Users, value: "18,000+", label: "Members" },
@@ -572,12 +885,193 @@ export default function ApplyPage() {
             { icon: Award, value: "Pan India", label: "Network" },
             { icon: Clock, value: "2 min", label: "To Apply" },
           ].map((stat, i) => (
-            <div key={i}>
-              <stat.icon className="h-5 w-5 mx-auto text-primary mb-1" />
+            <div key={i} className="py-2">
+              <stat.icon className="h-5 w-5 mx-auto text-primary mb-2" />
               <p className="text-2xl font-bold">{stat.value}</p>
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
             </div>
           ))}
+        </motion.div>
+      </div>
+    )
+  }
+
+  // ===== VERIFY PHASE (Email OTP only) =====
+  if (phase === "verify") {
+    const startCooldown = () => {
+      setOtpCooldown(60)
+      const timer = setInterval(() => {
+        setOtpCooldown((c) => { if (c <= 1) { clearInterval(timer); return 0 } return c - 1 })
+      }, 1000)
+    }
+
+    const sendEmailOtp = async () => {
+      if (!formData.email || !formData.email.includes("@")) { toast.error("Please enter a valid email"); return }
+      if (!formData.mobile || formData.mobile.length !== 10) { toast.error("Please enter a valid 10-digit mobile number"); return }
+      try {
+        const res = await fetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: formData.email }) })
+        const data = await res.json()
+        if (data.status) { setVerifyStep("email_otp"); setOtpCode(""); startCooldown(); toast.success("OTP sent to your email") }
+        else toast.error(data.message || "Failed to send OTP")
+      } catch { toast.error("Failed to send OTP") }
+    }
+
+    const sendMobileOtp = async () => {
+      try {
+        const res = await fetch("/api/otp/send-sms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mobile: formData.mobile, email: formData.email }) })
+        const data = await res.json()
+        if (data.status) { setVerifyStep("mobile_otp"); setOtpCode(""); startCooldown(); toast.success("Mobile verification code sent to your email") }
+        else toast.error(data.message || "Failed to send SMS OTP")
+      } catch { toast.error("Failed to send SMS OTP") }
+    }
+
+    const handleOtpVerify = async (code: string) => {
+      if (code.length !== 6) return
+      setVerifying(true)
+      try {
+        if (verifyStep === "email_otp") {
+          const res = await fetch("/api/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: formData.email, code }) })
+          const data = await res.json()
+          if (data.status) {
+            setEmailVerified(true)
+            toast.success("Email verified!")
+            setVerifyStep("done")
+            setTimeout(() => setPhase(selectedType ? "upload" : "landing"), 500)
+          } else {
+            toast.error(data.message || "Invalid OTP")
+            setOtpCode("")
+          }
+        }
+      } catch { toast.error("Verification failed") }
+      setVerifying(false)
+    }
+
+    const maskedEmail = formData.email.replace(/^(.{3})(.*)(@.*)$/, "$1***$3")
+    const maskedMobile = formData.mobile ? `${formData.mobile.slice(0, 3)}****${formData.mobile.slice(7)}` : ""
+
+    return (
+      <div className="max-w-md mx-auto px-4 py-10 sm:py-12">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false); setMobileVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+
+          {!selectedType && (
+            <div className="text-center mb-6 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+              <p className="text-foreground font-semibold">No existing membership found</p>
+              <p className="text-muted-foreground text-sm mt-1">Let&apos;s create your application! First, verify your contact details.</p>
+            </div>
+          )}
+
+          {selectedType && <Badge className="mb-4">{selectedType.name}</Badge>}
+          <h2 className="text-2xl font-bold mb-1">Verify Your Identity</h2>
+
+          {/* Progress steps */}
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex flex-col items-center gap-1">
+              <div className={`flex items-center justify-center h-8 w-8 rounded-full text-xs font-bold transition-colors ${emailVerified ? "bg-green-500 text-white" : verifyStep === "email_otp" || verifyStep === "input" ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                {emailVerified ? "✓" : "1"}
+              </div>
+              <span className={`text-xs font-medium ${emailVerified ? "text-green-600" : verifyStep === "email_otp" || verifyStep === "input" ? "text-primary" : "text-muted-foreground"}`}>Email</span>
+            </div>
+            <div className={`flex-1 h-0.5 rounded-full mt-[-18px] ${emailVerified ? "bg-green-500" : "bg-muted"}`} />
+            <div className="flex flex-col items-center gap-1">
+              <div className={`flex items-center justify-center h-8 w-8 rounded-full text-xs font-bold transition-colors ${mobileVerified ? "bg-green-500 text-white" : verifyStep === "mobile_otp" ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                {mobileVerified ? "✓" : "2"}
+              </div>
+              <span className={`text-xs font-medium ${mobileVerified ? "text-green-600" : verifyStep === "mobile_otp" ? "text-primary" : "text-muted-foreground"}`}>Mobile</span>
+            </div>
+          </div>
+
+          <Card className="shadow-sm">
+            <CardContent className="p-6 space-y-4">
+              {/* Step: Input email + mobile */}
+              {verifyStep === "input" && (
+                <>
+                  <div>
+                    <Label className="text-sm font-medium">Email <span className="text-destructive">*</span></Label>
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} placeholder="doctor@example.com" className="h-11 mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">Mobile Number <span className="text-destructive">*</span></Label>
+                    <div className="flex gap-2 mt-1">
+                      <Input className="w-20 h-11" value={formData.mobileCode} onChange={(e) => setFormData((p) => ({ ...p, mobileCode: e.target.value }))} />
+                      <Input className="flex-1 h-11" value={formData.mobile} onChange={(e) => setFormData((p) => ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit mobile" />
+                    </div>
+                  </div>
+                  <Button onClick={sendEmailOtp} className="w-full h-11 font-semibold" disabled={!formData.email || formData.mobile.length !== 10}>
+                    Send Email OTP
+                  </Button>
+                </>
+              )}
+
+              {/* Step: Email OTP */}
+              {verifyStep === "email_otp" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center"><span className="text-primary font-bold text-xs">1</span></div>
+                    <span>Enter code sent to <strong>{maskedEmail}</strong></span>
+                  </div>
+                  <Input
+                    value={otpCode}
+                    onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setOtpCode(v); if (v.length === 6) handleOtpVerify(v) }}
+                    placeholder="000000"
+                    className="text-center text-2xl font-bold tracking-[0.5em] h-14"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-between">
+                    <Button variant="ghost" size="sm" onClick={sendEmailOtp} disabled={otpCooldown > 0}>
+                      {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend"}
+                    </Button>
+                    <Button onClick={() => handleOtpVerify(otpCode)} disabled={otpCode.length !== 6 || verifying} size="sm">
+                      {verifying ? "Verifying..." : "Verify Email"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Mobile OTP */}
+              {verifyStep === "mobile_otp" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-green-600 bg-green-50 rounded-lg px-3 py-2 text-sm">
+                    <CheckCircle className="h-4 w-4" /> Email verified
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center"><span className="text-primary font-bold text-xs">2</span></div>
+                    <span>Enter code sent to your email to verify <strong>+91 {maskedMobile}</strong></span>
+                  </div>
+                  <Input
+                    value={otpCode}
+                    onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setOtpCode(v); if (v.length === 6) handleOtpVerify(v) }}
+                    placeholder="000000"
+                    className="text-center text-2xl font-bold tracking-[0.5em] h-14"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-between">
+                    <Button variant="ghost" size="sm" onClick={sendMobileOtp} disabled={otpCooldown > 0}>
+                      {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend"}
+                    </Button>
+                    <Button onClick={() => handleOtpVerify(otpCode)} disabled={otpCode.length !== 6 || verifying} size="sm">
+                      {verifying ? "Verifying..." : "Verify Mobile"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Done */}
+              {verifyStep === "done" && (
+                <div className="space-y-3 text-center py-6">
+                  <div className="h-14 w-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                  </div>
+                  <p className="font-bold text-green-700 text-lg">Verified!</p>
+                  <p className="text-sm text-muted-foreground">Proceeding to your application...</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </motion.div>
       </div>
     )
@@ -588,16 +1082,19 @@ export default function ApplyPage() {
     const type = selectedType || getMembershipType(formData.membershipType)
     const requiredDocs = type?.requiredDocs.filter((d) => d !== "profile") || []
     const allUploaded = requiredDocs.every((d) => uploads[d]?.file) && uploads.profile?.file
-    const allVerified = requiredDocs.every((d) => uploads[d]?.status === "extracted")
-    const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked")
+    const allVerified = requiredDocs.every((d) => uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded")
+    const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked" || u.status === "rejected")
     const isProcessing = Object.values(uploads).some((u) => u.status === "processing")
+    const hasPendingReview = Object.values(uploads).some((u) => u.status === "uploaded")
     const canContinue = allUploaded && allVerified && !hasBlockedDoc && !isProcessing
 
     return (
+      <div>
+      <ProgressBar currentPhase={phase} />
       <motion.div
         initial={{ opacity: 0, x: 50 }}
         animate={{ opacity: 1, x: 0 }}
-        className="max-w-2xl mx-auto space-y-6"
+        className="max-w-2xl mx-auto px-4 pt-4 space-y-6"
       >
         <button
           onClick={() => setPhase("landing")}
@@ -608,8 +1105,8 @@ export default function ApplyPage() {
 
         <div className="text-center">
           <Badge className="mb-3">{type?.name}</Badge>
-          <h2 className="text-2xl font-bold">Upload Your Documents</h2>
-          <p className="text-muted-foreground text-sm mt-1">
+          <h2 className="text-2xl font-bold tracking-tight">Upload Your Documents</h2>
+          <p className="text-muted-foreground text-sm mt-1.5">
             Our AI will read your documents and fill the application for you
           </p>
         </div>
@@ -646,10 +1143,25 @@ export default function ApplyPage() {
                     />
                   </label>
                 ) : (
-                  <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4">
+                  <div className={`rounded-xl border-2 p-4 ${
+                    upload.status === "extracted" ? "border-green-400 bg-green-50" :
+                    upload.status === "rejected" || upload.status === "blocked" ? "border-red-400 bg-red-50" :
+                    upload.status === "uploaded" ? "border-amber-300 bg-amber-50" :
+                    "border-primary/30 bg-primary/5"
+                  }`}>
                     <div className="flex items-start gap-3">
-                      <div className="h-16 w-16 rounded-lg border bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                        {upload.file?.type?.startsWith("image/") ? (
+                      <div className={`h-16 w-16 rounded-lg border flex items-center justify-center shrink-0 overflow-hidden ${
+                        upload.status === "extracted" ? "border-green-300 bg-green-100" :
+                        upload.status === "rejected" || upload.status === "blocked" ? "border-red-300 bg-red-100" :
+                        "border-border bg-muted"
+                      }`}>
+                        {upload.status === "rejected" || upload.status === "blocked" ? (
+                          <AlertCircle className="h-8 w-8 text-red-500" />
+                        ) : upload.status === "extracted" ? (
+                          <CheckCircle className="h-8 w-8 text-green-500" />
+                        ) : upload.status === "uploaded" ? (
+                          <Clock className="h-8 w-8 text-amber-500" />
+                        ) : upload.file?.type?.startsWith("image/") ? (
                           <img src={upload.preview} alt={label} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="flex items-center justify-center h-full w-full"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/></svg></div>' }} />
                         ) : (
                           <FileCheck className="h-6 w-6 text-primary" />
@@ -670,35 +1182,76 @@ export default function ApplyPage() {
                         )}
                         {upload.status === "extracted" && (
                           <div className="mt-2">
-                            <div className="flex items-center gap-1 text-sm text-success mb-1">
-                              <Sparkles className="h-3 w-3" />
-                              <span className="font-medium">{upload.message || "Document verified"}</span>
+                            <div className="flex items-center gap-1.5 text-sm font-semibold text-green-700 mb-1.5">
+                              <Sparkles className="h-4 w-4" />
+                              <span>Extracted {Object.keys(upload.extracted || {}).filter(k => k !== "is_valid_medical_document" && upload.extracted[k]).length} fields</span>
                             </div>
                             <div className="flex flex-wrap gap-1">
-                              {Object.entries(upload.extracted || {}).filter(([k, v]) => v && k !== "is_valid_medical_document").map(([key, val]) => (
-                                <span key={key} className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full">
+                              {Object.entries(upload.extracted || {}).filter(([k, v]) => v && k !== "is_valid_medical_document" && k !== "rejection_reason").map(([key, val]) => (
+                                <span key={key} className="text-xs bg-green-100 text-green-800 border border-green-200 px-2 py-0.5 rounded-full">
                                   {key}: {String(val).slice(0, 40)}
                                 </span>
                               ))}
                             </div>
                             {upload.eligibility?.eligible && (
-                              <div className="flex items-center gap-1 text-xs text-success mt-1">
-                                <CheckCircle className="h-3 w-3" />
+                              <div className="flex items-center gap-1.5 text-xs font-medium text-green-700 mt-2 bg-green-100 border border-green-200 rounded-md px-2 py-1 w-fit">
+                                <CheckCircle className="h-3.5 w-3.5" />
                                 <span>{upload.eligibility.reason}</span>
                               </div>
                             )}
                           </div>
                         )}
-                        {upload.status === "blocked" && (
-                          <div className="mt-2 p-2 bg-destructive/10 rounded text-sm text-destructive">
-                            <div className="flex items-center gap-1 font-medium">
-                              <AlertCircle className="h-4 w-4" /> Not Eligible
+                        {upload.status === "rejected" && (
+                          <div className="mt-2">
+                            <div className="flex items-center gap-2 font-bold text-red-700 text-base">
+                              <AlertCircle className="h-5 w-5" /> Document Not Recognized
                             </div>
-                            <p className="text-xs mt-1">{upload.message}</p>
+                            <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
+                            <div className="flex gap-2 mt-3">
+                              <Button variant="outline" size="sm" onClick={() => handleRemoveFile(docType)} className="text-xs">
+                                <X className="h-3 w-3 mr-1" /> Remove & Re-upload
+                              </Button>
+                              <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => {
+                                setUploads((prev) => ({
+                                  ...prev,
+                                  [docType]: { ...prev[docType], status: "uploaded", message: "Pending manual review by admin team" },
+                                }))
+                                toast.info("Document will be reviewed manually by our admin team")
+                              }}>
+                                <Eye className="h-3 w-3 mr-1" /> Request Admin Review
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {upload.status === "blocked" && (
+                          <div className="mt-2">
+                            <div className="flex items-center gap-2 font-bold text-red-700 text-base">
+                              <AlertCircle className="h-5 w-5" /> Not Eligible
+                            </div>
+                            <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
+                            <div className="flex gap-2 mt-3">
+                              <Button variant="outline" size="sm" onClick={() => handleRemoveFile(docType)} className="text-xs">
+                                <X className="h-3 w-3 mr-1" /> Remove & Re-upload
+                              </Button>
+                              <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => {
+                                setUploads((prev) => ({
+                                  ...prev,
+                                  [docType]: { ...prev[docType], status: "uploaded", message: "Pending manual review — degree eligibility to be verified by admin" },
+                                }))
+                                toast.info("Your eligibility will be reviewed manually by our admin team")
+                              }}>
+                                <Eye className="h-3 w-3 mr-1" /> Request Admin Review
+                              </Button>
+                            </div>
                           </div>
                         )}
                         {upload.status === "uploaded" && (
-                          <p className="text-xs text-warning mt-1">Uploaded — waiting for verification</p>
+                          <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-center gap-1.5 text-amber-700 text-sm font-medium">
+                              <Clock className="h-4 w-4" /> Pending Admin Review
+                            </div>
+                            <p className="text-xs text-amber-600 mt-1">{upload.message || "This document will be manually verified by our admin team."}</p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -782,36 +1335,65 @@ export default function ApplyPage() {
           </motion.div>
         </div>
 
+        {/* Live form completion summary */}
+        {Object.keys(uploads).filter(k => uploads[k]?.status === "extracted").length > 0 && (
+          <Card className="border-green-200 bg-green-50/50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-2.5">
+                <Sparkles className="h-4 w-4 text-green-600" />
+                <p className="text-sm font-semibold text-green-700">AI has auto-filled</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {formData.firstName && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full font-medium">{formData.salutation} {formData.firstName} {formData.lastName}</span>}
+                {formData.dob && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">DOB: {formData.dob}</span>}
+                {formData.gender && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">{formData.gender}</span>}
+                {formData.mciCouncilNumber && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">MCI: {formData.mciCouncilNumber}</span>}
+                {formData.eduPostgradDegree && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">{formData.eduPostgradDegree}</span>}
+                {formData.eduPostgradCollege && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">{formData.eduPostgradCollege}</span>}
+                {formData.state && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">{formData.state}</span>}
+                {formData.asiMembershipNo && <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full">ASI: {formData.asiMembershipNo}</span>}
+              </div>
+              {(!formData.dob || !formData.gender) && (
+                <p className="text-xs text-amber-700 mt-3 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5">You&apos;ll need to fill: {[!formData.dob && "Date of Birth", !formData.gender && "Gender"].filter(Boolean).join(", ")} on the next page</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {hasPendingReview && (
+          <div className="text-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="font-medium">Some documents will be manually reviewed by our admin team.</p>
+            <p className="text-xs mt-1">You can still submit your application. Processing may take a little longer.</p>
+          </div>
+        )}
+
         <Button
-          className="w-full h-12 text-base gap-2"
+          className="w-full h-12 text-base font-semibold gap-2 shadow-sm"
           onClick={handleProcessAll}
           disabled={!canContinue || processing}
         >
           {processing ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin" /> AI is processing your application...
-            </>
+            <><Loader2 className="h-5 w-5 animate-spin" /> AI is processing your application...</>
           ) : (
-            <>
-              <Sparkles className="h-5 w-5" /> Continue to Review
-            </>
+            <><Sparkles className="h-5 w-5" /> Continue to Review</>
           )}
         </Button>
 
         {!canContinue && (
-          <p className="text-center text-xs text-muted-foreground">
+          <div className="text-center text-sm text-muted-foreground bg-muted/60 border rounded-xl p-4">
             {hasBlockedDoc
-              ? "One or more documents failed eligibility check. Please upload valid documents."
+              ? <span className="text-red-600 font-medium">Remove rejected documents and upload valid ones to proceed</span>
               : isProcessing
-              ? "Please wait while we verify your documents..."
+              ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> AI is verifying your documents...</span>
               : !allUploaded
-              ? "Upload all required documents to continue"
+              ? <span>Still needed: <strong>{requiredDocs.filter(d => !uploads[d]?.file).map(d => DOC_LABELS[d as DocType]).join(", ")}{!uploads.profile?.file ? ", Profile Photo" : ""}</strong></span>
               : !allVerified
-              ? "All documents must be verified by AI before you can continue"
-              : "Upload all required documents to continue"}
-          </p>
+              ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Waiting for AI to verify all documents...</span>
+              : <span>Upload all required documents to continue</span>}
+          </div>
         )}
       </motion.div>
+      </div>
     )
   }
 
@@ -820,259 +1402,405 @@ export default function ApplyPage() {
     const type = selectedType || getMembershipType(formData.membershipType)!
     const fee = calculateFee(type!)
 
-    const FieldInput = ({ field, label, required }: { field: string; label: string; required?: boolean }) => (
-      <div>
-        <Label className="text-xs">
-          {label} {required && <span className="text-destructive">*</span>}
-        </Label>
-        <Input
-          value={(formData as any)[field] || ""}
-          onChange={(e) => updateField(field, e.target.value)}
-          className={errors[field] ? "border-destructive" : ""}
-        />
-        {errors[field] && <p className="text-xs text-destructive mt-0.5">{errors[field]}</p>}
-      </div>
-    )
+    // Smart placeholders for fields
+    const PLACEHOLDERS: Record<string, string> = {
+      firstName: "e.g. Rajesh",
+      lastName: "e.g. Kumar",
+      fatherName: "e.g. Suresh Kumar",
+      mciCouncilNumber: "e.g. 2021055120",
+      asiMembershipNo: "e.g. L-12345",
+      imrRegNo: "e.g. 123456",
+      eduPostgradDegree: "e.g. MS General Surgery",
+      eduPostgradCollege: "Start typing college name...",
+      eduPostgradUniversity: "e.g. MUHS Nashik",
+      eduUndergradCollege: "Start typing college name...",
+      eduUndergradUniversity: "e.g. RGUHS Bangalore",
+      streetLine1: "House/Building, Street",
+      streetLine2: "Area, Landmark",
+      city: "e.g. Mumbai",
+      pin: "e.g. 411001",
+    }
 
-    const SelectInput = ({ field, label, options, required }: { field: string; label: string; options: readonly string[]; required?: boolean }) => (
-      <div>
-        <Label className="text-xs">
-          {label} {required && <span className="text-destructive">*</span>}
-        </Label>
-        <select
-          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${errors[field] ? "border-destructive" : "border-input"}`}
-          value={(formData as any)[field] || ""}
-          onChange={(e) => updateField(field, e.target.value)}
-        >
-          <option value="">Select...</option>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-        {errors[field] && <p className="text-xs text-destructive mt-0.5">{errors[field]}</p>}
-      </div>
-    )
+    const FieldInput = ({ field, label, required }: { field: string; label: string; required?: boolean }) => {
+      const val = (formData as any)[field] || ""
+      const hasError = errors[field]
+      const isFilled = required && val
+      const helpText = FIELD_HELP[field]
+      return (
+        <div>
+          <Label className="text-xs flex items-center gap-1">
+            {label}
+            {required && <span className="text-destructive">*</span>}
+            {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
+            {helpText && <FieldHelp text={helpText} />}
+          </Label>
+          <Input
+            value={val}
+            onChange={(e) => updateField(field, e.target.value)}
+            placeholder={PLACEHOLDERS[field] || ""}
+            className={hasError ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : ""}
+          />
+          {hasError && <p className="text-xs text-destructive mt-0.5">{hasError}</p>}
+        </div>
+      )
+    }
 
-    const Section = ({ id, title, icon: Icon, children }: { id: string; title: string; icon: React.ElementType; children: React.ReactNode }) => (
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="overflow-hidden">
-          <button
-            type="button"
-            className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors"
-            onClick={() => setEditSection(editSection === id ? null : id)}
+    const SelectInput = ({ field, label, options, required }: { field: string; label: string; options: readonly string[]; required?: boolean }) => {
+      const val = (formData as any)[field] || ""
+      const hasError = errors[field]
+      const isFilled = required && val
+      const helpText = FIELD_HELP[field]
+      return (
+        <div>
+          <Label className="text-xs flex items-center gap-1">
+            {label}
+            {required && <span className="text-destructive">*</span>}
+            {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
+            {helpText && <FieldHelp text={helpText} />}
+          </Label>
+          <select
+            className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${hasError ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
+            value={val}
+            onChange={(e) => updateField(field, e.target.value)}
           >
-            <div className="flex items-center gap-2">
-              <Icon className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold text-sm">{title}</h3>
-            </div>
-            <ChevronRight className={`h-4 w-4 transition-transform ${editSection === id ? "rotate-90" : ""}`} />
-          </button>
-          <AnimatePresence>
-            {editSection === id && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="p-4 pt-0 space-y-3 border-t">
-                  {children}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {editSection !== id && (
-            <div className="px-4 pb-3">
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(formData)
-                  .filter(([key, val]) => {
-                    if (!val || typeof val !== "string") return false
-                    if (id === "personal") return ["firstName", "lastName", "email", "mobile", "city", "state"].includes(key)
-                    if (id === "education") return ["eduPostgradDegree", "eduPostgradCollege", "eduUndergradCollege"].includes(key)
-                    if (id === "registration") return ["mciCouncilNumber", "asiMembershipNo"].includes(key)
-                    return false
-                  })
-                  .map(([key, val]) => (
-                    <span key={key} className="text-xs bg-muted px-2 py-1 rounded-md">
-                      {val as string}
-                    </span>
-                  ))}
-              </div>
-            </div>
-          )}
-        </Card>
-      </motion.div>
-    )
+            <option value="">Select...</option>
+            {options.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {hasError && <p className="text-xs text-destructive mt-0.5">{hasError}</p>}
+        </div>
+      )
+    }
+
+    // Collect ALL missing required fields into one flat list
+    const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
+    const missingCount = Object.keys(allErrors).length
+
+    // Track all required fields for progress
+    const requiredFields: { key: string; label: string }[] = [
+      { key: "firstName", label: "First Name" },
+      { key: "dob", label: "Date of Birth" },
+      { key: "gender", label: "Gender" },
+      { key: "email", label: "Email" },
+      { key: "mobile", label: "Mobile" },
+    ]
+    if (type?.requiresPG) {
+      requiredFields.push(
+        { key: "eduPostgradDegree", label: "PG Degree" },
+        { key: "eduPostgradCollege", label: "PG College" },
+        { key: "eduPostgradUniversity", label: "PG University" },
+        { key: "eduPostgradYear", label: "PG Year" },
+      )
+    }
+    if (type?.id !== "ILM") {
+      requiredFields.push({ key: "mciCouncilNumber", label: "MCI Number" })
+    }
+    if (type?.requiresASI) {
+      requiredFields.push({ key: "asiMembershipNo", label: "ASI Number" })
+    }
+    const filledCount = requiredFields.filter(f => (formData as any)[f.key]).length
+    const totalRequired = requiredFields.length
+    const pct = Math.round((filledCount / totalRequired) * 100)
+
+    // Filled data summary
+    const filledSummary = [
+      formData.salutation && formData.firstName ? `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim() : null,
+      formData.email,
+      formData.mobile ? `+91 ${formData.mobile}` : null,
+      formData.dob,
+      formData.gender,
+      formData.eduPostgradDegree,
+      formData.eduPostgradCollege,
+      formData.mciCouncilNumber ? `MCI: ${formData.mciCouncilNumber}` : null,
+      formData.city && formData.state ? `${formData.city}, ${formData.state}` : formData.state,
+    ].filter(Boolean)
 
     return (
+      <div>
+      <ProgressBar currentPhase={phase} />
       <motion.div
         initial={{ opacity: 0, x: 50 }}
         animate={{ opacity: 1, x: 0 }}
-        className="max-w-2xl mx-auto space-y-4"
+        className="max-w-2xl mx-auto px-4 pt-4 space-y-4"
       >
-        <button
-          onClick={() => setPhase("upload")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
+        <button onClick={() => setPhase("upload")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back to Upload
         </button>
 
-        <div className="text-center mb-2">
-          <div className="inline-flex items-center gap-2 text-success text-sm mb-2">
-            <CheckCircle className="h-4 w-4" /> AI extracted your details
-          </div>
-          <h2 className="text-2xl font-bold">Review Your Application</h2>
-          <p className="text-muted-foreground text-sm">
-            Click any section to edit. Fields marked * are required.
-          </p>
-        </div>
-
-        {/* Membership Type */}
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-                <Award className="h-5 w-5 text-primary-foreground" />
+        {/* Header with progress */}
+        <Card className={pct === 100 ? "border-green-400 bg-green-50/80" : "border-amber-300 bg-amber-50/80"}>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {pct === 100 ? <CheckCircle className="h-5 w-5 text-green-600" /> : <Sparkles className="h-5 w-5 text-amber-600" />}
+                <span className="font-bold text-base">{pct === 100 ? "Ready to Submit!" : `${missingCount} field${missingCount !== 1 ? "s" : ""} needed`}</span>
               </div>
-              <div>
-                <p className="font-semibold">{type?.name}</p>
-                <p className="text-xs text-muted-foreground">{type?.eligibility}</p>
-              </div>
+              <span className="text-lg font-bold">{pct}%</span>
             </div>
-            <p className="text-lg font-bold text-primary">{fee.currency}{fee.totalFee.toLocaleString()}</p>
+            <div className="w-full bg-white/60 rounded-full h-2.5">
+              <div className={`h-2.5 rounded-full transition-all duration-500 ${pct === 100 ? "bg-green-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+            </div>
+            {filledSummary.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {filledSummary.map((s, i) => (
+                  <span key={i} className="text-xs bg-white/80 text-foreground px-2.5 py-0.5 rounded-full border">{s}</span>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        <Section id="personal" title="Personal Details" icon={Users}>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <Label className="text-xs">Salutation</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={formData.salutation}
-                onChange={(e) => updateField("salutation", e.target.value)}
-              >
-                {["Dr.", "Prof.", "Mr.", "Mrs.", "Ms."].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <FieldInput field="firstName" label="First Name" required />
-            <FieldInput field="lastName" label="Last Name" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FieldInput field="dob" label="Date of Birth" required />
-            <SelectInput field="gender" label="Gender" options={["Male", "Female", "Other"]} required />
-            <FieldInput field="fatherName" label="Father's Name" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldInput field="email" label="Email" required />
-            <FieldInput field="mobile" label="Mobile (10 digits)" required />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldInput field="streetLine1" label="Address Line 1" required />
-            <FieldInput field="streetLine2" label="Address Line 2" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <FieldInput field="city" label="City" required />
-            <SelectInput field="state" label="State" options={INDIAN_STATES} required />
-            <FieldInput field="pin" label="PIN Code" required />
-            <div>
-              <Label className="text-xs">Zone</Label>
-              <Input value={formData.zone} disabled className="bg-muted" />
-            </div>
-          </div>
-        </Section>
-
-        <Section id="education" title="Education" icon={GraduationCap}>
-          {type?.requiresMBBS && (
-            <>
-              <p className="text-xs font-medium text-muted-foreground">MBBS / Undergraduate</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FieldInput field="eduUndergradCollege" label="College" required />
-                <FieldInput field="eduUndergradUniversity" label="University" required />
-              </div>
-              <FieldInput field="eduUndergradYear" label="Year" required />
-            </>
-          )}
-          {type?.requiresPG && (
-            <>
-              <p className="text-xs font-medium text-muted-foreground mt-2">Postgraduate</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FieldInput field="eduPostgradDegree" label="Degree" required />
-                <FieldInput field="eduPostgradCollege" label="College" required />
+        {/* Missing fields - compact inline form */}
+        {missingCount > 0 && (
+          <Card className="border-amber-200 shadow-sm">
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                <p className="text-sm font-semibold text-amber-800">Fill these to complete your application</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <FieldInput field="eduPostgradUniversity" label="University" required />
-                <FieldInput field="eduPostgradYear" label="Year" required />
+                {!formData.firstName && <FieldInput field="firstName" label="First Name" required />}
+                {!formData.dob && (
+                  <div>
+                    <Label className="text-xs">Date of Birth <span className="text-destructive">*</span></Label>
+                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+                  </div>
+                )}
+                {!formData.gender && (
+                  <div>
+                    <Label className="text-xs">Gender <span className="text-destructive">*</span></Label>
+                    <div className="flex gap-1.5">
+                      {["Male", "Female", "Other"].map((g) => (
+                        <button key={g} type="button" onClick={() => updateField("gender", g)}
+                          className={`flex-1 h-9 rounded-md border text-xs font-medium transition-colors ${formData.gender === g ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input hover:bg-accent"}`}
+                        >{g}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {!formData.eduPostgradDegree && type?.requiresPG && (
+                  <SelectInput field="eduPostgradDegree" label="PG Degree" options={[
+                    "MS General Surgery", "MS Obstetrics & Gynaecology",
+                    "MCh Surgical Oncology", "MCh Urology", "MCh Cardiothoracic Surgery", "MCh Neurosurgery", "MCh Plastic Surgery", "MCh GI Surgery",
+                    "DNB General Surgery", "DNB Obstetrics & Gynaecology", "DNB Surgical Oncology", "DNB Urology",
+                    "FRCS", "MRCS",
+                  ]} required />
+                )}
+                {!formData.eduPostgradCollege && type?.requiresPG && (
+                  <div>
+                    <Label className="text-xs">PG College <span className="text-destructive">*</span></Label>
+                    <Autocomplete
+                      value={formData.eduPostgradCollege}
+                      onChange={(v) => {
+                        updateField("eduPostgradCollege", v)
+                        const match = COLLEGE_OPTIONS.find(c => c.label === v)
+                        if (match) {
+                          updateField("eduPostgradUniversity", match.university)
+                          if (!formData.state) { updateField("state", match.state); updateField("zone", STATE_TO_ZONE[match.state] || "") }
+                        }
+                      }}
+                      options={COLLEGE_OPTIONS}
+                      placeholder="Type college name..."
+                    />
+                  </div>
+                )}
+                {!formData.eduPostgradUniversity && type?.requiresPG && <FieldInput field="eduPostgradUniversity" label="PG University" required />}
+                {!formData.eduPostgradYear && type?.requiresPG && <SelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required />}
+                {!formData.mciCouncilNumber && formData.membershipType !== "ILM" && <FieldInput field="mciCouncilNumber" label="MCI/Council Number" required />}
+                {!formData.asiMembershipNo && type?.requiresASI && <FieldInput field="asiMembershipNo" label="ASI Membership No" required />}
               </div>
-            </>
-          )}
-          <p className="text-xs font-medium text-muted-foreground mt-2">Super Specialty (Optional)</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldInput field="eduSuperspecialtyDegree" label="Degree" />
-            <FieldInput field="eduSuperspecialtyCollege" label="College" />
-          </div>
-        </Section>
+            </CardContent>
+          </Card>
+        )}
 
-        <Section id="registration" title="Registration & Memberships" icon={Stethoscope}>
-          {formData.membershipType !== "ILM" && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldInput field="mciCouncilNumber" label="MCI/State Council Number" required />
-              <SelectInput field="mciCouncilState" label="Council State" options={INDIAN_STATES} required />
-            </div>
-          )}
-          {type?.requiresASI && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FieldInput field="asiMembershipNo" label="ASI Membership Number" required />
-              <SelectInput field="asiState" label="ASI State" options={INDIAN_STATES} />
-            </div>
-          )}
-          <FieldInput field="imrRegNo" label="IMR Registration Number (Optional)" />
-          <div className="pt-2">
-            <p className="text-xs font-medium text-muted-foreground mb-2">International Organisations</p>
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={formData.intlOrgSAGES} onChange={(e) => updateField("intlOrgSAGES", e.target.checked as any)} className="rounded" />
-                SAGES
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={formData.intlOrgELSA} onChange={(e) => updateField("intlOrgELSA", e.target.checked as any)} className="rounded" />
-                ELSA
-              </label>
-              <FieldInput field="intlOrgOther" label="Other (specify)" />
-            </div>
-          </div>
-        </Section>
-
-        <Section id="clinic" title="Clinic / Practice Details" icon={Stethoscope}>
-          <FieldInput field="clinicName" label="Clinic / Hospital Name" />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldInput field="clinicStreetLine1" label="Address Line 1" />
-            <FieldInput field="clinicStreetLine2" label="Address Line 2" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FieldInput field="clinicCity" label="City" />
-            <SelectInput field="clinicState" label="State" options={INDIAN_STATES} />
-            <FieldInput field="clinicPin" label="PIN Code" />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex gap-2">
-              <div className="w-24">
-                <Label className="text-xs">STD Code</Label>
-                <Input value={formData.stdCode} onChange={(e) => updateField("stdCode", e.target.value)} placeholder="STD" />
+        {/* Membership Type + Fee */}
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <Award className="h-5 w-5 text-primary-foreground" />
               </div>
-              <div className="flex-1">
-                <Label className="text-xs">Landline</Label>
-                <Input value={formData.landline} onChange={(e) => updateField("landline", e.target.value)} placeholder="Landline number" />
+              <div className="min-w-0">
+                <p className="font-semibold truncate">{type?.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{type?.eligibility}</p>
               </div>
             </div>
-            <div className="flex items-end pb-1">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={formData.useAsMailingAddress} onChange={(e) => setFormData(prev => ({ ...prev, useAsMailingAddress: e.target.checked }))} className="rounded" />
-                Use as mailing address
-              </label>
-            </div>
-          </div>
-        </Section>
+            <p className="text-xl font-bold text-primary shrink-0">{fee.currency}{fee.totalFee.toLocaleString()}</p>
+          </CardContent>
+        </Card>
 
-        <Section id="experience" title="Work Experience" icon={GraduationCap}>
+        {/* All sections - collapsible for editing */}
+        <Card className="shadow-sm overflow-visible">
+          <div className="divide-y">
+            {/* Personal */}
+            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "personal" ? null : "personal")}>
+              <div className="flex items-center gap-2.5 text-sm font-semibold">
+                <Users className="h-4 w-4 text-muted-foreground" /> Personal Details
+                {!allErrors.firstName && !allErrors.dob && !allErrors.gender ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
+              </div>
+              <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${editSection === "personal" ? "rotate-90" : ""}`} />
+            </button>
+            {editSection === "personal" && (
+              <div className="p-4 space-y-3 bg-muted/30">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <SelectInput field="salutation" label="Salutation" options={["Dr.", "Prof.", "Mr.", "Mrs.", "Ms."]} />
+                  <FieldInput field="firstName" label="First Name" required />
+                  <FieldInput field="lastName" label="Last Name" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs">
+                      Date of Birth <span className="text-destructive">*</span>
+                      {calcAge(formData.dob) && <span className="text-muted-foreground ml-1">({calcAge(formData.dob)} yrs)</span>}
+                    </Label>
+                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Gender <span className="text-destructive">*</span></Label>
+                    <div className="flex gap-1.5 mt-0.5">
+                      {["Male", "Female", "Other"].map((g) => (
+                        <button key={g} type="button" onClick={() => updateField("gender", g)}
+                          className={`flex-1 h-9 rounded-md border text-xs font-medium ${formData.gender === g ? "bg-primary text-primary-foreground" : "border-input hover:bg-accent"}`}
+                        >{g}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <FieldInput field="fatherName" label="Father's Name" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label className="text-xs">Email {emailVerified && <span className="text-green-600">✓ Verified</span>}</Label>
+                    <Input value={formData.email} readOnly className="bg-muted" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Mobile</Label>
+                    <Input value={formData.mobile} readOnly className="bg-muted" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground font-medium">Address — enter PIN to auto-fill</p>
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <div>
+                    <Label className="text-xs">PIN Code</Label>
+                    <Input value={formData.pin} onChange={async (e) => {
+                      const pin = e.target.value.replace(/\D/g, "").slice(0, 6); updateField("pin", pin)
+                      if (pin.length === 6) { try { const r = await fetch(`/api/pincode?pin=${pin}`); const d = await r.json(); if (d.status) { if (d.city) updateField("city", d.city); if (d.state) { const m = INDIAN_STATES.find(s => s.toLowerCase() === d.state.toLowerCase()); if (m) { updateField("state", m); updateField("zone", STATE_TO_ZONE[m] || "") } } } } catch {} }
+                    }} placeholder="6-digit" maxLength={6} />
+                  </div>
+                  <FieldInput field="city" label="City" />
+                  <SelectInput field="state" label="State" options={INDIAN_STATES} />
+                  <div><Label className="text-xs">Zone</Label><Input value={formData.zone} disabled className="bg-muted" /></div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FieldInput field="streetLine1" label="Street Line 1" />
+                  <FieldInput field="streetLine2" label="Street Line 2" />
+                </div>
+              </div>
+            )}
+
+            {/* Education */}
+            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "education" ? null : "education")}>
+              <div className="flex items-center gap-2.5 text-sm font-semibold">
+                <GraduationCap className="h-4 w-4 text-muted-foreground" /> Education
+                {!allErrors.eduPostgradDegree && !allErrors.eduPostgradCollege && !allErrors.eduPostgradUniversity && !allErrors.eduPostgradYear ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
+              </div>
+              <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${editSection === "education" ? "rotate-90" : ""}`} />
+            </button>
+            {editSection === "education" && (
+              <div className="p-4 space-y-3 bg-muted/30">
+                {type?.requiresPG && (
+                  <>
+                    <p className="text-xs font-medium text-muted-foreground">Postgraduate</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <FieldInput field="eduPostgradDegree" label="Degree" required />
+                      <div>
+                        <Label className="text-xs">College <span className="text-destructive">*</span></Label>
+                        <Autocomplete
+                          value={formData.eduPostgradCollege}
+                          onChange={(v) => {
+                            updateField("eduPostgradCollege", v)
+                            const match = COLLEGE_OPTIONS.find(c => c.label === v)
+                            if (match) {
+                              updateField("eduPostgradUniversity", match.university)
+                              if (!formData.state) { updateField("state", match.state); updateField("zone", STATE_TO_ZONE[match.state] || "") }
+                            }
+                          }}
+                          options={COLLEGE_OPTIONS}
+                          placeholder="Type college name..."
+                        />
+                      </div>
+                      <FieldInput field="eduPostgradUniversity" label="University" required />
+                      <SelectInput field="eduPostgradYear" label="Year" options={YEAR_OPTIONS} required />
+                    </div>
+                  </>
+                )}
+                {type?.requiresMBBS && (
+                  <>
+                    <p className="text-xs font-medium text-muted-foreground">MBBS / Undergraduate</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-xs">College <span className="text-destructive">*</span></Label>
+                        <Autocomplete
+                          value={formData.eduUndergradCollege}
+                          onChange={(v) => {
+                            updateField("eduUndergradCollege", v)
+                            const match = COLLEGE_OPTIONS.find(c => c.label === v)
+                            if (match) updateField("eduUndergradUniversity", match.university)
+                          }}
+                          options={COLLEGE_OPTIONS}
+                          placeholder="Type college name..."
+                        />
+                      </div>
+                      <FieldInput field="eduUndergradUniversity" label="University" required />
+                      <SelectInput field="eduUndergradYear" label="Year" options={YEAR_OPTIONS} required />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Registration */}
+            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "registration" ? null : "registration")}>
+              <div className="flex items-center gap-2.5 text-sm font-semibold">
+                <Stethoscope className="h-4 w-4 text-muted-foreground" /> Registration
+                {!allErrors.mciCouncilNumber && !allErrors.asiMembershipNo ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
+              </div>
+              <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${editSection === "registration" ? "rotate-90" : ""}`} />
+            </button>
+            {editSection === "registration" && (
+              <div className="p-4 space-y-3 bg-muted/30">
+                {formData.membershipType !== "ILM" && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label className="text-xs">MCI/Council Number <span className="text-destructive">*</span><FieldHelp text={FIELD_HELP.mciCouncilNumber} /></Label>
+                      <Input value={formData.mciCouncilNumber} onChange={(e) => updateField("mciCouncilNumber", e.target.value)} className={errors.mciCouncilNumber ? "border-destructive" : ""} />
+                    </div>
+                    <SelectInput field="mciCouncilState" label="Council State" options={INDIAN_STATES} required />
+                  </div>
+                )}
+                {type?.requiresASI && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label className="text-xs">ASI Membership No <span className="text-destructive">*</span><FieldHelp text={FIELD_HELP.asiMembershipNo} /></Label>
+                      <Input value={formData.asiMembershipNo} onChange={(e) => updateField("asiMembershipNo", e.target.value)} className={errors.asiMembershipNo ? "border-destructive" : ""} />
+                    </div>
+                    <SelectInput field="asiState" label="ASI State" options={INDIAN_STATES} />
+                  </div>
+                )}
+                <FieldInput field="imrRegNo" label="IMR Registration Number (Optional)" />
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Work Experience - kept as before but below */}
+        <Card>
+          <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "experience" ? null : "experience")}>
+            <div className="flex items-center gap-2.5 text-sm font-semibold">
+              <GraduationCap className="h-4 w-4 text-muted-foreground" /> Work Experience <span className="text-xs font-normal text-muted-foreground">(Optional)</span>
+            </div>
+            <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${editSection === "experience" ? "rotate-90" : ""}`} />
+          </button>
+          {editSection === "experience" && (
+            <div className="p-4 space-y-3 bg-muted/30">
           {formData.experience.map((exp, i) => (
             <div key={i} className="border rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -1121,7 +1849,9 @@ export default function ApplyPage() {
           >
             + Add Experience
           </Button>
-        </Section>
+            </div>
+          )}
+        </Card>
 
         {/* Documents Summary */}
         <Card>
@@ -1154,56 +1884,142 @@ export default function ApplyPage() {
         </Card>
 
         {/* Fee */}
-        <Card className="bg-muted/30">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span>Membership Fee</span>
-              <span>{fee.currency}{fee.baseFee.toLocaleString()}</span>
+        <Card className="bg-muted/20 border">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between text-sm py-1">
+              <span className="text-muted-foreground">Membership Fee</span>
+              <span className="font-medium">{fee.currency}{fee.baseFee.toLocaleString()}</span>
             </div>
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Processing ({type?.processingFeePercent}%)</span>
-              <span>{fee.currency}{fee.processingFee.toLocaleString()}</span>
-            </div>
-            <div className="flex items-center justify-between font-bold text-lg border-t mt-2 pt-2">
+            {fee.processingFee > 0 && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground py-1">
+                <span>Processing Fee (incl. GST)</span>
+                <span>{fee.currency}{fee.processingFee.toLocaleString()}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between font-bold text-lg border-t mt-3 pt-3">
               <span>Total</span>
               <span className="text-primary">{fee.currency}{fee.totalFee.toLocaleString()}</span>
             </div>
           </CardContent>
         </Card>
 
-        <Button className="w-full h-12 text-base gap-2" onClick={handleSubmit}>
-          <Send className="h-5 w-5" /> Submit Application
+        {/* Terms & Conditions */}
+        <label className={`flex items-start gap-3 cursor-pointer p-4 rounded-xl border-2 transition-colors ${termsAccepted ? "border-primary/30 bg-primary/5" : "border-border hover:bg-accent/50"}`}>
+          <input
+            type="checkbox"
+            checked={termsAccepted}
+            onChange={(e) => setTermsAccepted(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <span className="text-sm text-muted-foreground leading-relaxed">
+            I confirm that all information provided is accurate. I agree to the{" "}
+            <a href="https://collegeofmas.org.in/terms" target="_blank" rel="noopener noreferrer" className="text-primary font-medium underline underline-offset-2 hover:text-primary/80">
+              terms and conditions
+            </a>{" "}
+            of AMASI membership and authorize verification of my documents.
+          </span>
+        </label>
+
+        {/* Show what's blocking submission */}
+        {missingCount > 0 && (
+          <div className="text-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <p className="font-semibold">Cannot submit yet — {missingCount} required field{missingCount !== 1 ? "s" : ""} missing</p>
+            <p className="text-xs mt-1.5 text-amber-600">{Object.values(allErrors).join(" &bull; ")}</p>
+          </div>
+        )}
+
+        <Button className="w-full h-13 text-base font-bold gap-2 shadow-md" onClick={handleSubmit} disabled={submitting || !termsAccepted || missingCount > 0}>
+          {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing Payment...</> : <><Send className="h-5 w-5" /> Pay {fee.currency}{fee.totalFee.toLocaleString()} &amp; Submit</>}
         </Button>
       </motion.div>
+      </div>
     )
   }
 
   // ===== SUCCESS =====
   if (phase === "success") {
+    clearSavedForm()
     return (
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md mx-auto text-center py-16"
+        className="max-w-md mx-auto text-center px-4 py-12 sm:py-16"
       >
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: "spring", delay: 0.2 }}
-          className="h-20 w-20 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-6"
+          className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6 ${approvalResult?.approved ? "bg-green-100" : "bg-amber-100"}`}
         >
-          <CheckCircle className="h-10 w-10 text-success" />
+          {approvalResult?.approved ? (
+            <Award className="h-10 w-10 text-green-600" />
+          ) : (
+            <CheckCircle className="h-10 w-10 text-amber-600" />
+          )}
         </motion.div>
-        <h2 className="text-2xl font-bold mb-2">Application Submitted!</h2>
-        <p className="text-muted-foreground mb-6">
-          Your {selectedType?.name} application has been submitted.
-          We&apos;ll send a confirmation to <strong>{formData.email}</strong>.
-        </p>
+        {approvalResult?.approved ? (
+          <>
+            <motion.h2
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-2xl sm:text-3xl font-bold mb-2 text-green-800"
+            >
+              Welcome to AMASI!
+            </motion.h2>
+            <p className="text-muted-foreground mb-5">Your membership has been approved.</p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 mb-6 mx-auto max-w-xs"
+            >
+              <p className="text-xs text-green-600 font-semibold uppercase tracking-wider mb-2">Your AMASI Membership Number</p>
+              <p className="text-4xl sm:text-5xl font-bold text-green-800 font-mono">{approvalResult.amasiNumber}</p>
+              <p className="text-sm text-green-600 mt-3 font-medium">{selectedType?.name}</p>
+            </motion.div>
+            <p className="text-sm text-muted-foreground mb-8">
+              Confirmation and membership details have been sent to <strong className="text-foreground">{formData.email}</strong>.
+            </p>
+          </>
+        ) : (
+          <>
+            <motion.h2
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-2xl sm:text-3xl font-bold mb-2"
+            >
+              Application Submitted!
+            </motion.h2>
+            <p className="text-muted-foreground mb-5">Payment received. Your application is under review.</p>
+            {refNumber && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 mb-6 mx-auto max-w-xs"
+              >
+                <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider mb-2">Reference Number</p>
+                <p className="text-2xl font-bold text-amber-800 font-mono">{refNumber}</p>
+                <div className="flex items-center justify-center gap-1.5 mt-3 text-amber-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span className="text-xs font-medium">Under Admin Review</span>
+                </div>
+              </motion.div>
+            )}
+            <p className="text-sm text-muted-foreground mb-8">
+              Our admin team will review your documents and approve your membership.
+              You&apos;ll receive an email at <strong className="text-foreground">{formData.email}</strong> once approved.
+            </p>
+          </>
+        )}
+
         <div className="space-y-3">
-          <Button variant="outline" className="w-full" onClick={() => window.location.href = "/apply/status"}>
-            Track Application Status
+          <Button className="w-full h-11 font-semibold gap-2" onClick={() => window.location.href = `/apply/status?ref=${refNumber}`}>
+            Track Application Status <ArrowRight className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" className="w-full" onClick={() => window.location.href = "/"}>
+          <Button variant="outline" className="w-full h-11" onClick={() => window.location.href = "/"}>
             Go to Dashboard
           </Button>
         </div>

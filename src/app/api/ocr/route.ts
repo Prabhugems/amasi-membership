@@ -13,43 +13,97 @@ const SURGICAL_DEGREES = [
   "frcs", "mrcs",
 ]
 
+const REJECT_INSTRUCTIONS = `
+REJECT (is_valid_medical_document=false) if this is: bank statement, passbook, financial document, Aadhaar, PAN card, passport, ID card, bill, invoice, receipt, or any non-medical document.
+If rejected: {"is_valid_medical_document":false,"rejection_reason":"brief reason"}
+`
+
 function buildPrompt(docType: string): string {
   if (docType === "mci_certificate") {
-    return `Look at this medical council registration certificate image carefully. Extract the DOCTOR'S personal details.
-
-IMPORTANT: The "name" field must be the doctor's FULL PERSONAL NAME (e.g. "VASUDHA BHARGAVI" or "RAJESH KUMAR SHARMA"). Do NOT include titles like "Dr." or any other text — just the person's name as written on the certificate.
-
-Return ONLY this JSON:
-{"name":"doctor full personal name ONLY","registration_number":"council registration/certificate number","council_state":"state name only e.g. Andhra Pradesh","date_of_birth":"DD-MM-YYYY if visible or null","gender":"Male or Female if visible or null","father_name":"father name without Mr/Shri prefix or null","is_valid_medical_document":true}
-
-If this image is NOT a medical council certificate, return: {"is_valid_medical_document":false}
-Return ONLY valid JSON, nothing else.`
+    return `Analyze this image. Is this a Medical Council Registration Certificate (MCI/NMC/State Medical Council)?
+${REJECT_INSTRUCTIONS}
+If YES — extract EVERY detail you can find. Read the entire document thoroughly.
+Return ONLY this JSON (use null for fields not found, never guess):
+{
+  "is_valid_medical_document": true,
+  "name": "doctor's full personal name WITHOUT Dr./Prof. prefix",
+  "registration_number": "registration/certificate number",
+  "council_state": "state name e.g. Tamil Nadu",
+  "date_of_birth": "YYYY-MM-DD format or null",
+  "gender": "Male or Female or null",
+  "father_name": "father/husband name without Mr/Shri prefix or null",
+  "qualifications": "all qualifications listed e.g. MBBS, MS (General Surgery) or null",
+  "address": "full address if visible or null",
+  "city": "city name or null",
+  "state": "state from address or null",
+  "pin_code": "6-digit PIN if visible or null",
+  "registration_date": "YYYY-MM-DD or null",
+  "valid_upto": "YYYY-MM-DD or null"
+}
+Return ONLY valid JSON.`
   }
   if (docType === "pg_degree_certificate" || docType === "mbbs_degree_certificate") {
-    return `Look at this medical degree certificate image carefully. Extract the details of the person who received the degree.
-
-IMPORTANT: The "name" field must be the person's FULL PERSONAL NAME only (e.g. "VASUDHA BHARGAVI"). Do NOT include "Dr." or any descriptive text.
-
-Return ONLY this JSON:
-{"name":"person full name ONLY","degree":"exact degree name e.g. M.S. (General Surgery) or MBBS","university":"university or board name","college":"college or institution name or null","year_of_passing":"4 digit year e.g. 2023 or null","is_valid_medical_document":true}
-
-If this image is NOT a medical degree certificate, return: {"is_valid_medical_document":false}
-Return ONLY valid JSON, nothing else.`
+    return `Analyze this image. Is this a medical degree certificate (MBBS/MS/MCh/MD/DNB/FRCS/diploma)?
+${REJECT_INSTRUCTIONS}
+If YES — extract EVERY detail. Read thoroughly.
+Return ONLY this JSON (null for fields not found):
+{
+  "is_valid_medical_document": true,
+  "name": "person's full name WITHOUT Dr. prefix",
+  "degree": "exact degree e.g. M.S. (General Surgery) or M.B.B.S.",
+  "university": "university name",
+  "college": "college/institution name or null",
+  "year_of_passing": "4-digit year e.g. 2023 or null",
+  "date_of_birth": "YYYY-MM-DD or null",
+  "father_name": "father name or null",
+  "gender": "Male or Female or null",
+  "roll_number": "roll/exam number or null",
+  "date_of_convocation": "YYYY-MM-DD or null"
+}
+Return ONLY valid JSON.`
   }
   if (docType === "asi_member_certificate") {
-    return `This is an ASI membership certificate. Extract as JSON:
-{"name":"full name","asi_membership_number":"membership number","is_valid_medical_document":true}
-If NOT an ASI certificate, set is_valid_medical_document to false. Return ONLY JSON.`
+    return `Analyze this image. Is this an ASI (Association of Surgeons of India) membership certificate?
+${REJECT_INSTRUCTIONS}
+If YES:
+{
+  "is_valid_medical_document": true,
+  "name": "member full name",
+  "asi_membership_number": "membership number",
+  "asi_state": "state chapter or null",
+  "membership_type": "Life/Annual/etc or null",
+  "date_of_issue": "YYYY-MM-DD or null"
+}
+Return ONLY valid JSON.`
   }
   if (docType === "letter_hod") {
-    return `This is a letter from Head of Department. Extract as JSON:
-{"name":"candidate name","institution":"hospital/college","department":"department name","is_valid_medical_document":true}
-Return ONLY JSON.`
+    return `Analyze this image. Is this a letter from a Head of Department / hospital authority?
+${REJECT_INSTRUCTIONS}
+If YES:
+{
+  "is_valid_medical_document": true,
+  "name": "candidate/doctor name",
+  "institution": "hospital/college name",
+  "department": "department name or null",
+  "designation": "candidate's designation or null",
+  "from_date": "YYYY-MM-DD or null",
+  "to_date": "YYYY-MM-DD or null"
+}
+Return ONLY valid JSON.`
   }
   if (docType === "active_license") {
-    return `This is a medical practice license. Extract as JSON:
-{"name":"doctor name","license_number":"license number","is_valid_medical_document":true}
-Return ONLY JSON.`
+    return `Analyze this image. Is this a medical practice license or renewal certificate?
+${REJECT_INSTRUCTIONS}
+If YES:
+{
+  "is_valid_medical_document": true,
+  "name": "doctor name",
+  "license_number": "license/registration number",
+  "valid_from": "YYYY-MM-DD or null",
+  "valid_upto": "YYYY-MM-DD or null",
+  "council_state": "issuing council state or null"
+}
+Return ONLY valid JSON.`
   }
   return ""
 }
@@ -172,6 +226,75 @@ function checkEligibility(docType: string, extracted: Record<string, any>) {
   return { eligible: true, reason: `Degree noted: ${extracted.degree}. Please ensure this is a surgical specialty.` }
 }
 
+const FINANCIAL_KEYWORDS = [
+  "bank", "axis", "hdfc", "icici", "sbi", "kotak", "account", "balance",
+  "transaction", "debit", "credit", "passbook", "statement", "neft", "imps",
+  "upi", "atm", "cheque", "loan", "emi", "inr", "rupees", "savings",
+  "current account", "fixed deposit", "ifsc", "branch", "neo for corporates",
+]
+
+const ID_KEYWORDS = [
+  "aadhaar", "aadhar", "pan card", "passport", "voter", "election",
+  "driving license", "ration card",
+]
+
+function detectSuspiciousExtraction(docType: string, extracted: Record<string, any>): string | null {
+  // Combine all extracted text values for keyword scanning
+  const allText = Object.values(extracted)
+    .filter((v) => typeof v === "string")
+    .join(" ")
+    .toLowerCase()
+
+  // Check for financial document keywords
+  const financialMatches = FINANCIAL_KEYWORDS.filter((kw) => allText.includes(kw))
+  if (financialMatches.length >= 2) {
+    return "This appears to be a financial/bank document, not a medical certificate."
+  }
+
+  // Check for ID document keywords
+  const idMatches = ID_KEYWORDS.filter((kw) => allText.includes(kw))
+  if (idMatches.length >= 1) {
+    return "This appears to be an identity document, not a medical certificate."
+  }
+
+  // For PG degree: check if "degree" field contains bank/financial terms
+  if (docType === "pg_degree_certificate" || docType === "mbbs_degree_certificate") {
+    const degree = (extracted.degree || "").toLowerCase()
+    const college = (extracted.college || "").toLowerCase()
+    const university = (extracted.university || "").toLowerCase()
+
+    // Must have a degree name — no degree = not a degree certificate
+    if (!degree) {
+      return "No degree name could be extracted. This does not appear to be a medical degree certificate."
+    }
+
+    if (FINANCIAL_KEYWORDS.some((kw) => degree.includes(kw) || college.includes(kw) || university.includes(kw))) {
+      return "Extracted data contains financial terms. This does not appear to be a medical degree certificate."
+    }
+
+    // Degree should contain medical terms
+    const validDegreeTerms = ["ms", "md", "mch", "dnb", "mbbs", "frcs", "mrcs", "diploma", "surgery", "medicine", "m.s", "m.d", "m.ch", "d.n.b"]
+    const hasValidDegree = validDegreeTerms.some((t) => degree.includes(t))
+    if (!hasValidDegree) {
+      return `"${extracted.degree}" does not appear to be a recognized medical degree.`
+    }
+
+    // Must also have a university or college — a degree certificate always has an issuing institution
+    if (!college && !university) {
+      return "No university or college found. This does not appear to be a medical degree certificate."
+    }
+  }
+
+  // For MCI certificate: must have a registration number
+  if (docType === "mci_certificate") {
+    if (!extracted.registration_number && !extracted.name) {
+      return "No registration number or doctor name found. This does not appear to be a medical council certificate."
+    }
+  }
+
+  return null
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData()
@@ -218,7 +341,7 @@ export async function POST(request: Request) {
           usedClaude = true
         }
       } catch (claudeError: any) {
-        console.log("Claude Vision failed, falling back to Tesseract:", claudeError.message)
+        console.error("Claude Vision failed, falling back to Tesseract:", claudeError.message)
       }
     }
 
@@ -232,13 +355,22 @@ export async function POST(request: Request) {
       }
     }
 
+    // Server-side sanity check: catch obvious non-medical documents the AI missed
+    if (extracted.is_valid_medical_document) {
+      const suspicious = detectSuspiciousExtraction(docType, extracted)
+      if (suspicious) {
+        extracted.is_valid_medical_document = false
+        extracted.rejection_reason = suspicious
+      }
+    }
+
     // Check validity
     if (!extracted.is_valid_medical_document) {
       return Response.json({
         success: false,
         isIrrelevant: true,
         extracted,
-        message: "This doesn't appear to be a valid medical document. Please upload the correct certificate.",
+        message: extracted.rejection_reason || "This doesn't appear to be a valid medical document. Please upload the correct certificate.",
       })
     }
 

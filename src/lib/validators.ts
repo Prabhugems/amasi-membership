@@ -4,18 +4,14 @@ import { getMembershipType } from "./membership-types"
 export function validatePersonalDetails(data: ApplicationFormData): Record<string, string> {
   const errors: Record<string, string> = {}
 
-  if (!data.firstName.trim()) errors.firstName = "First name is required"
-  if (!data.dob) errors.dob = "Date of birth is required"
-  if (!data.gender) errors.gender = "Gender is required"
-  if (!data.email.trim()) errors.email = "Email is required"
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errors.email = "Invalid email format"
-  if (!data.mobile.trim()) errors.mobile = "Mobile number is required"
-  else if (!/^\d{10}$/.test(data.mobile)) errors.mobile = "Mobile must be 10 digits"
-  if (!data.streetLine1.trim()) errors.streetLine1 = "Address is required"
-  if (!data.city.trim()) errors.city = "City is required"
-  if (!data.state) errors.state = "State is required"
-  if (!data.pin.trim()) errors.pin = "PIN code is required"
-  else if (!/^\d{6}$/.test(data.pin)) errors.pin = "PIN must be 6 digits"
+  if (!data.firstName.trim()) errors.firstName = "Enter your first name as on MCI certificate"
+  if (!data.dob) errors.dob = "Select your date of birth"
+  if (!data.gender) errors.gender = "Select Male, Female, or Other"
+  if (!data.email.trim()) errors.email = "Enter your email address"
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errors.email = "Enter a valid email (e.g. doctor@gmail.com)"
+  if (!data.mobile.trim()) errors.mobile = "Enter your 10-digit mobile number"
+  else if (!/^\d{10}$/.test(data.mobile)) errors.mobile = "Mobile must be exactly 10 digits (no +91)"
+  if (data.pin.trim() && !/^\d{6}$/.test(data.pin)) errors.pin = "PIN must be exactly 6 digits"
 
   return errors
 }
@@ -26,16 +22,16 @@ export function validateEducation(data: ApplicationFormData): Record<string, str
   if (!type) return errors
 
   if (type.requiresPG) {
-    if (!data.eduPostgradDegree.trim()) errors.eduPostgradDegree = "PG degree is required"
-    if (!data.eduPostgradCollege.trim()) errors.eduPostgradCollege = "PG college is required"
-    if (!data.eduPostgradUniversity.trim()) errors.eduPostgradUniversity = "PG university is required"
-    if (!data.eduPostgradYear) errors.eduPostgradYear = "PG year is required"
+    if (!data.eduPostgradDegree.trim()) errors.eduPostgradDegree = "Select your PG degree (e.g. MS General Surgery)"
+    if (!data.eduPostgradCollege.trim()) errors.eduPostgradCollege = "Enter your PG college name"
+    if (!data.eduPostgradUniversity.trim()) errors.eduPostgradUniversity = "Enter the university name"
+    if (!data.eduPostgradYear) errors.eduPostgradYear = "Select your PG completion year"
   }
 
   if (type.requiresMBBS) {
-    if (!data.eduUndergradCollege.trim()) errors.eduUndergradCollege = "MBBS college is required"
-    if (!data.eduUndergradUniversity.trim()) errors.eduUndergradUniversity = "MBBS university is required"
-    if (!data.eduUndergradYear) errors.eduUndergradYear = "MBBS year is required"
+    if (!data.eduUndergradCollege.trim()) errors.eduUndergradCollege = "Enter your MBBS college name"
+    if (!data.eduUndergradUniversity.trim()) errors.eduUndergradUniversity = "Enter the university name"
+    if (!data.eduUndergradYear) errors.eduUndergradYear = "Select your MBBS completion year"
   }
 
   return errors
@@ -47,12 +43,12 @@ export function validateRegistration(data: ApplicationFormData): Record<string, 
   if (!type) return errors
 
   if (type.id !== "ILM") {
-    if (!data.mciCouncilNumber.trim()) errors.mciCouncilNumber = "MCI/State council number is required"
-    if (!data.mciCouncilState) errors.mciCouncilState = "Council state is required"
+    if (!data.mciCouncilNumber.trim()) errors.mciCouncilNumber = "Enter your MCI/State Medical Council registration number"
+    if (!data.mciCouncilState) errors.mciCouncilState = "Select the state of your medical council"
   }
 
   if (type.requiresASI) {
-    if (!data.asiMembershipNo.trim()) errors.asiMembershipNo = "ASI membership number is required"
+    if (!data.asiMembershipNo.trim()) errors.asiMembershipNo = "Enter your ASI life membership number"
   }
 
   return errors

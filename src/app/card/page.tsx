@@ -156,7 +156,7 @@ function CardContent() {
                     </div>
                     <div>
                       <p className="font-bold text-lg tracking-wider">AMASI</p>
-                      <p className="text-[9px] text-white/60 -mt-0.5">Minimal Access Surgeons of India</p>
+                      <p className="text-[10px] text-white/60 -mt-0.5">Minimal Access Surgeons of India</p>
                     </div>
                   </div>
                   <div className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-wider ${theme.badge}`}>

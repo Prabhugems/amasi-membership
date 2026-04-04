@@ -1,3 +1,5 @@
+import { HelpButton } from "@/components/ui/help-button"
+
 export default function ApplyLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto">
@@ -12,10 +14,11 @@ export default function ApplyLayout({ children }: { children: React.ReactNode })
               <p className="text-[10px] text-muted-foreground">Membership Application</p>
             </div>
           </div>
-          <a href="https://collegeofmas.org.in" target="_blank" className="text-xs text-muted-foreground hover:text-foreground">collegeofmas.org.in</a>
+          <a href="https://www.amasi.org" target="_blank" className="text-xs text-muted-foreground hover:text-foreground">www.amasi.org</a>
         </div>
         {children}
       </div>
+      <HelpButton />
     </div>
   )
 }

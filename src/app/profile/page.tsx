@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { CheckCircle } from "lucide-react"
+import { HelpButton } from "@/components/ui/help-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProfileIdentify } from "@/components/profile/profile-identify"
@@ -18,8 +19,6 @@ type Phase = "identify" | "otp" | "view" | "edit" | "review" | "success"
 function ProfileContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams.get("q") || ""
-  const isAdmin = searchParams.get("admin") === "1"
-
   const [phase, setPhase] = useState<Phase>("identify")
   const [rawMember, setRawMember] = useState<any>(null)
   const [originalData, setOriginalData] = useState<ProfileFormData | null>(null)
@@ -55,8 +54,7 @@ function ProfileContent() {
     const mapped = dbToFormData(member)
     setOriginalData(mapped)
     setFormData({ ...mapped })
-    // Admin users skip OTP; regular members must verify email ownership
-    setPhase(isAdmin ? "view" : "otp")
+    setPhase("otp")
   }
 
   const handleEdit = () => {
@@ -193,8 +191,11 @@ function ProfileContent() {
 
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<div className="p-6">Loading...</div>}>
-      <ProfileContent />
-    </Suspense>
+    <>
+      <Suspense fallback={<div className="p-6">Loading...</div>}>
+        <ProfileContent />
+      </Suspense>
+      <HelpButton />
+    </>
   )
 }

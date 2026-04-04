@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getMemberSession, getAdminSession } from "@/lib/auth"
 
 export async function PUT(
   request: NextRequest,
@@ -9,6 +10,12 @@ export async function PUT(
 
   if (!id) {
     return Response.json({ status: false, message: "Member ID is required" }, { status: 400 })
+  }
+
+  const adminSession = await getAdminSession()
+  const memberSession = await getMemberSession()
+  if (!adminSession && !memberSession) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
@@ -22,9 +29,9 @@ export async function PUT(
     // Allowlist of editable columns
     // Locked: email, name, amasi_number, membership_type, mci_council_number
     const allowedColumns = new Set([
-      "salutation", "father_name", "date_of_birth", "gender", "nationality",
+      "name", "salutation", "father_name", "date_of_birth", "gender", "nationality",
       "street_address_1", "street_address_2", "city", "state", "postal_code", "country",
-      "landline", "std_code", "profile_photo",
+      "zone", "landline", "std_code",
       "edu_undergrad_degree", "ug_college", "ug_university", "ug_year",
       "pg_degree", "pg_college", "pg_university", "pg_year",
       "edu_superspecialty_degree", "edu_superspecialty_college",

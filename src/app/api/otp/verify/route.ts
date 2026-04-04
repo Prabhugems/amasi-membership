@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { signToken, setMemberCookie } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // Verify code
     if (otpRecord.code !== code.trim()) {
-      const remaining = 4 - otpRecord.attempts
+      const remaining = 4 - (otpRecord.attempts + 1)
       return Response.json({
         status: false,
         message: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,
@@ -51,6 +52,14 @@ export async function POST(request: NextRequest) {
       .from("otp_codes")
       .update({ verified: true })
       .eq("id", otpRecord.id)
+
+    // Create member JWT session cookie
+    const token = await signToken({
+      sub: otpRecord.id,
+      email: otpRecord.email,
+      role: "member",
+    }, "1h")
+    await setMemberCookie(token)
 
     return Response.json({ status: true, message: "Email verified successfully" })
   } catch (error: any) {

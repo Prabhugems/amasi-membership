@@ -61,12 +61,31 @@ function EduSelect({ label, value, onChange, options, required, searchable, allo
   const filtered = searchable && search ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase())) : options
   const isCustomValue = value && !options.includes(value)
 
+  // Detect if this is a year field (all options are 4-digit numbers)
+  const isYearField = options.length > 0 && options.every(o => /^\d{4}$/.test(o))
+
   return (
     <div className={`relative ${open ? "z-[60]" : ""}`}>
       <Label className="text-sm font-medium">
         {label} {required && <span className="text-destructive">*</span>}
       </Label>
-      {searchable ? (
+      {isYearField ? (
+        <Input
+          type="number"
+          min={Math.min(...options.map(Number))}
+          max={Math.max(...options.map(Number))}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            const min = Math.min(...options.map(Number))
+            const max = Math.max(...options.map(Number))
+            if (e.target.value && (v < min || v > max)) onChange(String(Math.min(Math.max(v, min), max)))
+          }}
+          placeholder="e.g. 2010"
+          className={`mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isEmpty ? "border-amber-400 bg-amber-50/50 focus-visible:ring-amber-400" : ""}`}
+        />
+      ) : searchable ? (
         <div className="relative">
           <Input
             value={open ? search : value}
@@ -257,15 +276,30 @@ export function EducationSection({ data, update, onChange, quickFill }: {
             </button>
           </div>
           {showPgOther && (
-            <div className="mt-3 relative z-[60]">
-              <EduSelect
-                label="Select or type your PG Degree"
-                value={data.eduPostgradDegree}
-                onChange={(v) => update("eduPostgradDegree", v)}
-                options={PG_DEGREES.filter(d => !PG_PILL_DEGREES.includes(d) && d !== "Other")}
-                searchable
-                allowCustom
-              />
+            <div className="mt-3">
+              <Label className="text-sm font-medium">Select or type your PG Degree</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5"
+                value={PG_DEGREES.includes(data.eduPostgradDegree) ? data.eduPostgradDegree : "__custom__"}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") return
+                  update("eduPostgradDegree", e.target.value)
+                }}
+              >
+                <option value="">Select degree...</option>
+                {PG_DEGREES.filter(d => !PG_PILL_DEGREES.includes(d) && d !== "Other").map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+                <option value="__custom__">Other (type below)</option>
+              </select>
+              {(!PG_DEGREES.includes(data.eduPostgradDegree) || data.eduPostgradDegree === "") && (
+                <Input
+                  className="mt-2"
+                  placeholder="Type your degree name..."
+                  value={PG_DEGREES.includes(data.eduPostgradDegree) ? "" : data.eduPostgradDegree}
+                  onChange={(e) => update("eduPostgradDegree", e.target.value)}
+                />
+              )}
             </div>
           )}
           {!data.eduPostgradDegree && (
@@ -356,10 +390,7 @@ export function EducationSection({ data, update, onChange, quickFill }: {
               className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
               onClick={() => {
                 setShowSuperSpecialty(false)
-                update("eduSuperspecialtyDegree", "")
-                update("eduSuperspecialtyCollege", "")
-                update("eduSuperspecialtyUniversity", "")
-                update("eduSuperspecialtyYear", "")
+                onChange({ ...data, eduSuperspecialtyDegree: "", eduSuperspecialtyCollege: "", eduSuperspecialtyUniversity: "", eduSuperspecialtyYear: "" })
               }}
             >
               Remove

@@ -88,3 +88,164 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
 }
+
+/* ===== MICRO-INTERACTIONS ===== */
+
+/* Input fields — glow on focus */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+  transition: all 0.2s ease;
+}
+
+/* Input hover — subtle border change */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover:not(:focus),
+textarea:hover:not(:focus),
+select:hover:not(:focus) {
+  border-color: rgba(15, 118, 110, 0.4);
+  transition: border-color 0.15s ease;
+}
+
+/* Cards — lift on hover */
+.rounded-lg:hover, .rounded-xl:hover {
+  transition: all 0.2s ease;
+}
+
+/* Buttons — scale on press */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+/* Cards and sections — smooth hover lift */
+[class*="border"]:not(input):not(select):not(textarea):not(hr):not(button) {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Labels — subtle transition */
+label {
+  transition: color 0.15s ease;
+}
+
+/* Smooth page transitions */
+main {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Smooth expand/collapse for sections */
+[class*="transition-all"] {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Badge hover — subtle scale */
+[class*="badge"]:hover, [class*="Badge"]:hover, .rounded-full:hover {
+  transition: transform 0.15s ease;
+}
+
+/* Checkbox/radio animation */
+input[type="checkbox"]:checked {
+  animation: checkPop 0.2s ease;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+/* Scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(15, 118, 110, 0.15);
+  color: inherit;
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* ===== SKELETON SHIMMER ===== */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--muted) 25%, var(--accent) 50%, var(--muted) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius);
+}
+
+/* ===== FOCUS STYLES (Accessibility) ===== */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* Remove default focus ring, only show on keyboard nav */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+  aside, header, .no-print, [data-sidebar], button {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  main {
+    animation: none !important;
+    padding: 0 !important;
+  }
+  .lg\:pl-64 {
+    padding-left: 0 !important;
+  }
+  a {
+    text-decoration: underline;
+  }
+  @page {
+    margin: 1.5cm;
+  }
+}
+
+/* ===== TRANSITION UTILITIES ===== */
+.transition-sidebar {
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+.transition-opacity-fast {
+  transition: opacity 0.15s ease;
+}
+.transition-colors-fast {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}

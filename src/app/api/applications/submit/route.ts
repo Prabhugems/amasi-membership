@@ -123,12 +123,12 @@ export async function POST(request: NextRequest) {
 
       // Create member record
       const fullName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ")
-      await supabase.from("members").insert({
+      const { error: memberInsertError } = await supabase.from("members").insert({
         id: crypto.randomUUID(),
         amasi_number: nextAmasiNumber,
         name: fullName,
         email: formData.email,
-        phone: parseInt(formData.mobile) || null,
+        phone: formData.mobile || null,
         mobile_code: formData.mobileCode,
         membership_type: formData.membershipType,
         status: "active",
@@ -163,6 +163,26 @@ export async function POST(request: NextRequest) {
         asi_state: formData.asiState,
         joining_date: new Date().toISOString().split("T")[0],
       })
+
+      // If member insert failed, fall back to pending_review instead of approving
+      if (memberInsertError) {
+        console.error("Auto-approval member insert failed:", memberInsertError)
+        await supabase
+          .from("membership_applications")
+          .update({
+            status: "pending_review",
+            needs_manual_review: true,
+            manual_review_reason: `AI approved but member creation failed: ${memberInsertError.message}`,
+          })
+          .eq("id", applicationId)
+
+        return Response.json({
+          status: true,
+          approved: false,
+          applicationId,
+          message: "Application submitted. Requires manual review due to a processing issue.",
+        })
+      }
 
       // Update application with assigned number
       await supabase

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getMemberSession, getAdminSession } from "@/lib/auth"
 
 const VALID_DOC_TYPES = new Set([
   "profile_photo",
@@ -13,6 +14,12 @@ const VALID_DOC_TYPES = new Set([
 
 export async function POST(request: NextRequest) {
   try {
+    const adminSession = await getAdminSession()
+    const memberSession = await getMemberSession()
+    if (!adminSession && !memberSession) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const memberId = formData.get("memberId") as string | null

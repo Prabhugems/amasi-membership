@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
       certificate: {
         amasiNumber: member.amasi_number,
         name: member.name,
+        email: member.email,
         membershipType: memberType,
         pgDegree: member.pg_degree,
         mciNumber: member.mci_council_number,

@@ -56,12 +56,12 @@ export async function POST(request: NextRequest) {
           <p style="color: #555; font-size: 14px;">Save this reference number to track your application status. Our team will review your documents and notify you once approved.</p>
 
           <p style="color: #555; font-size: 14px;">You can check your application status at:<br>
-          <a href="https://membership.collegeofmas.org.in/apply/status?ref=${referenceNumber}" style="color: #0f766e;">Track Application Status</a></p>
+          <a href="https://membership.amasi.org/apply/status?ref=${referenceNumber}" style="color: #0f766e;">Track Application Status</a></p>
 
           <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
           <p style="color: #999; font-size: 12px; text-align: center;">
             Association of Minimal Access Surgeons of India<br>
-            <a href="https://collegeofmas.org.in" style="color: #999;">collegeofmas.org.in</a>
+            <a href="https://www.amasi.org" style="color: #999;">www.amasi.org</a>
           </p>
         </div>
       `,

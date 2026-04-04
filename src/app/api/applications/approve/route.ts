@@ -34,71 +34,103 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Already approved" }, { status: 400 })
     }
 
-    // Get next AMASI number
-    const { data: maxNum } = await supabase
-      .from("members")
-      .select("amasi_number")
-      .order("amasi_number", { ascending: false })
-      .limit(1)
-      .single()
-
-    const nextAmasiNumber = (maxNum?.amasi_number || 18135) + 1
-
-    // Create member record
+    // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
-    await supabase.from("members").insert({
-      id: crypto.randomUUID(),
-      amasi_number: nextAmasiNumber,
-      name: fullName,
-      email: app.email,
-      phone: parseInt(app.phone) || null,
-      mobile_code: app.mobile_code,
-      membership_type: app.membership_type,
-      status: "active",
-      voting_eligible: app.membership_type === "LM",
-      salutation: app.salutation,
-      father_name: app.father_name,
-      date_of_birth: app.date_of_birth,
-      nationality: app.nationality,
-      gender: app.gender,
-      application_no: app.reference_number || app.application_number,
-      application_date: new Date().toISOString().split("T")[0],
-      street_address_1: app.street_address_1,
-      street_address_2: app.street_address_2,
-      city: app.city,
-      state: app.state,
-      country: app.country,
-      postal_code: app.postal_code,
-      zone: app.zone,
-      edu_undergrad_degree: app.ug_degree,
-      ug_college: app.ug_college,
-      ug_university: app.ug_university,
-      ug_year: app.ug_year,
-      pg_degree: app.pg_degree,
-      pg_college: app.pg_college,
-      pg_university: app.pg_university,
-      pg_year: app.pg_year,
-      edu_superspecialty_degree: app.ss_degree,
-      mci_council_number: app.mci_council_number,
-      mci_council_state: app.mci_council_state,
-      imr_registration_no: app.imr_registration_no,
-      asi_membership_no: app.asi_membership_no,
-      asi_state: app.asi_state,
-      joining_date: new Date().toISOString().split("T")[0],
-    })
+    const memberId = crypto.randomUUID() // Bug 2: generate UUID to use as member_id
 
-    // Update application
-    await supabase
+    let nextAmasiNumber: number | null = null
+    const MAX_RETRIES = 3
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Get next AMASI number
+      const { data: maxNum } = await supabase
+        .from("members")
+        .select("amasi_number")
+        .order("amasi_number", { ascending: false })
+        .limit(1)
+        .single()
+
+      const candidateNumber = (maxNum?.amasi_number || 18135) + 1
+
+      // Bug 3: check insert error; Bug 4: store phone as string
+      const { error: insertError } = await supabase.from("members").insert({
+        id: memberId,
+        amasi_number: candidateNumber,
+        name: fullName,
+        email: app.email,
+        phone: app.phone || null,
+        mobile_code: app.mobile_code,
+        membership_type: app.membership_type,
+        status: "active",
+        voting_eligible: app.membership_type === "LM",
+        salutation: app.salutation,
+        father_name: app.father_name,
+        date_of_birth: app.date_of_birth,
+        nationality: app.nationality,
+        gender: app.gender,
+        application_no: app.reference_number || app.application_number,
+        application_date: new Date().toISOString().split("T")[0],
+        street_address_1: app.street_address_1,
+        street_address_2: app.street_address_2,
+        city: app.city,
+        state: app.state,
+        country: app.country,
+        postal_code: app.postal_code,
+        zone: app.zone,
+        edu_undergrad_degree: app.ug_degree,
+        ug_college: app.ug_college,
+        ug_university: app.ug_university,
+        ug_year: app.ug_year,
+        pg_degree: app.pg_degree,
+        pg_college: app.pg_college,
+        pg_university: app.pg_university,
+        pg_year: app.pg_year,
+        edu_superspecialty_degree: app.ss_degree,
+        mci_council_number: app.mci_council_number,
+        mci_council_state: app.mci_council_state,
+        imr_registration_no: app.imr_registration_no,
+        asi_membership_no: app.asi_membership_no,
+        asi_state: app.asi_state,
+        joining_date: new Date().toISOString().split("T")[0],
+      })
+
+      if (!insertError) {
+        nextAmasiNumber = candidateNumber
+        break
+      }
+
+      // If duplicate AMASI number, retry
+      if (insertError.message?.includes("duplicate") || insertError.code === "23505") {
+        console.warn(`AMASI number ${candidateNumber} conflict, retrying (attempt ${attempt + 1})`)
+        continue
+      }
+
+      // Non-duplicate error: fail immediately
+      console.error("Member insert error:", insertError)
+      return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
+    }
+
+    if (nextAmasiNumber === null) {
+      return Response.json({ status: false, message: "Failed to assign AMASI number after retries" }, { status: 500 })
+    }
+
+    // Update application — Bug 2: use memberId UUID, Bug 5: check update error
+    const { error: updateError } = await supabase
       .from("membership_applications")
       .update({
         status: "approved",
         assigned_amasi_number: nextAmasiNumber,
         reviewed_at: new Date().toISOString(),
         review_notes: notes || "Manually approved by admin",
-        member_id: fullName,
+        member_id: memberId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)
+
+    if (updateError) {
+      console.error("Application update error:", updateError)
+      return Response.json({ status: false, message: "Member created but failed to update application" }, { status: 500 })
+    }
 
     // Send welcome email
     try {

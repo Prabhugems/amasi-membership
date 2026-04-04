@@ -174,6 +174,7 @@ const formToDbMap: Record<string, string> = {
   imrRegNo: "imr_registration_no",
   asiMembershipNo: "asi_membership_no",
   asiState: "asi_state",
+  zone: "zone",
   profilePhoto: "profile_photo",
   mciCertificate: "mci_certificate",
   pgDegreeCertificate: "pg_degree_certificate",

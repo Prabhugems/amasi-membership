@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
       query = query.eq("status", "approved")
     } else if (status === "rejected") {
       query = query.eq("status", "rejected")
+    } else if (status === "clarification") {
+      query = query.in("status", ["need_clarification", "resubmit_requested"])
     }
 
     const { data, error, count } = await query

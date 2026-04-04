@@ -4,6 +4,10 @@ export async function GET() {
   try {
     const supabase = createAdminClient()
 
+    // First day of current month in ISO format
+    const now = new Date()
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
     // Run all queries in parallel
     const [
       totalMembersRes,
@@ -12,6 +16,7 @@ export async function GET() {
       pendingApplicationsRes,
       incompleteProfilesRes,
       totalPaymentsRes,
+      approvedThisMonthRes,
     ] = await Promise.all([
       // Total members count
       supabase.from("members").select("*", { count: "exact", head: true }),
@@ -27,7 +32,7 @@ export async function GET() {
       // Recent 10 applications
       supabase
         .from("membership_applications")
-        .select("id, reference_number, full_name, membership_type, status, payment_status, created_at")
+        .select("id, reference_number, name, membership_type, status, payment_status, created_at")
         .order("created_at", { ascending: false })
         .limit(10),
 
@@ -48,6 +53,13 @@ export async function GET() {
         .from("membership_payments")
         .select("amount")
         .eq("status", "paid"),
+
+      // Approved applications this month
+      supabase
+        .from("membership_applications")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["approved", "ai_approved"])
+        .gte("created_at", firstOfMonth),
     ])
 
     // Compute members by type counts
@@ -75,6 +87,7 @@ export async function GET() {
         recentApplications: recentApplicationsRes.data ?? [],
         pendingApplicationsCount: pendingApplicationsRes.count ?? 0,
         incompleteProfilesCount: incompleteProfilesRes.count ?? 0,
+        approvedThisMonth: approvedThisMonthRes.count ?? 0,
         totalPayments,
       },
     })

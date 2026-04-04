@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import {
   Upload, FileCheck, Sparkles, CheckCircle, AlertCircle, Loader2,
   ArrowRight, ArrowLeft, Send, Shield, Award, Clock, Users, Star,
-  ChevronRight, X, Eye, GraduationCap, Stethoscope,
+  ChevronRight, X, Eye, GraduationCap, Stethoscope, Copy, Check,
+  ExternalLink, FileText, ClipboardCheck,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -61,6 +62,9 @@ function StableFieldInput({ field, label, required, value, error, placeholder, h
 function StableSelectInput({ field, label, options, required, value, error, isFilled, onChange }: {
   field: string; label: string; options: readonly string[]; required?: boolean; value: string; error?: string; isFilled?: boolean; onChange: (field: string, value: string) => void
 }) {
+  // Detect year fields — use a compact number input instead of a 50-option dropdown
+  const isYearField = options.length > 10 && options.every(o => /^\d{4}$/.test(o))
+
   return (
     <div>
       <Label className="text-xs flex items-center gap-1">
@@ -68,14 +72,32 @@ function StableSelectInput({ field, label, options, required, value, error, isFi
         {required && <span className="text-destructive">*</span>}
         {isFilled && <CheckCircle className="h-3 w-3 text-green-500" />}
       </Label>
-      <select
-        className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
-        value={value}
-        onChange={(e) => onChange(field, e.target.value)}
-      >
-        <option value="">Select...</option>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
+      {isYearField ? (
+        <input
+          type="number"
+          min={Math.min(...options.map(Number))}
+          max={Math.max(...options.map(Number))}
+          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
+          value={value}
+          onChange={(e) => onChange(field, e.target.value)}
+          onBlur={(e) => {
+            const v = Number(e.target.value)
+            const min = Math.min(...options.map(Number))
+            const max = Math.max(...options.map(Number))
+            if (e.target.value && (v < min || v > max)) onChange(field, String(Math.min(Math.max(v, min), max)))
+          }}
+          placeholder="e.g. 2010"
+        />
+      ) : (
+        <select
+          className={`flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm ${error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : "border-input"}`}
+          value={value}
+          onChange={(e) => onChange(field, e.target.value)}
+        >
+          <option value="">Select...</option>
+          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      )}
       {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
     </div>
   )
@@ -141,6 +163,7 @@ export default function ApplyPage() {
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [editSection, setEditSection] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   // Auto-save form data to localStorage
   useEffect(() => {
@@ -157,6 +180,40 @@ export default function ApplyPage() {
   const [otpCode, setOtpCode] = useState("")
   const [otpCooldown, setOtpCooldown] = useState(0)
   const [verifying, setVerifying] = useState(false)
+
+  // Resume draft dialog state
+  const [showResumeDraft, setShowResumeDraft] = useState(false)
+  const [draftChecked, setDraftChecked] = useState(false)
+
+  // Check for saved draft on mount
+  useEffect(() => {
+    if (!draftChecked && typeof window !== "undefined") {
+      const savedPhase = localStorage.getItem("amasi_apply_phase")
+      const savedForm = localStorage.getItem("amasi_apply_form")
+      if (savedPhase && savedForm) {
+        try {
+          const parsed = JSON.parse(savedForm)
+          // Only show resume if there's meaningful data
+          if (parsed.firstName || parsed.email || parsed.eduPostgradDegree) {
+            setShowResumeDraft(true)
+          }
+        } catch {}
+      }
+      setDraftChecked(true)
+    }
+  }, [draftChecked])
+
+  // Auto-save draft every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (phase !== "check" && phase !== "success") {
+        localStorage.setItem("amasi_apply_form", JSON.stringify(formData))
+        localStorage.setItem("amasi_apply_phase", phase)
+        if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
+      }
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [formData, phase, selectedType])
 
   // Pre-warm Face Detection on mount
   useEffect(() => {
@@ -486,7 +543,7 @@ export default function ApplyPage() {
       prefill: {
         name: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),
         email: formData.email,
-        contact: `+91${formData.mobile}`,
+        contact: `${formData.mobileCode || "+91"}${formData.mobile}`,
       },
       theme: { color: "#0f766e" },
       handler: async (response: any) => {
@@ -549,13 +606,40 @@ export default function ApplyPage() {
       modal: {
         ondismiss: () => {
           toast.info("Payment cancelled")
+          setPhase("review")
           setSubmitting(false)
         },
       },
     })
 
+    setPhase("confirm")
     rzp.open()
   }
+
+  // Keyboard shortcut: Ctrl+Enter to proceed to next step
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault()
+        if (phase === "upload") {
+          const type = selectedType || getMembershipType(formData.membershipType)
+          const requiredDocs = type?.requiredDocs.filter((d: string) => d !== "profile") || []
+          const allUploaded = requiredDocs.every((d: string) => uploads[d]?.file) && uploads.profile?.file
+          const allVerified = requiredDocs.every((d: string) => uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded")
+          const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked" || u.status === "rejected")
+          const isProcessing = Object.values(uploads).some((u) => u.status === "processing")
+          if (allUploaded && allVerified && !hasBlockedDoc && !isProcessing) {
+            handleProcessAll()
+          }
+        } else if (phase === "review") {
+          if (submitting) return
+          if (termsAccepted) handleSubmit()
+        }
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [phase, uploads, selectedType, formData, termsAccepted, submitting])
 
   const updateField = (field: string, value: string) => {
     let processed = value
@@ -598,6 +682,9 @@ export default function ApplyPage() {
     localStorage.removeItem("amasi_apply_type")
   }
 
+  // Move clearSavedForm into useEffect
+  useEffect(() => { if (phase === "success") clearSavedForm() }, [phase])
+
   const handleCheckMembership = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!checkQuery.trim()) return
@@ -625,10 +712,57 @@ export default function ApplyPage() {
     setChecking(false)
   }
 
+  // Dismiss saved draft and clear storage
+  const dismissDraft = () => {
+    setShowResumeDraft(false)
+    localStorage.removeItem("amasi_apply_form")
+    localStorage.removeItem("amasi_apply_phase")
+    localStorage.removeItem("amasi_apply_type")
+    setFormData(INITIAL_FORM_DATA)
+    setSelectedType(null)
+    setPhase("check")
+  }
+
   // ===== CHECK PHASE =====
   if (phase === "check") {
     return (
       <div className="max-w-lg mx-auto px-4 py-12 sm:py-16">
+        {/* Resume draft dialog */}
+        <AnimatePresence>
+          {showResumeDraft && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-6"
+            >
+              <Card className="border-primary/30 bg-primary/5 shadow-md">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <ClipboardCheck className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm">Resume your application?</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        You have a saved draft{formData.firstName ? ` for ${formData.firstName}` : ""}. Would you like to continue where you left off?
+                      </p>
+                      <div className="flex gap-2 mt-3">
+                        <Button size="sm" className="h-8 text-xs font-semibold gap-1.5" onClick={() => setShowResumeDraft(false)}>
+                          <ArrowRight className="h-3 w-3" /> Resume Draft
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={dismissDraft}>
+                          Start Fresh
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -641,6 +775,10 @@ export default function ApplyPage() {
           <p className="text-muted-foreground text-base">
             Association of Minimal Access Surgeons of India
           </p>
+          <div className="inline-flex items-center gap-1.5 mt-3 text-xs text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-full">
+            <Clock className="h-3.5 w-3.5" />
+            <span>Estimated time: ~2 minutes</span>
+          </div>
         </motion.div>
 
         <motion.div
@@ -661,7 +799,7 @@ export default function ApplyPage() {
                   onChange={(e) => setCheckQuery(e.target.value)}
                   className="h-12 text-base"
                 />
-                <Button type="submit" className="w-full h-12 text-base font-semibold gap-2" disabled={checking || !checkQuery.trim()}>
+                <Button type="submit" className="w-full h-12 text-base font-semibold gap-2 min-h-[44px]" disabled={checking || !checkQuery.trim()}>
                   {checking ? (
                     <><Loader2 className="h-5 w-5 animate-spin" /> Checking...</>
                   ) : (
@@ -819,7 +957,7 @@ export default function ApplyPage() {
               <Button variant="outline" className="w-full" onClick={() => { setExistingMember(null); setCheckQuery(""); setPhase("check") }}>
                 Check Another
               </Button>
-              <Button variant="ghost" className="w-full" onClick={() => window.location.href = "https://collegeofmas.org.in"}>
+              <Button variant="ghost" className="w-full" onClick={() => window.location.href = "https://www.amasi.org"}>
                 Visit AMASI Website
               </Button>
             </div>
@@ -833,6 +971,7 @@ export default function ApplyPage() {
   if (phase === "landing") {
     return (
       <div className="max-w-5xl mx-auto px-4">
+        <ProgressBar currentPhase={phase} />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -893,7 +1032,7 @@ export default function ApplyPage() {
                     setFormData((prev) => ({ ...prev, membershipType: type.id }))
                     setPhase(emailVerified ? "upload" : "verify")
                   }}
-                  className="group rounded-xl border-2 p-5 text-left transition-all hover:border-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="group rounded-xl border-2 p-5 text-left transition-all hover:border-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.98]"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <Badge variant="secondary" className="text-xs font-semibold">{type.shortName}</Badge>
@@ -983,9 +1122,10 @@ export default function ApplyPage() {
     const maskedEmail = formData.email.replace(/^(.{3})(.*)(@.*)$/, "$1***$3")
 
     return (
-      <div className="max-w-md mx-auto px-4 py-10 sm:py-12">
+      <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
+        <ProgressBar currentPhase={phase} />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6">
+          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 min-h-[44px]">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
@@ -1086,7 +1226,7 @@ export default function ApplyPage() {
       >
         <button
           onClick={() => setPhase("landing")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors min-h-[44px]"
         >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
@@ -1355,17 +1495,24 @@ export default function ApplyPage() {
           </div>
         )}
 
-        <Button
-          className="w-full h-12 text-base font-semibold gap-2 shadow-sm"
-          onClick={handleProcessAll}
-          disabled={!canContinue || processing}
-        >
-          {processing ? (
-            <><Loader2 className="h-5 w-5 animate-spin" /> AI is processing your application...</>
-          ) : (
-            <><Sparkles className="h-5 w-5" /> Continue to Review</>
+        <div className="space-y-2">
+          <Button
+            className="w-full h-12 min-h-[48px] text-base font-semibold gap-2 shadow-sm"
+            onClick={handleProcessAll}
+            disabled={!canContinue || processing}
+          >
+            {processing ? (
+              <><Loader2 className="h-5 w-5 animate-spin" /> AI is processing your application...</>
+            ) : (
+              <><Sparkles className="h-5 w-5" /> Continue to Review</>
+            )}
+          </Button>
+          {canContinue && !processing && (
+            <p className="text-[11px] text-muted-foreground text-center">
+              Press <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono">Enter</kbd> to continue
+            </p>
           )}
-        </Button>
+        </div>
 
         {!canContinue && (
           <div className="text-center text-sm text-muted-foreground bg-muted/60 border rounded-xl p-4">
@@ -1460,22 +1607,41 @@ export default function ApplyPage() {
         animate={{ opacity: 1, x: 0 }}
         className="max-w-2xl mx-auto px-4 pt-4 space-y-4"
       >
-        <button onClick={() => setPhase("upload")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={() => setPhase("upload")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
           <ArrowLeft className="h-4 w-4" /> Back to Upload
         </button>
 
-        {/* Header with progress */}
+        {/* Header with circular progress */}
         <Card className={pct === 100 ? "border-green-400 bg-green-50/80" : "border-amber-300 bg-amber-50/80"}>
           <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                {pct === 100 ? <CheckCircle className="h-5 w-5 text-green-600" /> : <Sparkles className="h-5 w-5 text-amber-600" />}
-                <span className="font-bold text-base">{pct === 100 ? "Ready to Submit!" : `${missingCount} field${missingCount !== 1 ? "s" : ""} needed`}</span>
+            <div className="flex items-center gap-4">
+              {/* Circular progress indicator */}
+              <div className="relative h-16 w-16 shrink-0">
+                <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="28" fill="none" strokeWidth="5" className="stroke-white/60" />
+                  <circle
+                    cx="32" cy="32" r="28" fill="none" strokeWidth="5"
+                    strokeLinecap="round"
+                    className={pct === 100 ? "stroke-green-500" : "stroke-amber-500"}
+                    strokeDasharray={`${2 * Math.PI * 28}`}
+                    strokeDashoffset={`${2 * Math.PI * 28 * (1 - pct / 100)}`}
+                    style={{ transition: "stroke-dashoffset 0.5s ease" }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-sm font-bold">{pct}%</span>
+                </div>
               </div>
-              <span className="text-lg font-bold">{pct}%</span>
-            </div>
-            <div className="w-full bg-white/60 rounded-full h-2.5">
-              <div className={`h-2.5 rounded-full transition-all duration-500 ${pct === 100 ? "bg-green-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  {pct === 100 ? <CheckCircle className="h-5 w-5 text-green-600" /> : <Sparkles className="h-5 w-5 text-amber-600" />}
+                  <span className="font-bold text-base">{pct === 100 ? "Ready to Submit!" : `${missingCount} field${missingCount !== 1 ? "s" : ""} needed`}</span>
+                </div>
+                <div className="w-full bg-white/60 rounded-full h-2">
+                  <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? "bg-green-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5">{filledCount} of {totalRequired} required fields complete</p>
+              </div>
             </div>
             {filledSummary.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3">
@@ -1509,7 +1675,7 @@ export default function ApplyPage() {
                     <div className="flex gap-1.5">
                       {["Male", "Female", "Other"].map((g) => (
                         <button key={g} type="button" onClick={() => updateField("gender", g)}
-                          className={`flex-1 h-9 rounded-md border text-xs font-medium transition-colors ${formData.gender === g ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input hover:bg-accent"}`}
+                          className={`flex-1 h-10 min-h-[44px] rounded-md border text-xs font-medium transition-colors ${formData.gender === g ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input hover:bg-accent"}`}
                         >{g}</button>
                       ))}
                     </div>
@@ -1570,7 +1736,7 @@ export default function ApplyPage() {
         <Card className="shadow-sm overflow-visible">
           <div className="divide-y overflow-visible">
             {/* Personal */}
-            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "personal" ? null : "personal")}>
+            <button type="button" className="w-full flex items-center justify-between p-4 min-h-[48px] hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "personal" ? null : "personal")}>
               <div className="flex items-center gap-2.5 text-sm font-semibold">
                 <Users className="h-4 w-4 text-muted-foreground" /> Personal Details
                 {!allErrors.firstName && !allErrors.dob && !allErrors.gender ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
@@ -1635,7 +1801,7 @@ export default function ApplyPage() {
             )}
 
             {/* Education */}
-            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "education" ? null : "education")}>
+            <button type="button" className="w-full flex items-center justify-between p-4 min-h-[48px] hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "education" ? null : "education")}>
               <div className="flex items-center gap-2.5 text-sm font-semibold">
                 <GraduationCap className="h-4 w-4 text-muted-foreground" /> Education
                 {!allErrors.eduPostgradDegree && !allErrors.eduPostgradCollege && !allErrors.eduPostgradUniversity && !allErrors.eduPostgradYear ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
@@ -1696,7 +1862,7 @@ export default function ApplyPage() {
             )}
 
             {/* Registration */}
-            <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "registration" ? null : "registration")}>
+            <button type="button" className="w-full flex items-center justify-between p-4 min-h-[48px] hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "registration" ? null : "registration")}>
               <div className="flex items-center gap-2.5 text-sm font-semibold">
                 <Stethoscope className="h-4 w-4 text-muted-foreground" /> Registration
                 {!allErrors.mciCouncilNumber && !allErrors.asiMembershipNo ? <CheckCircle className="h-4 w-4 text-green-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
@@ -1731,7 +1897,7 @@ export default function ApplyPage() {
 
         {/* Work Experience - kept as before but below */}
         <Card>
-          <button type="button" className="w-full flex items-center justify-between p-4 hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "experience" ? null : "experience")}>
+          <button type="button" className="w-full flex items-center justify-between p-4 min-h-[48px] hover:bg-accent/50 transition-colors" onClick={() => setEditSection(editSection === "experience" ? null : "experience")}>
             <div className="flex items-center gap-2.5 text-sm font-semibold">
               <GraduationCap className="h-4 w-4 text-muted-foreground" /> Work Experience <span className="text-xs font-normal text-muted-foreground">(Optional)</span>
             </div>
@@ -1851,7 +2017,7 @@ export default function ApplyPage() {
           />
           <span className="text-sm text-muted-foreground leading-relaxed">
             I confirm that all information provided is accurate. I agree to the{" "}
-            <a href="https://collegeofmas.org.in/terms" target="_blank" rel="noopener noreferrer" className="text-primary font-medium underline underline-offset-2 hover:text-primary/80">
+            <a href="https://www.amasi.org/terms" target="_blank" rel="noopener noreferrer" className="text-primary font-medium underline underline-offset-2 hover:text-primary/80">
               terms and conditions
             </a>{" "}
             of AMASI membership and authorize verification of my documents.
@@ -1866,102 +2032,267 @@ export default function ApplyPage() {
           </div>
         )}
 
-        <Button className="w-full h-13 text-base font-bold gap-2 shadow-md" onClick={handleSubmit} disabled={submitting || !termsAccepted || missingCount > 0}>
-          {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing Payment...</> : <><Send className="h-5 w-5" /> Pay {fee.currency}{fee.totalFee.toLocaleString()} &amp; Submit</>}
-        </Button>
+        <div className="space-y-2">
+          <Button className="w-full h-13 min-h-[48px] text-base font-bold gap-2 shadow-md" onClick={handleSubmit} disabled={submitting || !termsAccepted || missingCount > 0}>
+            {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing Payment...</> : <><Send className="h-5 w-5" /> Pay {fee.currency}{fee.totalFee.toLocaleString()} &amp; Submit</>}
+          </Button>
+          {!submitting && termsAccepted && missingCount === 0 && (
+            <p className="text-[11px] text-muted-foreground text-center">
+              Press <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono">Enter</kbd> to submit
+            </p>
+          )}
+        </div>
       </motion.div>
+      </div>
+    )
+  }
+
+  // Copy to clipboard helper
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      toast.success("Copied to clipboard")
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  // ===== CONFIRM (Payment processing) =====
+  if (phase === "confirm") {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-8 sm:py-12">
+        <ProgressBar currentPhase={phase} />
+        <div className="text-center space-y-4">
+          <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" />
+          <h2 className="text-xl font-bold">Processing payment...</h2>
+          <p className="text-muted-foreground text-sm">Please do not close this window.</p>
+        </div>
       </div>
     )
   }
 
   // ===== SUCCESS =====
   if (phase === "success") {
-    clearSavedForm()
+    const displayRef = approvalResult?.approved ? String(approvalResult.amasiNumber) : refNumber
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md mx-auto text-center px-4 py-12 sm:py-16"
-      >
+      <div className="max-w-lg mx-auto px-4 py-8 sm:py-12">
+        <ProgressBar currentPhase={phase} />
         <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring", delay: 0.2 }}
-          className={`h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6 ${approvalResult?.approved ? "bg-green-100" : "bg-amber-100"}`}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
         >
-          {approvalResult?.approved ? (
-            <Award className="h-10 w-10 text-green-600" />
-          ) : (
-            <CheckCircle className="h-10 w-10 text-amber-600" />
-          )}
-        </motion.div>
-        {approvalResult?.approved ? (
-          <>
-            <motion.h2
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="text-2xl sm:text-3xl font-bold mb-2 text-green-800"
+          {/* Animated checkmark */}
+          <div className="relative h-24 w-24 mx-auto mb-6">
+            <motion.div
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
+              className={`h-24 w-24 rounded-full flex items-center justify-center ${approvalResult?.approved ? "bg-green-100" : "bg-amber-100"}`}
             >
-              Welcome to AMASI!
-            </motion.h2>
-            <p className="text-muted-foreground mb-5">Your membership has been approved.</p>
+              <svg
+                className={`h-14 w-14 ${approvalResult?.approved ? "text-green-500" : "text-amber-500"}`}
+                viewBox="0 0 52 52"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <motion.circle
+                  cx="26" cy="26" r="24"
+                  stroke="currentColor" strokeWidth="3" fill="none"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                />
+                <motion.path
+                  d="M14 27l7 7 16-16"
+                  stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" fill="none"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 0.4, delay: 0.7 }}
+                />
+              </svg>
+            </motion.div>
+          </div>
+
+          {approvalResult?.approved ? (
+            <>
+              <motion.h2
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="text-2xl sm:text-3xl font-bold mb-2 text-green-800"
+              >
+                Welcome to AMASI!
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="text-muted-foreground mb-5"
+              >
+                Your membership has been approved instantly.
+              </motion.p>
+            </>
+          ) : (
+            <>
+              <motion.h2
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="text-2xl sm:text-3xl font-bold mb-2"
+              >
+                Application Submitted!
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="text-muted-foreground mb-5"
+              >
+                Payment received. Your application is under review.
+              </motion.p>
+            </>
+          )}
+
+          {/* Reference / Membership Number with copy button */}
+          {displayRef && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 mb-6 mx-auto max-w-xs"
+              transition={{ delay: 0.5 }}
+              className={`rounded-2xl p-6 mb-6 mx-auto max-w-sm border-2 ${approvalResult?.approved ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}
             >
-              <p className="text-xs text-green-600 font-semibold uppercase tracking-wider mb-2">Your AMASI Membership Number</p>
-              <p className="text-4xl sm:text-5xl font-bold text-green-800 font-mono">{approvalResult.amasiNumber}</p>
-              <p className="text-sm text-green-600 mt-3 font-medium">{selectedType?.name}</p>
-            </motion.div>
-            <p className="text-sm text-muted-foreground mb-8">
-              Confirmation and membership details have been sent to <strong className="text-foreground">{formData.email}</strong>.
-            </p>
-          </>
-        ) : (
-          <>
-            <motion.h2
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="text-2xl sm:text-3xl font-bold mb-2"
-            >
-              Application Submitted!
-            </motion.h2>
-            <p className="text-muted-foreground mb-5">Payment received. Your application is under review.</p>
-            {refNumber && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 mb-6 mx-auto max-w-xs"
-              >
-                <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider mb-2">Reference Number</p>
-                <p className="text-2xl font-bold text-amber-800 font-mono">{refNumber}</p>
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${approvalResult?.approved ? "text-green-600" : "text-amber-600"}`}>
+                {approvalResult?.approved ? "Your AMASI Membership Number" : "Reference Number"}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <p className={`text-3xl sm:text-4xl font-bold font-mono ${approvalResult?.approved ? "text-green-800" : "text-amber-800"}`}>
+                  {displayRef}
+                </p>
+                <button
+                  onClick={() => copyToClipboard(displayRef)}
+                  className={`h-9 w-9 rounded-lg flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] ${
+                    copied
+                      ? "bg-green-200 text-green-700"
+                      : approvalResult?.approved
+                        ? "bg-green-200/60 text-green-700 hover:bg-green-200"
+                        : "bg-amber-200/60 text-amber-700 hover:bg-amber-200"
+                  }`}
+                  title="Copy to clipboard"
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
+              {approvalResult?.approved && (
+                <p className="text-sm text-green-600 mt-3 font-medium">{selectedType?.name}</p>
+              )}
+              {!approvalResult?.approved && (
                 <div className="flex items-center justify-center gap-1.5 mt-3 text-amber-600">
                   <Clock className="h-3.5 w-3.5" />
                   <span className="text-xs font-medium">Under Admin Review</span>
                 </div>
-              </motion.div>
-            )}
-            <p className="text-sm text-muted-foreground mb-8">
-              Our admin team will review your documents and approve your membership.
-              You&apos;ll receive an email at <strong className="text-foreground">{formData.email}</strong> once approved.
-            </p>
-          </>
-        )}
+              )}
+            </motion.div>
+          )}
 
-        <div className="space-y-3">
-          <Button className="w-full h-11 font-semibold gap-2" onClick={() => window.location.href = `/apply/status?ref=${refNumber}`}>
-            Track Application Status <ArrowRight className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" className="w-full h-11" onClick={() => window.location.href = "https://collegeofmas.org.in"}>
-            Visit AMASI Website
-          </Button>
-        </div>
-      </motion.div>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="text-sm text-muted-foreground mb-8"
+          >
+            {approvalResult?.approved
+              ? <>Confirmation and membership details have been sent to <strong className="text-foreground">{formData.email}</strong>.</>
+              : <>You&apos;ll receive an email at <strong className="text-foreground">{formData.email}</strong> once approved.</>
+            }
+          </motion.p>
+
+          {/* What happens next? Timeline */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+          >
+            <Card className="text-left mb-6 shadow-sm">
+              <CardContent className="p-5">
+                <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  What happens next?
+                </h3>
+                <div className="space-y-0">
+                  {[
+                    {
+                      title: "Application Review",
+                      desc: approvalResult?.approved ? "Completed" : "1-2 business days",
+                      done: !!approvalResult?.approved,
+                      active: !approvalResult?.approved,
+                    },
+                    {
+                      title: "Approval",
+                      desc: approvalResult?.approved ? "Approved" : "After document verification",
+                      done: !!approvalResult?.approved,
+                      active: false,
+                    },
+                    {
+                      title: "Membership Number Assigned",
+                      desc: approvalResult?.approved ? `AMASI ${approvalResult.amasiNumber}` : "Upon approval",
+                      done: !!approvalResult?.approved,
+                      active: false,
+                    },
+                  ].map((step, i, arr) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${
+                          step.done ? "bg-green-500" : step.active ? "bg-primary ring-2 ring-primary/30 ring-offset-1" : "bg-muted"
+                        }`}>
+                          {step.done ? (
+                            <Check className="h-3.5 w-3.5 text-white" />
+                          ) : step.active ? (
+                            <Loader2 className="h-3.5 w-3.5 text-primary-foreground animate-spin" />
+                          ) : (
+                            <span className="text-xs text-muted-foreground font-medium">{i + 1}</span>
+                          )}
+                        </div>
+                        {i < arr.length - 1 && (
+                          <div className={`w-0.5 h-8 ${step.done ? "bg-green-300" : "bg-muted"}`} />
+                        )}
+                      </div>
+                      <div className="pb-6">
+                        <p className={`text-sm font-semibold ${step.done ? "text-green-700" : step.active ? "text-foreground" : "text-muted-foreground"}`}>
+                          {step.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{step.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Action buttons */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+            className="space-y-3"
+          >
+            <Button className="w-full h-12 min-h-[44px] font-semibold gap-2" onClick={() => window.location.href = `/apply/status?ref=${refNumber}`}>
+              <FileText className="h-4 w-4" /> Track Application Status
+            </Button>
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="outline" className="h-11 min-h-[44px] text-sm gap-1.5" onClick={() => {
+                // Generate a simple receipt URL / open print dialog
+                window.print()
+              }}>
+                <FileCheck className="h-4 w-4" /> Download Receipt
+              </Button>
+              <Button variant="outline" className="h-11 min-h-[44px] text-sm gap-1.5" onClick={() => window.open("https://www.amasi.org", "_blank")}>
+                <ExternalLink className="h-4 w-4" /> AMASI Website
+              </Button>
+            </div>
+          </motion.div>
+        </motion.div>
+      </div>
     )
   }
 

@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update application
-    await supabase
+    const { error: updateError } = await supabase
       .from("membership_applications")
       .update({
         status: "rejected",
@@ -38,6 +38,11 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)
+
+    if (updateError) {
+      console.error("Reject update error:", updateError)
+      return Response.json({ status: false, message: "Failed to update application status" }, { status: 500 })
+    }
 
     // Send rejection email
     try {

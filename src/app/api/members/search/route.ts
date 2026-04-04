@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       const { data: result } = await supabase
         .from("members")
         .select("*")
-        .eq("phone", parseInt(query))
+        .eq("phone", query.trim())
         .limit(1)
       data = result
     } else {
@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
           dob: m.date_of_birth || "",
           application_no: m.application_no || "",
           membership_type: m.membership_type || "",
+          city: m.city || "",
           application_name: (() => {
             const t = m.membership_type
             if (t === "LM") return "Life Member"

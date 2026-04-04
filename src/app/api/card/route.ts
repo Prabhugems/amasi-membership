@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate QR code (links to verification page)
-    const verifyUrl = `https://membership.collegeofmas.org.in/verify?id=${member.amasi_number}`
+    const verifyUrl = `https://membership.amasi.org/verify?id=${member.amasi_number}`
     const qrDataUrl = await QRCode.toDataURL(verifyUrl, {
       width: 200,
       margin: 1,

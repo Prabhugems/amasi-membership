@@ -46,8 +46,8 @@ const PUBLIC_API_ROUTES = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Allow public pages
-  if (PUBLIC_ROUTES.some((r) => pathname.startsWith(r))) {
+  // Allow public pages (exact match or subpaths like /member/certificate, NOT /members)
+  if (PUBLIC_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"))) {
     return NextResponse.next()
   }
 

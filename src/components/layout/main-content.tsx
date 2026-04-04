@@ -8,7 +8,7 @@ export function MainContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar()
 
   const publicRoutes = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
-  const isPublicPage = publicRoutes.some(r => pathname.startsWith(r))
+  const isPublicPage = publicRoutes.some(r => pathname === r || pathname.startsWith(r + "/"))
 
   if (isPublicPage) {
     return <div>{children}</div>

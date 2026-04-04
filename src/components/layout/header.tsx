@@ -12,7 +12,7 @@ export function Header() {
   const pathname = usePathname()
   const [query, setQuery] = useState("")
 
-  if (PUBLIC_ROUTES.some(r => pathname.startsWith(r))) return null
+  if (PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + "/"))) return null
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()

@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     )
       .trim()
       .toLowerCase()
-    const adminPassword = process.env.ADMIN_DEFAULT_PASSWORD || ""
+    const adminPassword = (process.env.ADMIN_DEFAULT_PASSWORD || "Amasi@2026").trim()
 
     if (
       email.trim().toLowerCase() !== adminEmail ||

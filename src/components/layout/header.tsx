@@ -2,12 +2,17 @@
 
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useState } from "react"
+
+const PUBLIC_ROUTES = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
 
 export function Header() {
   const router = useRouter()
+  const pathname = usePathname()
   const [query, setQuery] = useState("")
+
+  if (PUBLIC_ROUTES.some(r => pathname.startsWith(r))) return null
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()

@@ -20,6 +20,7 @@ function ProfileContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams.get("q") || ""
   const [phase, setPhase] = useState<Phase>("identify")
+  const [isAdmin, setIsAdmin] = useState(false)
   const [rawMember, setRawMember] = useState<any>(null)
   const [originalData, setOriginalData] = useState<ProfileFormData | null>(null)
   const [formData, setFormData] = useState<ProfileFormData | null>(null)
@@ -27,6 +28,14 @@ function ProfileContent() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Check if admin is logged in — skip OTP if so
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => { if (d.authenticated) setIsAdmin(true) })
+      .catch(() => {})
+  }, [])
 
   // Auto-search if ?q= param is provided (e.g. from search page link)
   useEffect(() => {
@@ -41,7 +50,7 @@ function ProfileContent() {
         .catch(() => setError("Search failed. Please try again."))
         .finally(() => setIsLoading(false))
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMemberFound = (member: any) => {
     if (!member) {
@@ -54,7 +63,7 @@ function ProfileContent() {
     const mapped = dbToFormData(member)
     setOriginalData(mapped)
     setFormData({ ...mapped })
-    setPhase("otp")
+    setPhase(isAdmin ? "view" : "otp")
   }
 
   const handleEdit = () => {

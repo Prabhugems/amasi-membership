@@ -66,6 +66,14 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   documents: <FileText className="h-4 w-4" />,
 }
 
+const SECTION_COLORS: Record<string, { gradient: string; border: string; iconBg: string; iconText: string }> = {
+  personal:     { gradient: "from-teal-50/80 to-white dark:from-teal-950/20 dark:to-background",     border: "border-l-teal-500",    iconBg: "bg-teal-100 dark:bg-teal-900/40",    iconText: "text-teal-600 dark:text-teal-400" },
+  address:      { gradient: "from-blue-50/80 to-white dark:from-blue-950/20 dark:to-background",     border: "border-l-blue-500",    iconBg: "bg-blue-100 dark:bg-blue-900/40",    iconText: "text-blue-600 dark:text-blue-400" },
+  education:    { gradient: "from-purple-50/80 to-white dark:from-purple-950/20 dark:to-background", border: "border-l-purple-500",  iconBg: "bg-purple-100 dark:bg-purple-900/40",iconText: "text-purple-600 dark:text-purple-400" },
+  registration: { gradient: "from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-background", border: "border-l-emerald-500", iconBg: "bg-emerald-100 dark:bg-emerald-900/40", iconText: "text-emerald-600 dark:text-emerald-400" },
+  documents:    { gradient: "from-amber-50/80 to-white dark:from-amber-950/20 dark:to-background",   border: "border-l-amber-500",   iconBg: "bg-amber-100 dark:bg-amber-900/40",  iconText: "text-amber-600 dark:text-amber-400" },
+}
+
 interface ProfileEditFormProps {
   data: ProfileFormData
   onChange: (updated: ProfileFormData) => void
@@ -214,40 +222,70 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
     return Math.round((filled / fields.length) * 100)
   }, [data])
 
-  const completionColor = completionPercent === 100
-    ? "bg-green-500"
-    : completionPercent >= 70
-      ? "bg-primary"
-      : "bg-amber-500"
+  const completionColor = completionPercent >= 80
+    ? "bg-gradient-to-r from-green-500 to-teal-500"
+    : completionPercent >= 50
+      ? "bg-gradient-to-r from-amber-400 to-amber-500"
+      : "bg-gradient-to-r from-red-400 to-red-500"
+
+  const completionTextColor = completionPercent >= 80
+    ? "text-green-600"
+    : completionPercent >= 50
+      ? "text-amber-600"
+      : "text-red-600"
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Edit Profile</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            AMASI #{data.amasi_number} &middot; {data.email}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button onClick={onSave}>Review Changes</Button>
+      {/* Header with gradient banner */}
+      <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-500 p-6 pb-5 shadow-lg">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.15)_0%,_transparent_60%)]" />
+        <div className="relative flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            {data.profilePhoto ? (
+              <img
+                src={data.profilePhoto}
+                alt="Profile"
+                className="h-16 w-16 rounded-full object-cover ring-4 ring-white/30 shadow-lg"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center ring-4 ring-white/30 shadow-lg">
+                <User className="h-7 w-7 text-white/80" />
+              </div>
+            )}
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-white animate-in fade-in slide-in-from-left-2 duration-500">Edit Profile</h2>
+              <p className="text-sm text-white/80 mt-0.5">
+                {data.salutation} {data.firstName} {data.lastName}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge className="bg-white/20 text-white border-white/30 text-[11px] hover:bg-white/30">
+                  AMASI #{data.amasi_number}
+                </Badge>
+                <Badge className="bg-white/20 text-white border-white/30 text-[11px] hover:bg-white/30">
+                  {data.membership_type}
+                </Badge>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCancel} className="bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white">Cancel</Button>
+            <Button onClick={onSave} className="bg-white text-teal-700 hover:bg-white/90 hover:scale-105 transition-all duration-200 font-semibold shadow-md">Review Changes</Button>
+          </div>
         </div>
       </div>
 
       {/* Completion bar + quick fill toggle */}
-      <Card>
+      <Card className="border-0 shadow-md">
         <CardContent className="py-5 px-6">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium">Profile Completeness</span>
-            <span className={`text-lg font-bold tabular-nums ${completionPercent === 100 ? "text-green-600" : completionPercent >= 70 ? "text-primary" : "text-amber-600"}`}>
+            <span className={`text-lg font-bold tabular-nums transition-colors duration-300 ${completionTextColor}`}>
               {completionPercent}%
             </span>
           </div>
           <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
             <div
-              className={`h-3 rounded-full transition-all duration-500 ease-out ${completionColor}`}
+              className={`h-3 rounded-full transition-all duration-700 ease-out ${completionColor}`}
               style={{ width: `${completionPercent}%` }}
             />
           </div>
@@ -906,8 +944,8 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
           Changes are saved only after review and OTP verification.
         </p>
         <div className="flex gap-3 ml-auto">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button onClick={onSave} size="lg" className="font-semibold">
+          <Button variant="outline" onClick={onCancel} className="hover:bg-muted transition-colors duration-200">Cancel</Button>
+          <Button onClick={onSave} size="lg" className="font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg text-white">
             Review Changes
           </Button>
         </div>
@@ -930,19 +968,23 @@ function Section({ title, id, complete, open, onToggle, children, show = true, s
   collapsedSummary?: React.ReactNode
 }) {
   if (!show) return null
+  const colors = SECTION_COLORS[id] || SECTION_COLORS.personal
   return (
-    <Card className={open ? "overflow-visible" : "overflow-hidden"} id={id}>
+    <Card
+      className={`border-l-4 ${colors.border} bg-gradient-to-r ${colors.gradient} hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 ${open ? "overflow-visible shadow-md" : "overflow-hidden"}`}
+      id={id}
+    >
       <button
         onClick={() => onToggle(id)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left font-medium hover:bg-accent/50 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 text-left font-medium hover:bg-accent/30 transition-colors"
       >
         <span className="flex items-center gap-3">
-          <span className={`flex items-center justify-center h-8 w-8 rounded-lg ${complete ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"}`}>
-            {SECTION_ICONS[id] || <CircleDot className="h-4 w-4" />}
+          <span className={`flex items-center justify-center h-9 w-9 rounded-full shadow-sm ${complete ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" : `${colors.iconBg} ${colors.iconText}`}`}>
+            {complete ? <CheckCircle2 className="h-4.5 w-4.5" /> : (SECTION_ICONS[id] || <CircleDot className="h-4 w-4" />)}
           </span>
           <span className="flex flex-col gap-1">
             <span className="flex items-center gap-2.5">
-              <span className="text-base">{title}</span>
+              <span className="text-base font-semibold">{title}</span>
               {complete ? (
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
               ) : (
@@ -963,10 +1005,10 @@ function Section({ title, id, complete, open, onToggle, children, show = true, s
             )}
           </span>
         </span>
-        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${open ? "rotate-0" : "-rotate-90"}`} />
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-300 shrink-0 ${open ? "rotate-0" : "-rotate-90"}`} />
       </button>
       <div
-        className={`transition-all duration-200 ease-in-out ${open ? "opacity-100 overflow-visible" : "opacity-0 h-0 overflow-hidden"}`}
+        className={`transition-all duration-300 ease-in-out ${open ? "opacity-100 overflow-visible" : "opacity-0 h-0 overflow-hidden"}`}
       >
         {open && <CardContent className="pt-0 pb-5 px-5 overflow-visible">{children}</CardContent>}
       </div>
@@ -987,6 +1029,7 @@ function Field({ label, value, onChange, type = "text", required, placeholder, c
 }) {
   if (!show) return null
   const isEmpty = required && !value
+  const isFilled = !!value
   return (
     <div className={className}>
       <Label className="text-sm font-medium">
@@ -998,7 +1041,13 @@ function Field({ label, value, onChange, type = "text", required, placeholder, c
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         maxLength={maxLength}
-        className={`mt-1.5 ${isEmpty ? "border-amber-400 bg-amber-50/50 focus-visible:ring-amber-400" : ""}`}
+        className={`mt-1.5 transition-all duration-200 focus:shadow-[0_0_0_3px_rgba(20,184,166,0.1)] ${
+          isEmpty
+            ? "border-l-2 border-l-amber-400 border-amber-400 bg-amber-50/50 focus-visible:ring-amber-400"
+            : isFilled
+              ? "border-l-2 border-l-green-400"
+              : ""
+        }`}
       />
     </div>
   )

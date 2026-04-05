@@ -125,12 +125,8 @@ function CardFront({ card, theme }: { card: CardData; theme: ThemeData }) {
       }}
     >
       {/* Watermark logo */}
-      <div className="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none" style={{ zIndex: 1 }}>
-        <svg width="280" height="280" viewBox="0 0 100 100" fill="white">
-          <text x="50" y="55" textAnchor="middle" fontSize="22" fontWeight="900" fontFamily="sans-serif">AMASI</text>
-          <circle cx="50" cy="50" r="42" fill="none" stroke="white" strokeWidth="2" />
-          <circle cx="50" cy="50" r="38" fill="none" stroke="white" strokeWidth="0.5" />
-        </svg>
+      <div className="absolute inset-0 flex items-center justify-center opacity-[0.06] pointer-events-none" style={{ zIndex: 1 }}>
+        <img src="/amasi-logo.png" alt="" className="w-52 h-52 object-contain" />
       </div>
 
       {/* Dot pattern */}
@@ -167,9 +163,7 @@ function CardFront({ card, theme }: { card: CardData; theme: ThemeData }) {
         {/* Top: Logo + type badge */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-10 w-10 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20">
-              <CreditCard className="h-5 w-5" />
-            </div>
+            <img src="/amasi-logo.png" alt="AMASI" className="h-10 w-10 rounded-lg object-contain" />
             <div>
               <p className="font-bold text-lg tracking-[0.2em]">AMASI</p>
               <p className="text-[9px] text-white/50 -mt-0.5 tracking-wide">Association of Minimal Access Surgeons of India</p>
@@ -247,11 +241,8 @@ function CardBack({ card, theme }: { card: CardData; theme: ThemeData }) {
       }}
     >
       {/* Watermark */}
-      <div className="absolute inset-0 flex items-center justify-center opacity-[0.04] pointer-events-none" style={{ zIndex: 1 }}>
-        <svg width="320" height="320" viewBox="0 0 100 100" fill="white">
-          <text x="50" y="55" textAnchor="middle" fontSize="22" fontWeight="900" fontFamily="sans-serif">AMASI</text>
-          <circle cx="50" cy="50" r="42" fill="none" stroke="white" strokeWidth="2" />
-        </svg>
+      <div className="absolute inset-0 flex items-center justify-center opacity-[0.06] pointer-events-none" style={{ zIndex: 1 }}>
+        <img src="/amasi-logo.png" alt="" className="w-52 h-52 object-contain" />
       </div>
 
       {/* Dot pattern */}

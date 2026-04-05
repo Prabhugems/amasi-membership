@@ -182,11 +182,11 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
             <div className="flex-1 sm:pb-1">
               <div className="flex items-start justify-between flex-wrap gap-3">
                 <div>
-                  <h2 className="text-2xl font-bold tracking-tight">{data.salutation} {fullName}</h2>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    <span className="font-mono font-semibold text-foreground/80">AMASI #{data.amasi_number}</span>
-                    <span className="mx-1.5 text-muted-foreground/40">&middot;</span>
-                    Application {data.application_no}
+                  <h2 className="text-2xl font-bold tracking-tight text-white">{data.salutation} {fullName}</h2>
+                  <p className="text-sm mt-0.5">
+                    <span className="font-mono font-semibold text-white">AMASI #{data.amasi_number}</span>
+                    <span className="mx-1.5 text-white/40">&middot;</span>
+                    <span className="text-white/80">Application {data.application_no}</span>
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -203,7 +203,7 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
                   </Badge>
                 </div>
               </div>
-              <div className="flex items-center gap-4 mt-2.5 flex-wrap text-sm text-muted-foreground">
+              <div className="flex items-center gap-4 mt-2.5 flex-wrap text-sm text-white/70">
                 <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{data.email}</span>
                 <span className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" />{data.phone}</span>
                 {data.city && (

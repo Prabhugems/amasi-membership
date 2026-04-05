@@ -118,7 +118,7 @@ export async function PATCH(
         if (member.phone) {
           const phone = String(member.phone).replace(/\D/g, "")
           if (phone.length >= 10) {
-            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, String(member.amasi_number), `https://amasi-membership.vercel.app/member`)
+            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, "Life Member", String(member.amasi_number))
           }
         }
       } catch (whatsappErr) {

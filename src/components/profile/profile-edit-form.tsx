@@ -28,14 +28,14 @@ const COLLEGE_OPTIONS = MEDICAL_COLLEGES_INDIA.map(c => ({
   university: c.university,
 }))
 
-const ALL_DOCUMENT_TYPES: { key: keyof ProfileFormData; dbCol: string; label: string; forTypes?: string[] }[] = [
-  { key: "profilePhoto", dbCol: "profile_photo", label: "Profile Photo" },
-  { key: "mciCertificate", dbCol: "mci_certificate", label: "MCI Certificate" },
-  { key: "pgDegreeCertificate", dbCol: "pg_degree_certificate", label: "PG Degree Certificate" },
-  { key: "mbbsDegreeCertificate", dbCol: "mbbs_degree_certificate", label: "MBBS Degree Certificate", forTypes: ["LM"] },
-  { key: "asiMemberCertificate", dbCol: "asi_member_certificate", label: "ASI Certificate", forTypes: ["LM"] },
-  { key: "activeLicense", dbCol: "active_license", label: "Active License", forTypes: ["LM", "ILM"] },
-  { key: "letterHod", dbCol: "letter_hod", label: "HOD Letter", forTypes: ["ACM"] },
+const ALL_DOCUMENT_TYPES: { key: keyof ProfileFormData; dbCol: string; label: string; required?: boolean; forTypes?: string[] }[] = [
+  { key: "profilePhoto", dbCol: "profile_photo", label: "Profile Photo", required: true },
+  { key: "mciCertificate", dbCol: "mci_certificate", label: "MCI Certificate", required: true, forTypes: ["LM", "ALM", "ACM"] },
+  { key: "pgDegreeCertificate", dbCol: "pg_degree_certificate", label: "PG Degree Certificate", required: true, forTypes: ["LM", "ALM", "ILM"] },
+  { key: "mbbsDegreeCertificate", dbCol: "mbbs_degree_certificate", label: "MBBS Degree Certificate", required: true, forTypes: ["ACM"] },
+  { key: "asiMemberCertificate", dbCol: "asi_member_certificate", label: "ASI Certificate", required: true, forTypes: ["LM"] },
+  { key: "activeLicense", dbCol: "active_license", label: "Active License", required: true, forTypes: ["ILM"] },
+  { key: "letterHod", dbCol: "letter_hod", label: "HOD Letter", required: true, forTypes: ["ACM"] },
 ]
 
 const INDIAN_STATES = [

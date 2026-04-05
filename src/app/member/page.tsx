@@ -841,43 +841,7 @@ function MemberPortalContent() {
 
             {/* Support Tab */}
             {activeTab === "support" && (
-              <div className="max-w-2xl space-y-6">
-                <div>
-                  <h2 className="text-2xl font-bold">Support</h2>
-                  <p className="text-muted-foreground text-sm mt-1">Need help? Reach out to the AMASI team</p>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Card className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-6 text-center">
-                      <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mb-4">
-                        <Mail className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <p className="font-semibold">Email Support</p>
-                      <p className="text-xs text-muted-foreground mt-1 mb-3">For membership queries and document issues</p>
-                      <a href="mailto:admin@amasi.org.in" className="text-sm text-primary font-medium hover:underline">
-                        admin@amasi.org.in
-                      </a>
-                    </CardContent>
-                  </Card>
-                  <Card className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-6 text-center">
-                      <div className="mx-auto w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center mb-4">
-                        <Phone className="h-6 w-6 text-green-600" />
-                      </div>
-                      <p className="font-semibold">Phone Support</p>
-                      <p className="text-xs text-muted-foreground mt-1 mb-3">Available Mon-Sat, 10 AM - 6 PM IST</p>
-                      <p className="text-sm text-primary font-medium">Contact via email</p>
-                    </CardContent>
-                  </Card>
-                </div>
-                <Card className="bg-muted/50">
-                  <CardContent className="p-5">
-                    <p className="text-sm text-muted-foreground">
-                      For urgent issues related to your membership, certificate, or account access, please email <strong>admin@amasi.org.in</strong> with your AMASI number <strong className="font-mono">#{amasiNum}</strong> in the subject line for faster resolution.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+              <MemberSupportTab member={member} />
             )}
           </main>
         </div>
@@ -886,6 +850,246 @@ function MemberPortalContent() {
   }
 
   return null
+}
+
+// ===================== MEMBER SUPPORT TAB =====================
+
+const TICKET_CATEGORIES = [
+  "Application Issue", "Profile Update", "Payment Issue", "Certificate/Card", "Technical Issue", "Other",
+]
+
+function MemberSupportTab({ member }: { member: any }) {
+  const [view, setView] = useState<"list" | "new" | "detail">("list")
+  const [tickets, setTickets] = useState<any[]>([])
+  const [selectedTicket, setSelectedTicket] = useState<any>(null)
+  const [replies, setReplies] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [replyText, setReplyText] = useState("")
+  const [sendingReply, setSendingReply] = useState(false)
+
+  // New ticket form
+  const [category, setCategory] = useState("Other")
+  const [subject, setSubject] = useState("")
+  const [description, setDescription] = useState("")
+  const [submitted, setSubmitted] = useState<string | null>(null)
+
+  // Fetch tickets
+  useEffect(() => {
+    if (!member?.email) return
+    setLoading(true)
+    fetch(`/api/tickets?email=${encodeURIComponent(member.email)}`)
+      .then(r => r.json())
+      .then(d => setTickets(Array.isArray(d) ? d : []))
+      .catch(() => setTickets([]))
+      .finally(() => setLoading(false))
+  }, [member?.email, submitted])
+
+  const handleSubmit = async () => {
+    if (!subject.trim() || !description.trim()) return
+    setSubmitting(true)
+    try {
+      const res = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: member.name || member.first_name || "Member",
+          email: member.email,
+          phone: member.phone || member.mobile,
+          amasi_number: String(member.amasi_number || member.membership_no || ""),
+          category,
+          subject: subject.trim(),
+          description: description.trim(),
+          priority: "normal",
+        }),
+      })
+      const data = await res.json()
+      if (data.ticket_number || data.id) {
+        setSubmitted(data.ticket_number || "Submitted")
+        setSubject("")
+        setDescription("")
+        setCategory("Other")
+        setTimeout(() => { setView("list"); setSubmitted(null) }, 3000)
+      }
+    } catch { /* ignore */ }
+    finally { setSubmitting(false) }
+  }
+
+  const openTicket = async (ticket: any) => {
+    setSelectedTicket(ticket)
+    setView("detail")
+    setReplies([])
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}`)
+      const data = await res.json()
+      setReplies(data.replies || [])
+    } catch { /* ignore */ }
+  }
+
+  const handleReply = async () => {
+    if (!replyText.trim() || !selectedTicket) return
+    setSendingReply(true)
+    try {
+      const res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: replyText.trim(), is_admin: false, author_name: member.name || "Member" }),
+      })
+      const data = await res.json()
+      if (data.id || data.message) {
+        setReplies(prev => [...prev, data])
+        setReplyText("")
+      }
+    } catch { /* ignore */ }
+    finally { setSendingReply(false) }
+  }
+
+  const statusColor = (s: string) => {
+    if (s === "open") return "bg-amber-100 text-amber-700"
+    if (s === "in_progress") return "bg-blue-100 text-blue-700"
+    if (s === "resolved") return "bg-green-100 text-green-700"
+    return "bg-gray-100 text-gray-600"
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Support</h2>
+          <p className="text-muted-foreground text-sm mt-1">Submit a ticket or track existing ones</p>
+        </div>
+        {view === "list" && (
+          <Button onClick={() => setView("new")} className="bg-primary">
+            <Mail className="h-4 w-4 mr-2" /> New Ticket
+          </Button>
+        )}
+        {view !== "list" && (
+          <Button variant="outline" onClick={() => { setView("list"); setSelectedTicket(null) }}>
+            ← Back to Tickets
+          </Button>
+        )}
+      </div>
+
+      {/* Submit new ticket */}
+      {view === "new" && (
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            {submitted ? (
+              <div className="text-center py-8 space-y-3">
+                <div className="mx-auto w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                  <CheckCircle className="h-7 w-7 text-green-600" />
+                </div>
+                <p className="font-bold text-lg">Ticket Submitted!</p>
+                <p className="text-sm text-muted-foreground">Ticket ID: <span className="font-mono font-bold">{submitted}</span></p>
+                <p className="text-xs text-muted-foreground">We&apos;ll respond within 1-2 business days</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="text-sm font-medium">Category</label>
+                  <select value={category} onChange={e => setCategory(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5">
+                    {TICKET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Subject <span className="text-destructive">*</span></label>
+                  <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Brief description of your issue" className="mt-1.5" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Description <span className="text-destructive">*</span></label>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Provide details about your issue..." rows={4} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 min-h-[100px]" />
+                  <p className="text-xs text-muted-foreground mt-1">{description.length}/2000</p>
+                </div>
+                <Button onClick={handleSubmit} disabled={submitting || !subject.trim() || !description.trim()} className="w-full">
+                  {submitting ? "Submitting..." : "Submit Ticket"}
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ticket list */}
+      {view === "list" && (
+        <>
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground">Loading tickets...</div>
+          ) : tickets.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-12 text-center">
+                <p className="font-medium">No tickets yet</p>
+                <p className="text-sm text-muted-foreground mt-1">Click &ldquo;New Ticket&rdquo; to submit your first support request</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {tickets.map((t: any) => (
+                <Card key={t.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => openTicket(t)}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{t.subject}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          <span className="font-mono">{t.ticket_number}</span> &middot; {t.category} &middot; {formatDate(t.created_at)}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor(t.status)}`}>
+                        {t.status === "in_progress" ? "In Progress" : t.status?.charAt(0).toUpperCase() + t.status?.slice(1)}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Ticket detail + replies */}
+      {view === "detail" && selectedTicket && (
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p className="font-mono text-xs text-muted-foreground">{selectedTicket.ticket_number}</p>
+                  <p className="font-bold mt-1">{selectedTicket.subject}</p>
+                </div>
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor(selectedTicket.status)}`}>
+                  {selectedTicket.status === "in_progress" ? "In Progress" : selectedTicket.status?.charAt(0).toUpperCase() + selectedTicket.status?.slice(1)}
+                </span>
+              </div>
+              <p className="text-sm whitespace-pre-wrap">{selectedTicket.description}</p>
+              <p className="text-xs text-muted-foreground mt-3">{formatDate(selectedTicket.created_at)}</p>
+            </CardContent>
+          </Card>
+
+          {/* Replies */}
+          {replies.map((r: any, i: number) => (
+            <div key={r.id || i} className={`flex ${r.is_admin ? "justify-start" : "justify-end"}`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${r.is_admin ? "bg-muted rounded-tl-sm" : "bg-primary text-primary-foreground rounded-tr-sm"}`}>
+                <p className={`text-[10px] font-semibold mb-1 ${r.is_admin ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
+                  {r.is_admin ? "AMASI Admin" : "You"} &middot; {formatDate(r.created_at)}
+                </p>
+                <p className="whitespace-pre-wrap">{r.message}</p>
+              </div>
+            </div>
+          ))}
+
+          {/* Reply form */}
+          {selectedTicket.status !== "closed" && (
+            <div className="flex gap-2">
+              <Input value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type your reply..." className="flex-1"
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply() } }} />
+              <Button onClick={handleReply} disabled={sendingReply || !replyText.trim()} size="sm">
+                {sendingReply ? "..." : "Send"}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function MemberPortalPage() {

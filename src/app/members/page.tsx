@@ -44,7 +44,7 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
   pending: "bg-yellow-50 text-yellow-700 border border-yellow-200",
 }
 
-const ZONES = ["North", "South", "East", "West", "Central"]
+const ZONES = ["North Zone", "South Zone", "East Zone", "West Zone", "Central Zone", "International"]
 const STATUSES = ["active", "inactive"]
 
 // Indian states commonly used

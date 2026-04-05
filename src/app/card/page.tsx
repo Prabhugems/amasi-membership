@@ -183,12 +183,13 @@ function CardFront({ card, theme }: { card: CardData; theme: ThemeData }) {
                 src={card.profilePhoto}
                 alt=""
                 className="relative h-[72px] w-[72px] rounded-full object-cover border-2 border-white/30 shadow-lg"
-                crossOrigin="anonymous"
               />
             </div>
           ) : (
-            <div className="h-[72px] w-[72px] rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold border-2 border-white/20 backdrop-blur-sm">
-              {card.name?.charAt(0)}
+            <div className="h-[72px] w-[72px] rounded-full bg-white/15 flex items-center justify-center border-2 border-white/30 backdrop-blur-sm shadow-lg overflow-hidden">
+              <svg viewBox="0 0 24 24" className="h-10 w-10 text-white/40" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
             </div>
           )}
           <div className="min-w-0">
@@ -667,6 +668,14 @@ function CardContent() {
                 <span className="text-xs font-medium">Verify</span>
               </a>
             </div>
+
+            {!card.profilePhoto && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                <p className="text-sm font-medium text-amber-800">Photo missing on your card</p>
+                <p className="text-xs text-amber-600 mt-1">Upload your photo via the Member Portal to complete your card</p>
+                <a href="/member" className="inline-block mt-2 text-xs font-semibold text-primary hover:underline">Go to Member Portal →</a>
+              </div>
+            )}
 
             <p className="text-center text-xs text-muted-foreground">
               Scan the QR code on the card to verify membership online

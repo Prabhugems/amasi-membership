@@ -194,8 +194,14 @@ export async function POST(request: NextRequest) {
       aiConfidence = "low"
     }
 
+    // Generate upgrade number
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+    const code = Math.random().toString(36).substring(2, 6).toUpperCase()
+    const upgradeNumber = `UPG-${date}-${code}`
+
     // Insert upgrade record
     const upgradeRecord = {
+      upgrade_number: upgradeNumber,
       member_id: memberId,
       amasi_number: amasiNumber,
       member_name: memberName || member.name,

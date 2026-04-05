@@ -937,22 +937,12 @@ export default function ApplyPage() {
                   <Upload className="h-4 w-4" /> Update Profile & Upload Documents
                 </Button>
               )}
-              {!isIncomplete && m.application_name?.includes("ALM") && (
-                <Button className="w-full gap-2" onClick={() => {
-                  setFormData(prev => ({
-                    ...prev,
-                    email: m.email || "",
-                    firstName: m.first_name || "",
-                    lastName: m.last_name || "",
-                    mobile: m.mobile || "",
-                    membershipType: "LM",
-                  }))
-                  setSelectedType(getMembershipType("LM") || null)
-                  setPhase("upload")
-                  toast.info("To upgrade to Life Member, you need an ASI Membership Certificate")
-                }}>
-                  <ArrowRight className="h-4 w-4" /> Upgrade to Life Member (LM)
-                </Button>
+              {!isIncomplete && (m.application_name?.includes("ALM") || m.application_name?.includes("Associate Life")) && (
+                <a href="/member" className="block">
+                  <Button className="w-full gap-2">
+                    <ArrowRight className="h-4 w-4" /> Upgrade to Life Member (LM)
+                  </Button>
+                </a>
               )}
               <Button variant="outline" className="w-full" onClick={() => { setExistingMember(null); setCheckQuery(""); setPhase("check") }}>
                 Check Another

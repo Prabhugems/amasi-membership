@@ -21,6 +21,7 @@ import {
   ChevronsRight,
   ExternalLink,
   LogOut,
+  ArrowUpCircle,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -46,6 +47,7 @@ const sections: NavSection[] = [
       { name: "Pending Actions", href: "/pending", icon: ClipboardCheck, badgeKey: "pending" },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Reports", href: "/reports", icon: BarChart3 },
+      { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
     ],
   },

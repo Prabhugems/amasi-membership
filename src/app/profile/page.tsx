@@ -2,8 +2,9 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle } from "lucide-react"
+import { CheckCircle, ArrowLeft, LayoutDashboard, Users, Search } from "lucide-react"
 import { HelpButton } from "@/components/ui/help-button"
+import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ProfileIdentify } from "@/components/profile/profile-identify"
@@ -121,6 +122,31 @@ function ProfileContent() {
 
   return (
     <div className="space-y-6">
+      {/* Navigation bar */}
+      <div className="flex items-center justify-between flex-wrap gap-3 -mt-2">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            Dashboard
+          </Link>
+          <span className="text-border">|</span>
+          <Link href="/members" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <Users className="h-3.5 w-3.5" />
+            Members
+          </Link>
+          <span className="text-border">|</span>
+          <Link href="/search" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <Search className="h-3.5 w-3.5" />
+            Search
+          </Link>
+        </div>
+        {formData && phase !== "identify" && (
+          <Button variant="outline" size="sm" onClick={handleStartOver} className="text-xs">
+            Search Another Member
+          </Button>
+        )}
+      </div>
+
       {phase === "identify" && (
         <ProfileIdentify
           onFound={handleMemberFound}

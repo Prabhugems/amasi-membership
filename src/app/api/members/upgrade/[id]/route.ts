@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { Resend } from "resend"
 
 function getResend() {
@@ -110,6 +111,18 @@ export async function PATCH(
         })
       } catch (emailErr) {
         console.error("Upgrade approval email error:", emailErr)
+      }
+
+      // Send WhatsApp notification
+      try {
+        if (member.phone) {
+          const phone = String(member.phone).replace(/\D/g, "")
+          if (phone.length >= 10) {
+            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, String(member.amasi_number), `https://amasi-membership.vercel.app/member`)
+          }
+        }
+      } catch (whatsappErr) {
+        console.error("Upgrade WhatsApp error:", whatsappErr)
       }
 
       return Response.json({

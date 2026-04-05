@@ -30,7 +30,7 @@ interface NavItem {
   name: string
   href: string
   icon: typeof LayoutDashboard
-  badgeKey?: "pending" | "tickets"
+  badgeKey?: "pending" | "tickets" | "upgrades"
 }
 
 interface NavSection {
@@ -47,7 +47,7 @@ const sections: NavSection[] = [
       { name: "Pending Actions", href: "/pending", icon: ClipboardCheck, badgeKey: "pending" },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Reports", href: "/reports", icon: BarChart3 },
-      { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle },
+      { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
     ],
   },
@@ -63,9 +63,10 @@ const sections: NavSection[] = [
 ]
 
 function useBadgeCounts() {
-  const [counts, setCounts] = useState<{ pending: number; tickets: number }>({
+  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number }>({
     pending: 0,
     tickets: 0,
+    upgrades: 0,
   })
 
   useEffect(() => {
@@ -73,9 +74,10 @@ function useBadgeCounts() {
 
     async function fetchCounts() {
       try {
-        const [dashRes, ticketsRes] = await Promise.all([
+        const [dashRes, ticketsRes, upgradesRes] = await Promise.all([
           fetch("/api/dashboard").then((r) => r.json()).catch(() => null),
           fetch("/api/tickets?all=1").then((r) => r.json()).catch(() => null),
+          fetch("/api/members/upgrade?all=1").then((r) => r.json()).catch(() => null),
         ])
 
         if (cancelled) return
@@ -83,8 +85,10 @@ function useBadgeCounts() {
         const pending = dashRes?.data?.pendingApplicationsCount ?? 0
         const openTickets =
           (Array.isArray(ticketsRes) ? ticketsRes.filter((t: { status: string }) => t.status === "open").length : 0)
+        const pendingUpgrades =
+          (Array.isArray(upgradesRes) ? upgradesRes.filter((u: { status: string }) => u.status === "pending_review" || u.status === "pending").length : 0)
 
-        setCounts({ pending, tickets: openTickets })
+        setCounts({ pending, tickets: openTickets, upgrades: pendingUpgrades })
       } catch {
         // silently fail — badges just show 0
       }

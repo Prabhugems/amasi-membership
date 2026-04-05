@@ -1011,7 +1011,7 @@ export default function ApplyPage() {
           transition={{ delay: 0.3 }}
         >
           <h2 className="text-lg font-semibold text-center mb-4">Choose Your Membership</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-14">
+          <div className="grid gap-4 sm:grid-cols-2 mb-14">
             {MEMBERSHIP_TYPES.map((type) => {
               const fee = calculateFee(type)
               return (
@@ -1025,20 +1025,28 @@ export default function ApplyPage() {
                   className="group rounded-xl border-2 p-5 text-left transition-all hover:border-primary hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.98]"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <Badge variant="secondary" className="text-xs font-semibold">{type.shortName}</Badge>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <Badge variant="secondary" className="text-xs font-semibold px-2.5 py-1">{type.shortName}</Badge>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                   </div>
-                  <h3 className="font-semibold mb-1 text-sm">{type.name}</h3>
-                  <p className="text-xs text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">{type.eligibility}</p>
-                  <p className="text-2xl font-bold text-primary">
-                    {fee.currency}{fee.totalFee.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">incl. GST</p>
-                  {type.votingRights && (
-                    <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary">
-                      <Star className="h-3 w-3" /> Voting Rights
+                  <h3 className="font-semibold mb-2 text-base">{type.name}</h3>
+                  <p className="text-sm text-muted-foreground mb-2">{type.eligibility}</p>
+                  <p className="text-xs text-muted-foreground mb-4">{type.description}</p>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-2xl font-bold text-primary">
+                        {fee.currency}{fee.totalFee.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">incl. GST</p>
                     </div>
-                  )}
+                    {type.votingRights && (
+                      <div className="flex items-center gap-1 text-xs font-medium text-primary bg-primary/5 px-2.5 py-1.5 rounded-full">
+                        <Star className="h-3 w-3" /> Voting Rights
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+                    <span className="font-medium">Required:</span> {type.requiredDocs.filter(d => d !== "profile").map(d => d.replace(/_/g, " ").replace("certificate", "cert")).join(", ")}
+                  </div>
                 </button>
               )
             })}

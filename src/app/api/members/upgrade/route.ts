@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
       ai_verified: aiVerified,
       ai_confidence: aiConfidence,
       review_notes: aiNotes.join("; "),
-      status: "pending",
+      status: "pending_review",
     }
 
     const { data: upgrade, error: insertError } = await supabase

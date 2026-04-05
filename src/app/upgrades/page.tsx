@@ -107,6 +107,7 @@ function StatCard({ label, count, color }: { label: string; count: number; color
 function UpgradesContent() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [rejectNotes, setRejectNotes] = useState("")
 
@@ -172,12 +173,18 @@ function UpgradesContent() {
     rejected: upgrades.filter((u) => u.status === "rejected").length,
   }
 
-  const filtered = statusFilter
-    ? upgrades.filter((u) => {
-        if (statusFilter === "pending") return u.status === "pending" || u.status === "pending_review"
-        return u.status === statusFilter
-      })
-    : upgrades
+  const filtered = upgrades.filter((u) => {
+    if (statusFilter) {
+      if (statusFilter === "pending" && u.status !== "pending" && u.status !== "pending_review") return false
+      if (statusFilter !== "pending" && u.status !== statusFilter) return false
+    }
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase()
+      const haystack = `${u.member_name} ${u.member_email} ${u.amasi_number} ${u.asi_membership_no} ${u.upgrade_number}`.toLowerCase()
+      if (!haystack.includes(q)) return false
+    }
+    return true
+  })
 
   const isPending = (status: string) => status === "pending" || status === "pending_review"
 
@@ -225,6 +232,18 @@ function UpgradesContent() {
             </button>
           )
         })}
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <input
+          type="text"
+          placeholder="Search by name, email, AMASI #, or upgrade #..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full h-10 pl-9 pr-3 rounded-lg border border-input bg-background text-sm"
+        />
+        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
       </div>
 
       {/* Upgrade request list */}

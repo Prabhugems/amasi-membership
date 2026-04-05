@@ -340,23 +340,36 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
             </div>
           </SectionCard>
 
-          {/* ===== Documents Section ===== */}
+          {/* ===== Documents Section (filtered by membership type) ===== */}
           <SectionCard id="documents-info" title="Documents" icon={FileText}>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                { label: "MCI Certificate", url: data.mciCertificate },
-                { label: "PG Degree", url: data.pgDegreeCertificate },
-                { label: "MBBS Degree", url: data.mbbsDegreeCertificate },
-                { label: "ASI Certificate", url: data.asiMemberCertificate },
-                { label: "Active License", url: data.activeLicense },
-                { label: "HOD Letter", url: data.letterHod },
-              ].map((doc) => (
-                <DocumentCard key={doc.label} label={doc.label} url={doc.url} />
-              ))}
+              {(() => {
+                const mt = (data.membership_type || "").toUpperCase()
+                const docs: { label: string; url: string | null | undefined }[] = []
+
+                // Common: MCI Certificate (all types except ILM)
+                if (mt !== "ILM") docs.push({ label: "MCI Certificate", url: data.mciCertificate })
+
+                // PG Degree: LM, ALM, ILM
+                if (mt !== "ACM") docs.push({ label: "PG Degree Certificate", url: data.pgDegreeCertificate })
+
+                // MBBS Degree: ACM only
+                if (mt === "ACM") docs.push({ label: "MBBS Degree Certificate", url: data.mbbsDegreeCertificate })
+
+                // ASI Certificate: LM only
+                if (mt === "LM") docs.push({ label: "ASI Certificate", url: data.asiMemberCertificate })
+
+                // Active License: ILM only
+                if (mt === "ILM") docs.push({ label: "Active License", url: data.activeLicense })
+
+                // HOD Letter: ACM only
+                if (mt === "ACM") docs.push({ label: "HOD Letter", url: data.letterHod })
+
+                return docs.map((doc) => (
+                  <DocumentCard key={doc.label} label={doc.label} url={doc.url} />
+                ))
+              })()}
             </div>
-            {![data.mciCertificate, data.pgDegreeCertificate, data.mbbsDegreeCertificate, data.asiMemberCertificate, data.activeLicense, data.letterHod].some(Boolean) && (
-              <p className="text-sm text-muted-foreground italic mt-2">No documents uploaded</p>
-            )}
           </SectionCard>
 
           {/* Bottom Edit button for mobile */}

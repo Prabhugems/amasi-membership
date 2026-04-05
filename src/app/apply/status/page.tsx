@@ -25,6 +25,7 @@ import {
   FileEdit,
 } from "lucide-react"
 import { formatDate } from "@/lib/utils"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 
 interface ApplicationData {
   id: string
@@ -792,15 +793,18 @@ function StatusContent() {
 
 export default function StatusPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="max-w-2xl mx-auto py-16 text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-          <p className="text-muted-foreground mt-4">Loading...</p>
-        </div>
-      }
-    >
-      <StatusContent />
-    </Suspense>
+    <>
+      <AdminBackLink />
+      <Suspense
+        fallback={
+          <div className="max-w-2xl mx-auto py-16 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+            <p className="text-muted-foreground mt-4">Loading...</p>
+          </div>
+        }
+      >
+        <StatusContent />
+      </Suspense>
+    </>
   )
 }

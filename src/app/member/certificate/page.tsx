@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 
 /* ------------------------------------------------------------------ */
 /*  Certificate frame CSS                                             */
@@ -360,12 +361,15 @@ function CertificateContent() {
 
 export default function CertificatePage() {
   return (
-    <Suspense fallback={
-      <div className="p-6 text-center">
-        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-      </div>
-    }>
-      <CertificateContent />
-    </Suspense>
+    <>
+      <AdminBackLink />
+      <Suspense fallback={
+        <div className="p-6 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+        </div>
+      }>
+        <CertificateContent />
+      </Suspense>
+    </>
   )
 }

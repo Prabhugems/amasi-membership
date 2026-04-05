@@ -8,6 +8,7 @@ import {
   Paperclip, AlertCircle, HelpCircle, FileText, CreditCard, UserCog,
   BookOpen, Shield, X,
 } from "lucide-react"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -1029,14 +1030,17 @@ function SupportContent() {
 
 export default function SupportPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-background flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      }
-    >
-      <SupportContent />
-    </Suspense>
+    <>
+      <AdminBackLink />
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-background flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        <SupportContent />
+      </Suspense>
+    </>
   )
 }

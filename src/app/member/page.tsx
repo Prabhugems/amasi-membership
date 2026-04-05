@@ -9,6 +9,7 @@ import {
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
   Activity, Lock,
 } from "lucide-react"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -890,6 +891,7 @@ function MemberPortalContent() {
 export default function MemberPortalPage() {
   return (
     <>
+      <AdminBackLink />
       <Suspense fallback={
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center space-y-3">

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 
 /* ------------------------------------------------------------------ */
 /*  Auto-suggest search with debounced API calls                      */
@@ -688,8 +689,11 @@ function CardContent() {
 
 export default function CardPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>}>
-      <CardContent />
-    </Suspense>
+    <>
+      <AdminBackLink />
+      <Suspense fallback={<div className="p-6 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>}>
+        <CardContent />
+      </Suspense>
+    </>
   )
 }

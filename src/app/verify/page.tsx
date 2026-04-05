@@ -24,6 +24,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { AdminBackLink } from "@/components/ui/admin-back-link"
 
 function VerifyContent() {
   const searchParams = useSearchParams()
@@ -404,15 +405,18 @@ function VerifyContent() {
 
 export default function VerifyPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="py-16 text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-          <p className="text-muted-foreground mt-4">Loading...</p>
-        </div>
-      }
-    >
-      <VerifyContent />
-    </Suspense>
+    <>
+      <AdminBackLink />
+      <Suspense
+        fallback={
+          <div className="py-16 text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+            <p className="text-muted-foreground mt-4">Loading...</p>
+          </div>
+        }
+      >
+        <VerifyContent />
+      </Suspense>
+    </>
   )
 }

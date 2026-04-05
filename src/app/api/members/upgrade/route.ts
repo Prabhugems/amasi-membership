@@ -28,12 +28,28 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Verify member exists and is ALM
-    const { data: member, error: memberError } = await supabase
+    // Verify member exists and is ALM (try by id first, then by amasi_number)
+    let member = null
+    let memberError = null
+
+    const { data: m1, error: e1 } = await supabase
       .from("members")
       .select("id, membership_type, amasi_number, name, email")
       .eq("id", memberId)
       .single()
+
+    if (m1) {
+      member = m1
+    } else {
+      // Fallback: try by amasi_number
+      const { data: m2, error: e2 } = await supabase
+        .from("members")
+        .select("id, membership_type, amasi_number, name, email")
+        .eq("amasi_number", parseInt(amasiNumber))
+        .single()
+      member = m2
+      memberError = e2
+    }
 
     if (memberError || !member) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })

@@ -882,6 +882,7 @@ function MemberSupportTab({ member }: { member: any }) {
   const [category, setCategory] = useState("Other")
   const [subject, setSubject] = useState("")
   const [description, setDescription] = useState("")
+  const [attachment, setAttachment] = useState<File | null>(null)
   const [submitted, setSubmitted] = useState<string | null>(null)
 
   // Fetch tickets
@@ -909,7 +910,7 @@ function MemberSupportTab({ member }: { member: any }) {
           amasi_number: String(member.amasi_number || member.membership_no || ""),
           category,
           subject: subject.trim(),
-          description: description.trim(),
+          description: description.trim() + (attachment ? `\n\n📎 Attachment: ${attachment.name}` : ""),
           priority: "normal",
         }),
       })
@@ -1009,6 +1010,13 @@ function MemberSupportTab({ member }: { member: any }) {
                   <label className="text-sm font-medium">Description <span className="text-destructive">*</span></label>
                   <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Provide details about your issue..." rows={4} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 min-h-[100px]" />
                   <p className="text-xs text-muted-foreground mt-1">{description.length}/2000</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Attachment <span className="text-muted-foreground font-normal">(optional)</span></label>
+                  <input type="file" accept="image/*,.pdf" onChange={e => setAttachment(e.target.files?.[0] || null)}
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-primary" />
+                  {attachment && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {attachment.name}</p>}
+                  <p className="text-xs text-muted-foreground mt-0.5">Screenshot or document (JPG, PNG, PDF — max 5 MB)</p>
                 </div>
                 <Button onClick={handleSubmit} disabled={submitting || !subject.trim() || !description.trim()} className="w-full">
                   {submitting ? "Submitting..." : "Submit Ticket"}
@@ -1138,7 +1146,7 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; membe
     try {
       const formData = new FormData()
       formData.append("data", JSON.stringify({
-        memberId: member.id,
+        memberId: member._id || member.id,
         amasiNumber: member.amasi_number || member.membership_no,
         memberName: member.name || [member.first_name, member.last_name].filter(Boolean).join(" "),
         memberEmail: member.email,
@@ -1296,12 +1304,12 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; membe
               />
             </div>
 
-            <div>
+            <div className="relative z-10">
               <label className="text-sm font-medium">ASI State Chapter</label>
               <select
                 value={asiState}
                 onChange={e => setAsiState(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 appearance-auto"
               >
                 <option value="">Select state...</option>
                 {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}

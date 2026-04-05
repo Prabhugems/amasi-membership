@@ -27,6 +27,7 @@ import { toast } from "sonner"
 
 interface UpgradeRecord {
   id: string
+  upgrade_number: string
   member_id: string
   amasi_number: string
   member_name: string

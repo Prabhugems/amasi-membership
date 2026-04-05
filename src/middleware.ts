@@ -41,6 +41,7 @@ const PUBLIC_API_ROUTES = [
   "/api/certificate",
   "/api/members/search",
   "/api/members/upload",
+  "/api/members/upgrade",
 ]
 
 export async function middleware(request: NextRequest) {

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
 import { Resend } from "resend"
 
 function getResend() {
@@ -238,7 +239,10 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false })
 
     if (all === "1") {
-      // Admin: return all
+      const adminSession = await getAdminSession()
+      if (!adminSession) {
+        return Response.json({ status: false, message: "Unauthorized" }, { status: 401 })
+      }
     } else if (email) {
       query = query.eq("member_email", email)
     } else {

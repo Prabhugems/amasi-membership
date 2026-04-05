@@ -1114,7 +1114,7 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; membe
   const [loading, setLoading] = useState(true)
   const [result, setResult] = useState<{ success: boolean; message: string; autoApproved?: boolean } | null>(null)
 
-  const isAlreadyLM = memberType.toUpperCase().includes("LM") && !memberType.toUpperCase().includes("ALM")
+  const isAlreadyLM = memberType.toUpperCase() === "LM" || memberType.toUpperCase() === "LIFE MEMBER"
 
   // Fetch existing upgrade requests
   useEffect(() => {

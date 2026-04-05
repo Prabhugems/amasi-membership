@@ -115,10 +115,11 @@ export async function PATCH(
 
       // Send WhatsApp notification
       try {
-        if (member.phone) {
-          const phone = String(member.phone).replace(/\D/g, "")
+        const { data: memberData } = await supabase.from("members").select("phone, amasi_number").eq("id", upgrade.member_id).single()
+        if (memberData?.phone) {
+          const phone = String(memberData.phone).replace(/\D/g, "")
           if (phone.length >= 10) {
-            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, "Life Member", String(member.amasi_number))
+            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, "Life Member", String(memberData.amasi_number))
           }
         }
       } catch (whatsappErr) {

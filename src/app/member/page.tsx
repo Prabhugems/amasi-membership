@@ -7,7 +7,7 @@ import {
   Shield, ChevronRight, LayoutDashboard, FileText, Upload, ShieldCheck,
   User, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
-  Activity, Lock,
+  Activity, Lock, ArrowUpCircle, Sparkles,
 } from "lucide-react"
 import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Card, CardContent } from "@/components/ui/card"
@@ -19,9 +19,10 @@ import { toast } from "sonner"
 import { formatDate, getInitials } from "@/lib/utils"
 import Link from "next/link"
 import { HelpButton } from "@/components/ui/help-button"
+import { INDIAN_STATES } from "@/lib/membership-types"
 
 type Phase = "login" | "otp" | "dashboard"
-type Tab = "overview" | "card" | "certificate" | "profile" | "documents" | "support"
+type Tab = "overview" | "card" | "certificate" | "profile" | "documents" | "support" | "upgrade"
 
 // Session timeout in milliseconds (15 minutes)
 const SESSION_TIMEOUT = 15 * 60 * 1000
@@ -371,12 +372,15 @@ function MemberPortalContent() {
     const profileData = getProfileCompleteness()
     const notifications = getNotifications()
 
+    const isALM = memberType.toUpperCase().includes("ALM") || memberType.toUpperCase().includes("ASSOCIATE LIFE")
+
     const sidebarItems: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
       { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "card", label: "Membership Card", icon: CreditCard },
       { id: "certificate", label: "Certificate", icon: Award },
       { id: "profile", label: "Edit Profile", icon: UserPen },
       { id: "documents", label: "Documents", icon: Upload },
+      ...(isALM ? [{ id: "upgrade" as Tab, label: "Upgrade to LM", icon: Star }] : []),
       { id: "support", label: "Support", icon: Ticket },
     ]
 
@@ -589,6 +593,7 @@ function MemberPortalContent() {
                       { tab: "profile" as Tab, icon: UserPen, title: "Edit Profile", desc: "Update your details & documents", colors: "hover:border-green-300 hover:bg-green-50/50", iconBg: "bg-green-100 text-green-600" },
                       { tab: "documents" as Tab, icon: Upload, title: "Upload Documents", desc: "Manage your certificates & files", colors: "hover:border-purple-300 hover:bg-purple-50/50", iconBg: "bg-purple-100 text-purple-600" },
                       { tab: "support" as Tab, icon: Ticket, title: "Support Tickets", desc: "Get help from AMASI team", colors: "hover:border-rose-300 hover:bg-rose-50/50", iconBg: "bg-rose-100 text-rose-600" },
+                      ...(isALM ? [{ tab: "upgrade" as Tab, icon: Star, title: "Upgrade to LM", desc: "Upgrade to Life Member with ASI details", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" }] : []),
                     ].map((action) => (
                       <button key={action.tab} onClick={() => setActiveTab(action.tab)} className={`group p-5 rounded-xl border bg-card transition-all text-left ${action.colors}`}>
                         <div className={`p-2.5 rounded-lg w-fit mb-3 ${action.iconBg}`}><action.icon className="h-5 w-5" /></div>
@@ -843,6 +848,11 @@ function MemberPortalContent() {
             {activeTab === "support" && (
               <MemberSupportTab member={member} />
             )}
+
+            {/* Upgrade to LM Tab */}
+            {activeTab === "upgrade" && (
+              <MemberUpgradeTab member={member} memberType={memberType} amasiNum={amasiNum} />
+            )}
           </main>
         </div>
       </div>
@@ -1088,6 +1098,326 @@ function MemberSupportTab({ member }: { member: any }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ===================== MEMBER UPGRADE TAB =====================
+
+function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; memberType: string; amasiNum: string | number }) {
+  const [asiNumber, setAsiNumber] = useState("")
+  const [asiState, setAsiState] = useState("")
+  const [asiCertFile, setAsiCertFile] = useState<File | null>(null)
+  const [asiEmailFile, setAsiEmailFile] = useState<File | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [upgrades, setUpgrades] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [result, setResult] = useState<{ success: boolean; message: string; autoApproved?: boolean } | null>(null)
+
+  const isAlreadyLM = memberType.toUpperCase().includes("LM") && !memberType.toUpperCase().includes("ALM")
+
+  // Fetch existing upgrade requests
+  useEffect(() => {
+    if (!member?.email) return
+    setLoading(true)
+    fetch(`/api/members/upgrade?email=${encodeURIComponent(member.email)}`)
+      .then(r => r.json())
+      .then(d => setUpgrades(d.data || []))
+      .catch(() => setUpgrades([]))
+      .finally(() => setLoading(false))
+  }, [member?.email, result])
+
+  const hasPending = upgrades.some(u => u.status === "pending" || u.status === "pending_review")
+
+  const handleSubmit = async () => {
+    if (!asiNumber.trim()) { toast.error("ASI Membership Number is required"); return }
+    if (!asiCertFile) { toast.error("Please upload your ASI certificate"); return }
+
+    setSubmitting(true)
+    setResult(null)
+    try {
+      const formData = new FormData()
+      formData.append("data", JSON.stringify({
+        memberId: member.id,
+        amasiNumber: member.amasi_number || member.membership_no,
+        memberName: member.name || [member.first_name, member.last_name].filter(Boolean).join(" "),
+        memberEmail: member.email,
+        asiMembershipNo: asiNumber.trim(),
+        asiState: asiState || null,
+      }))
+      formData.append("asi_certificate", asiCertFile)
+      if (asiEmailFile) formData.append("asi_email_proof", asiEmailFile)
+
+      const res = await fetch("/api/members/upgrade", { method: "POST", body: formData })
+      const data = await res.json()
+
+      if (data.status) {
+        setResult({ success: true, message: data.message, autoApproved: data.auto_approved })
+        setAsiNumber("")
+        setAsiState("")
+        setAsiCertFile(null)
+        setAsiEmailFile(null)
+        if (data.auto_approved) {
+          toast.success("Membership upgraded to Life Member!")
+        } else {
+          toast.success("Upgrade request submitted for review")
+        }
+      } else {
+        setResult({ success: false, message: data.message })
+        toast.error(data.message)
+      }
+    } catch {
+      setResult({ success: false, message: "Network error. Please try again." })
+      toast.error("Failed to submit upgrade request")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case "approved": return "bg-green-100 text-green-700"
+      case "rejected": return "bg-red-100 text-red-700"
+      case "pending_review": return "bg-amber-100 text-amber-700"
+      default: return "bg-gray-100 text-gray-600"
+    }
+  }
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case "approved": return "Approved"
+      case "rejected": return "Rejected"
+      case "pending_review": return "Pending Review"
+      default: return status?.charAt(0).toUpperCase() + status?.slice(1)
+    }
+  }
+
+  if (isAlreadyLM) {
+    return (
+      <div className="max-w-2xl space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold">Upgrade to Life Member</h2>
+          <p className="text-muted-foreground text-sm mt-1">Manage your membership upgrade</p>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+            <h3 className="text-xl font-bold text-green-700">You are already a Life Member</h3>
+            <p className="text-sm text-muted-foreground mt-2">
+              Your membership type is <strong>{memberType}</strong> (AMASI #{amasiNum}).
+              No upgrade is needed.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold">Upgrade to Life Member</h2>
+        <p className="text-muted-foreground text-sm mt-1">
+          As an ALM member, you can upgrade to Life Member (LM) by providing your ASI membership details
+        </p>
+      </div>
+
+      {/* Requirements info */}
+      <Card className="border-blue-200 bg-blue-50/30">
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <Sparkles className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-sm">Requirements for Upgrade</h4>
+              <ul className="text-xs text-muted-foreground mt-2 space-y-1.5">
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                  ASI (Association of Surgeons of India) Membership Number
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                  ASI State Chapter
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                  ASI Membership Certificate (upload)
+                </li>
+                <li className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                  Email confirmation from ASI (optional, speeds up approval)
+                </li>
+              </ul>
+              <p className="text-xs text-blue-600 font-medium mt-3">
+                If all details check out, your upgrade may be auto-approved instantly.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Success result */}
+      {result?.success && (
+        <Card className={result.autoApproved ? "border-green-300 bg-green-50/50" : "border-amber-300 bg-amber-50/50"}>
+          <CardContent className="py-8 text-center">
+            <div className={`mx-auto w-14 h-14 rounded-full flex items-center justify-center mb-4 ${result.autoApproved ? "bg-green-100" : "bg-amber-100"}`}>
+              {result.autoApproved ? <CheckCircle className="h-7 w-7 text-green-600" /> : <Clock className="h-7 w-7 text-amber-600" />}
+            </div>
+            <h3 className={`text-lg font-bold ${result.autoApproved ? "text-green-700" : "text-amber-700"}`}>
+              {result.autoApproved ? "Upgrade Approved!" : "Request Submitted"}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">{result.message}</p>
+            {result.autoApproved && (
+              <p className="text-xs text-green-600 font-medium mt-3">
+                Please log out and log back in to see your updated membership type.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upgrade form */}
+      {!hasPending && !result?.success && (
+        <Card>
+          <CardContent className="p-6 space-y-5">
+            <div className="flex items-center gap-2 mb-2">
+              <ArrowUpCircle className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Submit Upgrade Request</h3>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">ASI Membership Number <span className="text-destructive">*</span></label>
+              <Input
+                value={asiNumber}
+                onChange={e => setAsiNumber(e.target.value)}
+                placeholder="e.g., ASI/12345 or L-12345"
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">ASI State Chapter</label>
+              <select
+                value={asiState}
+                onChange={e => setAsiState(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5"
+              >
+                <option value="">Select state...</option>
+                {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">ASI Certificate <span className="text-destructive">*</span></label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">Upload your ASI membership certificate (PDF, JPG, PNG)</p>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={e => setAsiCertFile(e.target.files?.[0] || null)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium"
+                />
+              </div>
+              {asiCertFile && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" /> {asiCertFile.name}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">ASI Email Confirmation <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">Screenshot or PDF of ASI membership confirmation email</p>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                onChange={e => setAsiEmailFile(e.target.files?.[0] || null)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium"
+              />
+              {asiEmailFile && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" /> {asiEmailFile.name}
+                </p>
+              )}
+            </div>
+
+            {result?.success === false && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 rounded-lg p-3">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {result.message}
+              </div>
+            )}
+
+            <Button
+              className="w-full h-11 font-semibold"
+              onClick={handleSubmit}
+              disabled={submitting || !asiNumber.trim() || !asiCertFile}
+            >
+              {submitting ? (
+                <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Submitting...</>
+              ) : (
+                <><ArrowUpCircle className="h-4 w-4 mr-2" /> Submit Upgrade Request</>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Existing upgrade requests */}
+      <div>
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-3">Upgrade History</h3>
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">Loading...</div>
+        ) : upgrades.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-8 text-center">
+              <p className="text-sm text-muted-foreground">No upgrade requests yet</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {upgrades.map((u: any) => (
+              <Card key={u.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm">ALM to LM Upgrade</p>
+                        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${statusBadge(u.status)}`}>
+                          {statusLabel(u.status)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        ASI #{u.asi_membership_no}
+                        {u.asi_state && <> &middot; {u.asi_state}</>}
+                        {" "}&middot; {formatDate(u.created_at)}
+                      </p>
+                      {u.ai_confidence && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          AI confidence: <span className={`font-medium ${u.ai_confidence === "high" ? "text-green-600" : u.ai_confidence === "medium" ? "text-amber-600" : "text-red-600"}`}>{u.ai_confidence}</span>
+                          {u.ai_verified && <span className="text-green-600 ml-1">(verified)</span>}
+                        </p>
+                      )}
+                      {u.review_notes && (
+                        <p className="text-xs mt-2 p-2 bg-muted/50 rounded-lg">{u.review_notes}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      {u.asi_certificate_url && (
+                        <a href={u.asi_certificate_url} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium">
+                          <Eye className="h-3 w-3" /> Cert
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

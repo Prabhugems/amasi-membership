@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon } from "lucide-react"
+import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon, Briefcase, Building2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,8 @@ const SECTION_IDS = [
   { id: "education-info", label: "Education", icon: GraduationCap },
   { id: "registration-info", label: "Medical Registration", icon: Shield },
   { id: "documents-info", label: "Documents", icon: FileText },
+  { id: "experience-info", label: "Work Experience", icon: Briefcase },
+  { id: "clinic-info", label: "Clinic / Hospital", icon: Building2 },
 ]
 
 // Section theme colors
@@ -30,6 +32,8 @@ const SECTION_THEMES: Record<string, { accent: string; bg: string; iconBg: strin
   "education-info":   { accent: "border-l-purple-500",  bg: "bg-gradient-to-br from-purple-50/60 to-white",  iconBg: "bg-purple-100",  iconText: "text-purple-600",  border: "border-purple-100" },
   "registration-info":{ accent: "border-l-emerald-500", bg: "bg-gradient-to-br from-emerald-50/60 to-white", iconBg: "bg-emerald-100", iconText: "text-emerald-600", border: "border-emerald-100" },
   "documents-info":   { accent: "border-l-amber-500",   bg: "bg-gradient-to-br from-amber-50/60 to-white",   iconBg: "bg-amber-100",   iconText: "text-amber-600",   border: "border-amber-100" },
+  "experience-info":  { accent: "border-l-orange-500",  bg: "bg-gradient-to-br from-orange-50/60 to-white",  iconBg: "bg-orange-100",  iconText: "text-orange-600",  border: "border-orange-100" },
+  "clinic-info":      { accent: "border-l-rose-500",    bg: "bg-gradient-to-br from-rose-50/60 to-white",    iconBg: "bg-rose-100",    iconText: "text-rose-600",    border: "border-rose-100" },
 }
 
 /** Membership type badge color map */
@@ -59,10 +63,51 @@ function isImageUrl(url: string | undefined): boolean {
   return /\.(jpg|jpeg|png|gif|webp|svg|bmp)/i.test(url) || url.includes("/storage/v1/object/")
 }
 
+interface WorkExperienceEntry {
+  id?: string
+  position: string
+  institution: string
+  from_year: number | string
+  to_year: number | string
+  is_present: boolean
+  total_years: number | string
+}
+
+interface ClinicEntry {
+  id?: string
+  clinic_name: string
+  address: string
+  city: string
+  state: string
+  pin_code: string
+  phone: string
+  is_primary: boolean
+}
+
 export function ProfileView({ data, onEdit }: ProfileViewProps) {
   const fullName = [data.firstName, data.middleName, data.lastName].filter(Boolean).join(" ")
   const missingFields = getMissingFields(data)
   const [activeSection, setActiveSection] = useState(SECTION_IDS[0].id)
+  const [experiences, setExperiences] = useState<WorkExperienceEntry[]>([])
+  const [clinics, setClinics] = useState<ClinicEntry[]>([])
+
+  // Fetch work experience
+  useEffect(() => {
+    if (!data.id) return
+    fetch(`/api/members/${data.id}/experience`)
+      .then(res => res.ok ? res.json() : { data: [] })
+      .then(result => setExperiences(result.data || []))
+      .catch(() => setExperiences([]))
+  }, [data.id])
+
+  // Fetch clinic data
+  useEffect(() => {
+    if (!data.id) return
+    fetch(`/api/members/${data.id}/clinic`)
+      .then(res => res.ok ? res.json() : { data: [] })
+      .then(result => setClinics(result.data || []))
+      .catch(() => setClinics([]))
+  }, [data.id])
 
   // Profile completeness calculation
   const { completionPercent, filledCount, totalCount } = useMemo(() => {
@@ -370,6 +415,65 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
                 ))
               })()}
             </div>
+          </SectionCard>
+
+          {/* ===== Work Experience Section ===== */}
+          <SectionCard id="experience-info" title="Work Experience" icon={Briefcase}>
+            {experiences.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="pb-2 pr-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Position</th>
+                      <th className="pb-2 pr-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Institution</th>
+                      <th className="pb-2 pr-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">From</th>
+                      <th className="pb-2 pr-4 font-semibold text-muted-foreground text-xs uppercase tracking-wider">To</th>
+                      <th className="pb-2 font-semibold text-muted-foreground text-xs uppercase tracking-wider">Total Years</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {experiences.map((exp, idx) => (
+                      <tr key={exp.id || idx} className="border-b last:border-0 hover:bg-white/60 transition-colors">
+                        <td className="py-2.5 pr-4 font-medium">{exp.position || "—"}</td>
+                        <td className="py-2.5 pr-4">{exp.institution || "—"}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{exp.from_year || "—"}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{exp.is_present ? "Present" : (exp.to_year || "—")}</td>
+                        <td className="py-2.5 tabular-nums">{exp.total_years || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">No work experience added</p>
+            )}
+          </SectionCard>
+
+          {/* ===== Clinic / Hospital Section ===== */}
+          <SectionCard id="clinic-info" title="Clinic / Hospital" icon={Building2}>
+            {clinics.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {clinics.map((clinic, idx) => (
+                  <div key={clinic.id || idx} className="rounded-lg border p-4 bg-white/60 hover:bg-white/90 transition-colors duration-150 relative">
+                    {clinic.is_primary && (
+                      <Badge className="absolute top-2 right-2 text-[10px] bg-teal-100 text-teal-700 border-teal-300">Primary</Badge>
+                    )}
+                    <p className="font-semibold text-sm">{clinic.clinic_name || "Unnamed Clinic"}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{clinic.address}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {[clinic.city, clinic.state, clinic.pin_code].filter(Boolean).join(", ")}
+                    </p>
+                    {clinic.phone && (
+                      <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+                        <Phone className="h-3 w-3" />{clinic.phone}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">No clinic data added</p>
+            )}
           </SectionCard>
 
           {/* Bottom Edit button for mobile */}

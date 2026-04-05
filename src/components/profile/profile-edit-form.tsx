@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useMemo, useRef, useCallback } from "react"
-import { ChevronDown, ChevronRight, CheckCircle2, AlertCircle, CircleDot, Camera, User, MapPin, GraduationCap, ShieldCheck, Zap, Lock, FileText, Upload, ExternalLink, Loader2, Mail, Hash, CalendarDays, ImagePlus, Search, BookOpen, Award, Plus, Info, ArrowRight, CloudUpload, Eye, RefreshCw, FileImage, File as FileIcon, X } from "lucide-react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { ChevronDown, ChevronRight, CheckCircle2, AlertCircle, CircleDot, Camera, User, MapPin, GraduationCap, ShieldCheck, Zap, Lock, FileText, Upload, ExternalLink, Loader2, Mail, Hash, CalendarDays, ImagePlus, Search, BookOpen, Award, Plus, Info, ArrowRight, CloudUpload, Eye, RefreshCw, FileImage, File as FileIcon, X, Briefcase, Building2, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -64,6 +64,8 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   education: <GraduationCap className="h-4 w-4" />,
   registration: <ShieldCheck className="h-4 w-4" />,
   documents: <FileText className="h-4 w-4" />,
+  experience: <Briefcase className="h-4 w-4" />,
+  clinic: <Building2 className="h-4 w-4" />,
 }
 
 const SECTION_COLORS: Record<string, { gradient: string; border: string; iconBg: string; iconText: string }> = {
@@ -72,6 +74,8 @@ const SECTION_COLORS: Record<string, { gradient: string; border: string; iconBg:
   education:    { gradient: "from-purple-50/80 to-white dark:from-purple-950/20 dark:to-background", border: "border-l-purple-500",  iconBg: "bg-purple-100 dark:bg-purple-900/40",iconText: "text-purple-600 dark:text-purple-400" },
   registration: { gradient: "from-emerald-50/80 to-white dark:from-emerald-950/20 dark:to-background", border: "border-l-emerald-500", iconBg: "bg-emerald-100 dark:bg-emerald-900/40", iconText: "text-emerald-600 dark:text-emerald-400" },
   documents:    { gradient: "from-amber-50/80 to-white dark:from-amber-950/20 dark:to-background",   border: "border-l-amber-500",   iconBg: "bg-amber-100 dark:bg-amber-900/40",  iconText: "text-amber-600 dark:text-amber-400" },
+  experience:   { gradient: "from-orange-50/80 to-white dark:from-orange-950/20 dark:to-background", border: "border-l-orange-500",  iconBg: "bg-orange-100 dark:bg-orange-900/40", iconText: "text-orange-600 dark:text-orange-400" },
+  clinic:       { gradient: "from-rose-50/80 to-white dark:from-rose-950/20 dark:to-background",     border: "border-l-rose-500",    iconBg: "bg-rose-100 dark:bg-rose-900/40",    iconText: "text-rose-600 dark:text-rose-400" },
 }
 
 interface ProfileEditFormProps {
@@ -82,7 +86,7 @@ interface ProfileEditFormProps {
 }
 
 export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEditFormProps) {
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(["personal", "address", "education", "registration", "documents"]))
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(["personal", "address", "education", "registration", "documents", "experience", "clinic"]))
   const [quickFill, setQuickFill] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -92,6 +96,121 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
   const [pinLookupStatus, setPinLookupStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [pinLookupArea, setPinLookupArea] = useState("")
   const pinAbortRef = useRef<AbortController | null>(null)
+
+  // --- Work Experience state ---
+  interface ExperienceEntry {
+    id?: string
+    position: string
+    institution: string
+    from_year: string
+    to_year: string
+    is_present: boolean
+    total_years: string
+  }
+  const [experiences, setExperiences] = useState<ExperienceEntry[]>([])
+
+  // --- Clinic/Hospital state ---
+  interface ClinicEntry {
+    id?: string
+    clinic_name: string
+    address: string
+    city: string
+    state: string
+    pin_code: string
+    phone: string
+    is_primary: boolean
+  }
+  const [clinicEntries, setClinicEntries] = useState<ClinicEntry[]>([])
+
+  // Load existing experience & clinic data on mount
+  useEffect(() => {
+    if (!data.id) return
+    fetch(`/api/members/${data.id}/experience`)
+      .then(res => res.ok ? res.json() : { data: [] })
+      .then(result => { if (result.data?.length) setExperiences(result.data) })
+      .catch(() => {})
+  }, [data.id])
+
+  useEffect(() => {
+    if (!data.id) return
+    fetch(`/api/members/${data.id}/clinic`)
+      .then(res => res.ok ? res.json() : { data: [] })
+      .then(result => { if (result.data?.length) setClinicEntries(result.data) })
+      .catch(() => {})
+  }, [data.id])
+
+  // Experience helpers
+  const addExperience = () => {
+    setExperiences(prev => [...prev, { position: "", institution: "", from_year: "", to_year: "", is_present: false, total_years: "" }])
+  }
+  const removeExperience = (idx: number) => {
+    setExperiences(prev => prev.filter((_, i) => i !== idx))
+  }
+  const updateExperience = (idx: number, field: keyof ExperienceEntry, value: string | boolean) => {
+    setExperiences(prev => {
+      const updated = [...prev]
+      const entry = { ...updated[idx], [field]: value }
+      // Auto-calculate total years
+      if (field === "from_year" || field === "to_year" || field === "is_present") {
+        const from = parseInt(entry.from_year)
+        const to = entry.is_present ? new Date().getFullYear() : parseInt(entry.to_year)
+        if (!isNaN(from) && !isNaN(to) && to >= from) {
+          entry.total_years = String(to - from)
+        }
+      }
+      updated[idx] = entry
+      return updated
+    })
+  }
+
+  // Clinic helpers
+  const addClinic = () => {
+    setClinicEntries(prev => [...prev, { clinic_name: "", address: "", city: "", state: "", pin_code: "", phone: "", is_primary: prev.length === 0 }])
+  }
+  const removeClinic = (idx: number) => {
+    setClinicEntries(prev => {
+      const updated = prev.filter((_, i) => i !== idx)
+      // If removed the primary, make first one primary
+      if (updated.length > 0 && !updated.some(c => c.is_primary)) {
+        updated[0] = { ...updated[0], is_primary: true }
+      }
+      return updated
+    })
+  }
+  const updateClinic = (idx: number, field: keyof ClinicEntry, value: string | boolean) => {
+    setClinicEntries(prev => {
+      const updated = [...prev]
+      if (field === "is_primary" && value === true) {
+        // Unset all others
+        return updated.map((c, i) => ({ ...c, is_primary: i === idx }))
+      }
+      updated[idx] = { ...updated[idx], [field]: value }
+      return updated
+    })
+  }
+
+  // Wrap the original onSave to also POST experience & clinic data
+  const handleSaveWithExtras = async () => {
+    if (data.id) {
+      // Save experience
+      if (experiences.length > 0) {
+        fetch(`/api/members/${data.id}/experience`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: experiences }),
+        }).catch(() => {})
+      }
+      // Save clinic
+      if (clinicEntries.length > 0) {
+        fetch(`/api/members/${data.id}/clinic`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: clinicEntries }),
+        }).catch(() => {})
+      }
+    }
+    onSave()
+  }
 
   const handlePinLookup = useCallback(async (pin: string) => {
     onChange({ ...data, postalCode: pin })
@@ -269,7 +388,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onCancel} className="bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white">Cancel</Button>
-            <Button onClick={onSave} className="bg-white text-teal-700 hover:bg-white/90 hover:scale-105 transition-all duration-200 font-semibold shadow-md">Review Changes</Button>
+            <Button onClick={handleSaveWithExtras} className="bg-white text-teal-700 hover:bg-white/90 hover:scale-105 transition-all duration-200 font-semibold shadow-md">Review Changes</Button>
           </div>
         </div>
       </div>
@@ -938,6 +1057,226 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
         </div>
       </Section>
 
+      {/* Work Experience */}
+      <Section
+        title="Work Experience"
+        id="experience"
+        complete={experiences.length > 0}
+        open={openSections.has("experience")}
+        onToggle={toggleSection}
+        show={true}
+        collapsedSummary={
+          experiences.length > 0
+            ? <span className="text-xs font-medium text-green-600">{experiences.length} experience{experiences.length > 1 ? "s" : ""} added</span>
+            : <span className="text-xs font-medium text-muted-foreground">No experience added</span>
+        }
+      >
+        <div className="space-y-4">
+          {experiences.map((exp, idx) => (
+            <div key={idx} className="rounded-xl border border-border/60 bg-white/60 p-4 space-y-3 relative">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-muted-foreground">Experience #{idx + 1}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => removeExperience(idx)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-sm font-medium">Position</Label>
+                  <Input
+                    value={exp.position}
+                    onChange={(e) => updateExperience(idx, "position", e.target.value)}
+                    placeholder="e.g. Senior Surgeon"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Institution</Label>
+                  <Input
+                    value={exp.institution}
+                    onChange={(e) => updateExperience(idx, "institution", e.target.value)}
+                    placeholder="e.g. AIIMS Delhi"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">From (Year)</Label>
+                  <Input
+                    type="number"
+                    min="1950"
+                    max={new Date().getFullYear()}
+                    value={exp.from_year}
+                    onChange={(e) => updateExperience(idx, "from_year", e.target.value)}
+                    placeholder="e.g. 2010"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">To (Year)</Label>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <Input
+                      type="number"
+                      min="1950"
+                      max={new Date().getFullYear()}
+                      value={exp.is_present ? "" : exp.to_year}
+                      onChange={(e) => updateExperience(idx, "to_year", e.target.value)}
+                      placeholder={exp.is_present ? "Present" : "e.g. 2024"}
+                      disabled={exp.is_present}
+                      className={exp.is_present ? "opacity-50" : ""}
+                    />
+                    <label className="flex items-center gap-1.5 text-xs whitespace-nowrap cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={exp.is_present}
+                        onChange={(e) => updateExperience(idx, "is_present", e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      Present
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Total Years</Label>
+                  <Input
+                    value={exp.total_years}
+                    readOnly
+                    className="mt-1.5 bg-muted/50"
+                    placeholder="Auto-calculated"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addExperience}>
+            <Plus className="h-3.5 w-3.5" />
+            Add Experience
+          </Button>
+        </div>
+      </Section>
+
+      {/* Clinic / Hospital Address */}
+      <Section
+        title="Clinic / Hospital Address"
+        id="clinic"
+        complete={clinicEntries.length > 0}
+        open={openSections.has("clinic")}
+        onToggle={toggleSection}
+        show={true}
+        collapsedSummary={
+          clinicEntries.length > 0
+            ? <span className="text-xs font-medium text-green-600">{clinicEntries.length} clinic{clinicEntries.length > 1 ? "s" : ""} added</span>
+            : <span className="text-xs font-medium text-muted-foreground">No clinic added</span>
+        }
+      >
+        <div className="space-y-4">
+          {clinicEntries.map((clinic, idx) => (
+            <div key={idx} className="rounded-xl border border-border/60 bg-white/60 p-4 space-y-3 relative">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-muted-foreground">Clinic #{idx + 1}</span>
+                  {clinic.is_primary && (
+                    <Badge className="text-[10px] bg-teal-100 text-teal-700 border-teal-300">Primary</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!clinic.is_primary && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-teal-600 hover:text-teal-700"
+                      onClick={() => updateClinic(idx, "is_primary", true)}
+                    >
+                      Set as Primary
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => removeClinic(idx)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <Label className="text-sm font-medium">Clinic / Hospital Name</Label>
+                  <Input
+                    value={clinic.clinic_name}
+                    onChange={(e) => updateClinic(idx, "clinic_name", e.target.value)}
+                    placeholder="e.g. City General Hospital"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-sm font-medium">Address</Label>
+                  <Input
+                    value={clinic.address}
+                    onChange={(e) => updateClinic(idx, "address", e.target.value)}
+                    placeholder="Street address"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">City</Label>
+                  <Input
+                    value={clinic.city}
+                    onChange={(e) => updateClinic(idx, "city", e.target.value)}
+                    placeholder="City"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">State</Label>
+                  <select
+                    value={clinic.state}
+                    onChange={(e) => updateClinic(idx, "state", e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring mt-1.5"
+                  >
+                    <option value="">Select state...</option>
+                    {INDIAN_STATES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">PIN Code</Label>
+                  <Input
+                    value={clinic.pin_code}
+                    onChange={(e) => updateClinic(idx, "pin_code", e.target.value)}
+                    placeholder="6-digit PIN"
+                    maxLength={6}
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Phone</Label>
+                  <Input
+                    value={clinic.phone}
+                    onChange={(e) => updateClinic(idx, "phone", e.target.value)}
+                    placeholder="Phone number"
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={addClinic}>
+            <Plus className="h-3.5 w-3.5" />
+            Add Clinic / Hospital
+          </Button>
+        </div>
+      </Section>
+
       {/* Bottom actions */}
       <div className="flex items-center justify-between pt-4 border-t">
         <p className="text-xs text-muted-foreground hidden sm:block">
@@ -945,7 +1284,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
         </p>
         <div className="flex gap-3 ml-auto">
           <Button variant="outline" onClick={onCancel} className="hover:bg-muted transition-colors duration-200">Cancel</Button>
-          <Button onClick={onSave} size="lg" className="font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg text-white">
+          <Button onClick={handleSaveWithExtras} size="lg" className="font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg text-white">
             Review Changes
           </Button>
         </div>

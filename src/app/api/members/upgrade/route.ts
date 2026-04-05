@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { extractTextFromImage } from "@/lib/ocr"
 import { Resend } from "resend"
 
 function getResend() {
@@ -89,18 +90,87 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // AI verification checks
+    // AI verification with OCR
     let aiVerified = false
     let aiConfidence: "high" | "medium" | "low" = "low"
+    let aiNotes: string[] = []
 
     const asiNumTrimmed = asiMembershipNo.trim()
     const asiFormatValid = asiNumTrimmed.length >= 2 && asiNumTrimmed.length <= 20
     const hasCertificate = !!asiCertificateUrl
 
-    if (asiFormatValid && hasCertificate) {
+    // Run OCR on the ASI certificate if uploaded
+    let ocrText = ""
+    if (asiCertFile && asiCertFile.size > 0) {
+      try {
+        const buffer = Buffer.from(await asiCertFile.arrayBuffer())
+        const ocrResult = await extractTextFromImage(buffer, asiCertFile.name)
+        if (ocrResult.success) {
+          ocrText = ocrResult.text.toLowerCase()
+        }
+      } catch (e) {
+        console.error("OCR error:", e)
+      }
+    }
+
+    // Scoring: 4 checks
+    let score = 0
+    const maxScore = 4
+
+    // Check 1: ASI number format valid
+    if (asiFormatValid) {
+      score++
+      aiNotes.push("ASI number format valid")
+    } else {
+      aiNotes.push("ASI number format invalid")
+    }
+
+    // Check 2: Certificate uploaded
+    if (hasCertificate) {
+      score++
+      aiNotes.push("Certificate uploaded")
+    } else {
+      aiNotes.push("No certificate uploaded")
+    }
+
+    // Check 3: ASI number found in certificate OCR text
+    if (ocrText) {
+      const asiNumClean = asiNumTrimmed.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()
+      const asiNumDigits = asiNumTrimmed.replace(/\D/g, "")
+      if (ocrText.includes(asiNumClean) || (asiNumDigits.length >= 3 && ocrText.includes(asiNumDigits))) {
+        score++
+        aiNotes.push("ASI number found in certificate")
+      } else {
+        aiNotes.push("ASI number NOT found in certificate text")
+      }
+
+      // Check 4: Member name found in certificate
+      const memberNameLower = (memberName || member.name || "").toLowerCase()
+      const nameParts = memberNameLower.split(/\s+/).filter((p: string) => p.length > 2)
+      const nameMatches = nameParts.filter((p: string) => ocrText.includes(p)).length
+      if (nameMatches >= 2 || (nameParts.length === 1 && nameMatches === 1)) {
+        score++
+        aiNotes.push("Member name found in certificate")
+      } else {
+        aiNotes.push("Member name NOT found in certificate text")
+      }
+
+      // Check if it's actually an ASI document
+      const asiKeywords = ["association of surgeons", "asi", "surgeon", "membership"]
+      const hasAsiKeyword = asiKeywords.some(k => ocrText.includes(k))
+      if (!hasAsiKeyword) {
+        score = Math.max(0, score - 1)
+        aiNotes.push("Document may not be an ASI certificate")
+      }
+    } else if (hasCertificate) {
+      aiNotes.push("OCR could not read certificate — manual review needed")
+    }
+
+    // Determine confidence
+    if (score >= 3) {
       aiVerified = true
       aiConfidence = "high"
-    } else if (asiFormatValid) {
+    } else if (score >= 2) {
       aiVerified = false
       aiConfidence = "medium"
     } else {
@@ -122,6 +192,7 @@ export async function POST(request: NextRequest) {
       asi_email_proof_url: asiEmailProofUrl,
       ai_verified: aiVerified,
       ai_confidence: aiConfidence,
+      review_notes: aiNotes.join("; "),
       status: "pending",
     }
 

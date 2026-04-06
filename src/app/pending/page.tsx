@@ -191,6 +191,20 @@ export default function PendingPage() {
   const [confidenceFilter, setConfidenceFilter] = useState<"" | "high" | "medium" | "low">("")
   const [showCompare, setShowCompare] = useState<string | null>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+  const [nmcResults, setNmcResults] = useState<Record<string, { loading: boolean; verified?: boolean; doctors?: any[]; message?: string }>>({})
+
+  const verifyNmc = useCallback(async (appId: string, regNo: string, state?: string) => {
+    setNmcResults((prev) => ({ ...prev, [appId]: { loading: true } }))
+    try {
+      const params = new URLSearchParams({ regNo })
+      if (state) params.set("state", state)
+      const res = await fetch(`/api/nmc/verify?${params}`)
+      const result = await res.json()
+      setNmcResults((prev) => ({ ...prev, [appId]: { loading: false, ...result } }))
+    } catch {
+      setNmcResults((prev) => ({ ...prev, [appId]: { loading: false, verified: false, message: "Failed to connect to NMC" } }))
+    }
+  }, [])
   const queryClient = useQueryClient()
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -989,6 +1003,51 @@ export default function PendingPage() {
                               </div>
                             )}
                           </div>
+                          {/* NMC Verification */}
+                          {app.mci_council_number && (
+                            <div className="pt-2 border-t">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  onClick={() => verifyNmc(app.id, app.mci_council_number, app.mci_council_state)}
+                                  disabled={nmcResults[app.id]?.loading}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                                >
+                                  {nmcResults[app.id]?.loading ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Search className="h-3 w-3" />
+                                  )}
+                                  {nmcResults[app.id]?.loading ? "Checking..." : "Verify MCI with NMC"}
+                                </button>
+                                {nmcResults[app.id] && !nmcResults[app.id].loading && (
+                                  nmcResults[app.id].verified ? (
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+                                      <CheckCircle className="h-3 w-3" /> NMC Verified
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
+                                      <XCircle className="h-3 w-3" /> Not found
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                              {nmcResults[app.id]?.verified && nmcResults[app.id].doctors && nmcResults[app.id].doctors!.length > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                  {nmcResults[app.id].doctors!.map((doc: any, idx: number) => (
+                                    <div key={idx} className="text-xs bg-emerald-50/60 border border-emerald-100 rounded-lg p-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                      <span><span className="text-muted-foreground">Name:</span> <strong>{doc.name}</strong></span>
+                                      <span><span className="text-muted-foreground">Council:</span> {doc.council}</span>
+                                      <span><span className="text-muted-foreground">Degree:</span> {doc.degree}</span>
+                                      <span><span className="text-muted-foreground">University:</span> {doc.university}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {nmcResults[app.id] && !nmcResults[app.id].loading && !nmcResults[app.id].verified && nmcResults[app.id].message && (
+                                <p className="mt-1.5 text-[10px] text-red-500">{nmcResults[app.id].message}</p>
+                              )}
+                            </div>
+                          )}
                           <div className="pt-2 border-t">
                             <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
                               app.payment_status === "paid"

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon, Briefcase, Building2 } from "lucide-react"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon, Briefcase, Building2, Loader2, Search, XCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -90,6 +90,25 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
   const [activeSection, setActiveSection] = useState(SECTION_IDS[0].id)
   const [experiences, setExperiences] = useState<WorkExperienceEntry[]>([])
   const [clinics, setClinics] = useState<ClinicEntry[]>([])
+  const [nmcVerifying, setNmcVerifying] = useState(false)
+  const [nmcResult, setNmcResult] = useState<{ verified: boolean; doctors: any[]; message?: string } | null>(null)
+
+  const verifyNmc = useCallback(async () => {
+    if (!data.mciCouncilNumber) return
+    setNmcVerifying(true)
+    setNmcResult(null)
+    try {
+      const params = new URLSearchParams({ regNo: data.mciCouncilNumber })
+      if (data.mciCouncilState) params.set("state", data.mciCouncilState)
+      const res = await fetch(`/api/nmc/verify?${params}`)
+      const result = await res.json()
+      setNmcResult(result)
+    } catch {
+      setNmcResult({ verified: false, doctors: [], message: "Failed to connect to NMC" })
+    } finally {
+      setNmcVerifying(false)
+    }
+  }, [data.mciCouncilNumber, data.mciCouncilState])
 
   // Fetch work experience
   useEffect(() => {
@@ -383,6 +402,55 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
               {data.imrRegNo && <InfoRow label="IMR Number" value={data.imrRegNo} />}
               {data.asiState && <InfoRow label="ASI State" value={data.asiState} />}
             </div>
+            {/* NMC Verification */}
+            {data.mciCouncilNumber && (
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant={nmcResult?.verified ? "outline" : "default"}
+                    onClick={verifyNmc}
+                    disabled={nmcVerifying}
+                    className="gap-2"
+                  >
+                    {nmcVerifying ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Search className="h-3.5 w-3.5" />
+                    )}
+                    {nmcVerifying ? "Verifying..." : "Verify with NMC"}
+                  </Button>
+                  {nmcResult && !nmcResult.verified && (
+                    <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50 gap-1 py-1">
+                      <XCircle className="h-3 w-3" /> Not found in NMC registry
+                    </Badge>
+                  )}
+                  {nmcResult?.verified && nmcResult.doctors.length > 0 && (
+                    <Badge variant="outline" className="text-xs text-green-700 border-green-300 bg-green-50 gap-1 py-1">
+                      <CheckCircle2 className="h-3 w-3" /> NMC Verified
+                    </Badge>
+                  )}
+                </div>
+                {nmcResult?.verified && nmcResult.doctors.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {nmcResult.doctors.map((doc: any, idx: number) => (
+                      <div key={idx} className="rounded-lg border border-green-200 bg-green-50/50 p-3 text-sm">
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          <div><span className="text-muted-foreground text-xs">Name:</span> <span className="font-medium">{doc.name}</span></div>
+                          <div><span className="text-muted-foreground text-xs">Council:</span> <span className="font-medium">{doc.council}</span></div>
+                          <div><span className="text-muted-foreground text-xs">Degree:</span> <span className="font-medium">{doc.degree}</span></div>
+                          <div><span className="text-muted-foreground text-xs">University:</span> <span className="font-medium">{doc.university}</span></div>
+                          {doc.yearOfPassing && <div><span className="text-muted-foreground text-xs">Year:</span> <span className="font-medium">{doc.yearOfPassing}</span></div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {nmcResult && !nmcResult.verified && nmcResult.message && (
+                  <p className="mt-2 text-xs text-red-500">{nmcResult.message}</p>
+                )}
+              </div>
+            )}
           </SectionCard>
 
           {/* ===== Documents Section (filtered by membership type) ===== */}

@@ -59,6 +59,11 @@ export default function RootLayout({
           </SidebarProvider>
           <Toaster position="top-right" />
         </QueryProvider>
+        <script
+          src="https://cdn.insertchat.com/widget.js"
+          data-agent="b47172c4-340f-48d9-914e-179b520287be"
+          async
+        />
       </body>
     </html>
   )

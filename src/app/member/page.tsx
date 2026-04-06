@@ -1526,8 +1526,21 @@ function MemberSupportTab({ member }: { member: any }) {
                 </p>
               </div>
             ) : (
-              <div className="border-t bg-muted/30 rounded-b-xl p-4 text-center">
+              <div className="border-t bg-muted/30 rounded-b-xl p-4 text-center space-y-2">
                 <p className="text-sm text-muted-foreground">This ticket is closed.</p>
+                <Button variant="outline" size="sm" onClick={async () => {
+                  try {
+                    await fetch(`/api/tickets/${selectedTicket.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: "open" }),
+                    })
+                    setSelectedTicket({ ...selectedTicket, status: "open" })
+                    toast.success("Ticket reopened")
+                  } catch { toast.error("Failed to reopen") }
+                }}>
+                  Reopen Ticket
+                </Button>
               </div>
             )}
           </div>
@@ -1834,7 +1847,13 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; membe
                           {u.ai_verified && <span className="text-green-600 ml-1">(verified)</span>}
                         </p>
                       )}
-                      {u.review_notes && (
+                      {u.status === "rejected" && u.review_notes && (
+                        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-xs font-semibold text-red-700 mb-1">Rejection Reason:</p>
+                          <p className="text-xs text-red-600">{u.review_notes}</p>
+                        </div>
+                      )}
+                      {u.status !== "rejected" && u.review_notes && (
                         <p className="text-xs mt-2 p-2 bg-muted/50 rounded-lg">{u.review_notes}</p>
                       )}
                     </div>

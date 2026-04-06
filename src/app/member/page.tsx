@@ -7,7 +7,8 @@ import {
   Shield, ChevronRight, LayoutDashboard, FileText, Upload, ShieldCheck,
   User, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
-  Activity, Lock, ArrowUpCircle, Sparkles,
+  Activity, Lock, ArrowUpCircle, Sparkles, Paperclip, Send, MessageCircle,
+  Inbox, Plus, X, Image, FileIcon, ChevronDown,
 } from "lucide-react"
 import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Card, CardContent } from "@/components/ui/card"
@@ -883,7 +884,15 @@ function MemberSupportTab({ member }: { member: any }) {
   const [subject, setSubject] = useState("")
   const [description, setDescription] = useState("")
   const [attachment, setAttachment] = useState<File | null>(null)
+  const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null)
+  const [priority, setPriority] = useState<"low" | "normal" | "high">("normal")
   const [submitted, setSubmitted] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const repliesEndRef = useRef<HTMLDivElement>(null)
+  const replyInputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const replyFileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch tickets
   useEffect(() => {
@@ -895,6 +904,25 @@ function MemberSupportTab({ member }: { member: any }) {
       .catch(() => setTickets([]))
       .finally(() => setLoading(false))
   }, [member?.email, submitted])
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (view === "detail" && repliesEndRef.current) {
+      repliesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [replies, view])
+
+  // Generate attachment preview
+  useEffect(() => {
+    if (!attachment) { setAttachmentPreview(null); return }
+    if (attachment.type.startsWith("image/")) {
+      const url = URL.createObjectURL(attachment)
+      setAttachmentPreview(url)
+      return () => URL.revokeObjectURL(url)
+    } else {
+      setAttachmentPreview(null)
+    }
+  }, [attachment])
 
   const handleSubmit = async () => {
     if (!subject.trim() || !description.trim()) return
@@ -911,7 +939,7 @@ function MemberSupportTab({ member }: { member: any }) {
           category,
           subject: subject.trim(),
           description: description.trim() + (attachment ? `\n\n📎 Attachment: ${attachment.name}` : ""),
-          priority: "normal",
+          priority,
         }),
       })
       const data = await res.json()
@@ -920,6 +948,9 @@ function MemberSupportTab({ member }: { member: any }) {
         setSubject("")
         setDescription("")
         setCategory("Other")
+        setPriority("normal")
+        setAttachment(null)
+        setAttachmentPreview(null)
         setTimeout(() => { setView("list"); setSubmitted(null) }, 3000)
       }
     } catch { /* ignore */ }
@@ -938,6 +969,18 @@ function MemberSupportTab({ member }: { member: any }) {
   }
 
   const [replyFile, setReplyFile] = useState<File | null>(null)
+  const [replyFilePreview, setReplyFilePreview] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!replyFile) { setReplyFilePreview(null); return }
+    if (replyFile.type.startsWith("image/")) {
+      const url = URL.createObjectURL(replyFile)
+      setReplyFilePreview(url)
+      return () => URL.revokeObjectURL(url)
+    } else {
+      setReplyFilePreview(null)
+    }
+  }, [replyFile])
 
   const handleReply = async () => {
     if (!replyText.trim() && !replyFile) return
@@ -963,178 +1006,530 @@ function MemberSupportTab({ member }: { member: any }) {
         setReplies(prev => [...prev, data])
         setReplyText("")
         setReplyFile(null)
+        setReplyFilePreview(null)
       }
     } catch { /* ignore */ }
     finally { setSendingReply(false) }
   }
 
-  const statusColor = (s: string) => {
-    if (s === "open") return "bg-amber-100 text-amber-700"
-    if (s === "in_progress") return "bg-blue-100 text-blue-700"
-    if (s === "resolved") return "bg-green-100 text-green-700"
-    return "bg-gray-100 text-gray-600"
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && (file.type.startsWith("image/") || file.type === "application/pdf")) {
+      setAttachment(file)
+    }
   }
+
+  const statusColor = (s: string) => {
+    if (s === "open") return "bg-amber-50 text-amber-700 border border-amber-200"
+    if (s === "in_progress") return "bg-blue-50 text-blue-700 border border-blue-200"
+    if (s === "resolved") return "bg-emerald-50 text-emerald-700 border border-emerald-200"
+    if (s === "closed") return "bg-gray-50 text-gray-500 border border-gray-200"
+    return "bg-gray-50 text-gray-600 border border-gray-200"
+  }
+
+  const statusIcon = (s: string) => {
+    if (s === "open") return <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+    if (s === "in_progress") return <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+    if (s === "resolved") return <CheckCircle className="h-3 w-3 text-emerald-500" />
+    return <span className="w-2 h-2 rounded-full bg-gray-400" />
+  }
+
+  const statusLabel = (s: string) => {
+    if (s === "in_progress") return "In Progress"
+    return s?.charAt(0).toUpperCase() + s?.slice(1)
+  }
+
+  const extractAttachment = (msg: string | undefined) => {
+    if (!msg) return { text: msg || "", url: null }
+    const match = msg.match(/📎 Attachment: (https?:\/\/\S+)/)
+    if (!match) return { text: msg, url: null }
+    return {
+      text: msg.replace(/📎 Attachment: (https?:\/\/\S+)/g, "").trim(),
+      url: match[1],
+    }
+  }
+
+  const isImageUrl = (url: string) => /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(url)
 
   return (
     <div className="max-w-2xl space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Support</h2>
-          <p className="text-muted-foreground text-sm mt-1">Submit a ticket or track existing ones</p>
+          <h2 className="text-2xl font-bold tracking-tight">Support</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            {view === "list" && "Your support tickets"}
+            {view === "new" && "Create a new support ticket"}
+            {view === "detail" && "Ticket conversation"}
+          </p>
         </div>
         {view === "list" && (
-          <Button onClick={() => setView("new")} className="bg-primary">
-            <Mail className="h-4 w-4 mr-2" /> New Ticket
+          <Button onClick={() => setView("new")} className="gap-2 shadow-sm">
+            <Plus className="h-4 w-4" /> New Ticket
           </Button>
         )}
         {view !== "list" && (
-          <Button variant="outline" onClick={() => { setView("list"); setSelectedTicket(null) }}>
-            ← Back to Tickets
+          <Button variant="ghost" onClick={() => { setView("list"); setSelectedTicket(null); setSubmitted(null) }} className="gap-2 text-muted-foreground hover:text-foreground">
+            <ChevronDown className="h-4 w-4 rotate-90" /> Back
           </Button>
         )}
       </div>
 
-      {/* Submit new ticket */}
-      {view === "new" && (
-        <Card>
-          <CardContent className="p-6 space-y-4">
-            {submitted ? (
-              <div className="text-center py-8 space-y-3">
-                <div className="mx-auto w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
-                  <CheckCircle className="h-7 w-7 text-green-600" />
+      {/* ============ NEW TICKET FORM ============ */}
+      {view === "new" && !submitted && (
+        <div className="space-y-5">
+          {/* Category pills */}
+          <div>
+            <label className="text-sm font-medium text-foreground">Category</label>
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              {TICKET_CATEGORIES.map(c => (
+                <button
+                  key={c}
+                  onClick={() => setCategory(c)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                    category === c
+                      ? "bg-primary text-primary-foreground shadow-md scale-[1.02]"
+                      : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Subject */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-foreground">Subject <span className="text-destructive">*</span></label>
+              <span className={`text-xs tabular-nums ${subject.length > 120 ? "text-destructive" : "text-muted-foreground"}`}>
+                {subject.length}/120
+              </span>
+            </div>
+            <Input
+              value={subject}
+              onChange={e => setSubject(e.target.value.slice(0, 120))}
+              placeholder="Brief description of your issue"
+              className="h-11"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm font-medium text-foreground">Description <span className="text-destructive">*</span></label>
+              <span className={`text-xs tabular-nums ${description.length > 2000 ? "text-destructive" : "text-muted-foreground"}`}>
+                {description.length}/2000
+              </span>
+            </div>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value.slice(0, 2000))}
+              placeholder="Tell us more about the issue you are facing. Include any relevant details like dates, amounts, or error messages..."
+              rows={5}
+              className="flex w-full rounded-lg border border-input bg-background px-4 py-3 text-sm min-h-[140px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors placeholder:text-muted-foreground/60"
+            />
+          </div>
+
+          {/* File Attachment - Drag & Drop */}
+          <div>
+            <label className="text-sm font-medium text-foreground">Attachment <span className="text-muted-foreground font-normal text-xs">(optional)</span></label>
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleFileDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`mt-2 border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 ${
+                dragOver
+                  ? "border-primary bg-primary/5 scale-[1.01]"
+                  : attachment
+                    ? "border-emerald-300 bg-emerald-50/50"
+                    : "border-muted-foreground/20 hover:border-muted-foreground/40 hover:bg-muted/30"
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={e => setAttachment(e.target.files?.[0] || null)}
+              />
+              {attachment ? (
+                <div className="flex items-center gap-4">
+                  {attachmentPreview ? (
+                    <div className="relative w-16 h-16 rounded-lg overflow-hidden border bg-white shrink-0">
+                      <img src={attachmentPreview} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                      <FileIcon className="h-6 w-6 text-red-400" />
+                    </div>
+                  )}
+                  <div className="text-left min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{attachment.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {(attachment.size / 1024).toFixed(0)} KB
+                    </p>
+                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); setAttachment(null); setAttachmentPreview(null) }}
+                    className="p-1.5 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-                <p className="font-bold text-lg">Ticket Submitted!</p>
-                <p className="text-sm text-muted-foreground">Ticket ID: <span className="font-mono font-bold">{submitted}</span></p>
-                <p className="text-xs text-muted-foreground">We&apos;ll respond within 1-2 business days</p>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="mx-auto w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center">
+                    <Upload className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Drop a file here or <span className="text-primary">browse</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">JPG, PNG, PDF up to 5 MB</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label className="text-sm font-medium text-foreground">Priority</label>
+            <div className="flex gap-2 mt-2.5">
+              {([
+                { value: "low" as const, label: "Low", color: "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100", activeColor: "bg-emerald-600 text-white border-emerald-600 shadow-md" },
+                { value: "normal" as const, label: "Normal", color: "text-blue-600 bg-blue-50 border-blue-200 hover:bg-blue-100", activeColor: "bg-blue-600 text-white border-blue-600 shadow-md" },
+                { value: "high" as const, label: "High", color: "text-red-600 bg-red-50 border-red-200 hover:bg-red-100", activeColor: "bg-red-600 text-white border-red-600 shadow-md" },
+              ]).map(p => (
+                <button
+                  key={p.value}
+                  onClick={() => setPriority(p.value)}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-semibold border transition-all duration-200 ${
+                    priority === p.value ? p.activeColor : p.color
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Submit */}
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || !subject.trim() || !description.trim()}
+            className="w-full h-12 text-base font-semibold shadow-sm gap-2"
+          >
+            {submitting ? (
+              <><RefreshCw className="h-4 w-4 animate-spin" /> Submitting...</>
             ) : (
-              <>
-                <div>
-                  <label className="text-sm font-medium">Category</label>
-                  <select value={category} onChange={e => setCategory(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5">
-                    {TICKET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Subject <span className="text-destructive">*</span></label>
-                  <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Brief description of your issue" className="mt-1.5" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Description <span className="text-destructive">*</span></label>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Provide details about your issue..." rows={4} className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 min-h-[100px]" />
-                  <p className="text-xs text-muted-foreground mt-1">{description.length}/2000</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Attachment <span className="text-muted-foreground font-normal">(optional)</span></label>
-                  <input type="file" accept="image/*,.pdf" onChange={e => setAttachment(e.target.files?.[0] || null)}
-                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1.5 file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-primary" />
-                  {attachment && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> {attachment.name}</p>}
-                  <p className="text-xs text-muted-foreground mt-0.5">Screenshot or document (JPG, PNG, PDF — max 5 MB)</p>
-                </div>
-                <Button onClick={handleSubmit} disabled={submitting || !subject.trim() || !description.trim()} className="w-full">
-                  {submitting ? "Submitting..." : "Submit Ticket"}
-                </Button>
-              </>
+              <><Send className="h-4 w-4" /> Submit Ticket</>
             )}
+          </Button>
+        </div>
+      )}
+
+      {/* ============ SUCCESS STATE ============ */}
+      {view === "new" && submitted && (
+        <Card className="border-emerald-200 bg-gradient-to-b from-emerald-50/80 to-white overflow-hidden">
+          <CardContent className="py-12 text-center relative">
+            {/* Animated checkmark */}
+            <div className="mx-auto w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mb-5 animate-[bounceIn_0.5s_ease-out]">
+              <svg className="w-10 h-10 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path className="animate-[drawCheck_0.4s_0.3s_ease-out_both]" d="M5 13l4 4L19 7" style={{ strokeDasharray: 24, strokeDashoffset: 24, animation: "drawCheck 0.4s 0.3s ease-out forwards" }} />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-emerald-800">Ticket Submitted Successfully!</h3>
+            <div className="mt-4 inline-flex items-center gap-2 bg-white rounded-xl border border-emerald-200 px-5 py-3 shadow-sm">
+              <Ticket className="h-4 w-4 text-emerald-600" />
+              <span className="font-mono text-lg font-bold tracking-wider text-emerald-700">{submitted}</span>
+            </div>
+            <p className="text-sm text-muted-foreground mt-5">
+              We&apos;ll respond within <strong>1-2 business days</strong>.
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">Redirecting to your tickets...</p>
+            {/* Progress bar */}
+            <div className="mt-5 mx-auto w-48 h-1 bg-emerald-100 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full animate-[fillBar_3s_linear]" style={{ animation: "fillBar 3s linear forwards" }} />
+            </div>
+            <style>{`
+              @keyframes drawCheck { to { stroke-dashoffset: 0; } }
+              @keyframes bounceIn { 0% { transform: scale(0); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+              @keyframes fillBar { from { width: 0%; } to { width: 100%; } }
+            `}</style>
           </CardContent>
         </Card>
       )}
 
-      {/* Ticket list */}
+      {/* ============ TICKET LIST ============ */}
       {view === "list" && (
         <>
           {loading ? (
-            <div className="text-center py-12 text-muted-foreground">Loading tickets...</div>
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="rounded-xl border bg-card p-4 animate-pulse">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-muted" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-muted rounded w-3/4" />
+                      <div className="h-3 bg-muted rounded w-1/2" />
+                    </div>
+                    <div className="h-6 w-20 bg-muted rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : tickets.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="py-12 text-center">
-                <p className="font-medium">No tickets yet</p>
-                <p className="text-sm text-muted-foreground mt-1">Click &ldquo;New Ticket&rdquo; to submit your first support request</p>
+            <Card className="border-dashed border-2">
+              <CardContent className="py-16 text-center">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
+                  <Inbox className="h-8 w-8 text-muted-foreground/40" />
+                </div>
+                <h3 className="font-semibold text-lg">No tickets yet</h3>
+                <p className="text-sm text-muted-foreground mt-1.5 max-w-xs mx-auto">
+                  Need help with something? Create a support ticket and our team will assist you.
+                </p>
+                <Button onClick={() => setView("new")} variant="outline" className="mt-5 gap-2">
+                  <Plus className="h-4 w-4" /> Create your first ticket
+                </Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {tickets.map((t: any) => (
-                <Card key={t.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => openTicket(t)}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{t.subject}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          <span className="font-mono">{t.ticket_number}</span> &middot; {t.category} &middot; {formatDate(t.created_at)}
-                        </p>
-                      </div>
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor(t.status)}`}>
-                        {t.status === "in_progress" ? "In Progress" : t.status?.charAt(0).toUpperCase() + t.status?.slice(1)}
-                      </span>
+                <div
+                  key={t.id}
+                  onClick={() => openTicket(t)}
+                  className="group relative rounded-xl border bg-card p-4 cursor-pointer transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 hover:border-primary/20"
+                >
+                  <div className="flex items-start gap-3.5">
+                    {/* Icon */}
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                      t.status === "open" ? "bg-amber-100" : t.status === "in_progress" ? "bg-blue-100" : t.status === "resolved" ? "bg-emerald-100" : "bg-gray-100"
+                    }`}>
+                      <MessageCircle className={`h-5 w-5 ${
+                        t.status === "open" ? "text-amber-600" : t.status === "in_progress" ? "text-blue-600" : t.status === "resolved" ? "text-emerald-600" : "text-gray-400"
+                      }`} />
                     </div>
-                  </CardContent>
-                </Card>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-mono text-[11px] text-muted-foreground/70 tracking-wide">{t.ticket_number}</span>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium">{t.category}</Badge>
+                      </div>
+                      <p className="font-semibold text-sm leading-tight group-hover:text-primary transition-colors">{t.subject}</p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-xs text-muted-foreground">{formatDate(t.created_at)}</span>
+                        {t.last_reply_preview && (
+                          <>
+                            <span className="text-muted-foreground/30">|</span>
+                            <span className="text-xs text-muted-foreground/70 truncate">{t.last_reply_preview}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status badge */}
+                    <div className="shrink-0 flex flex-col items-end gap-2">
+                      <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ${statusColor(t.status)}`}>
+                        {statusIcon(t.status)}
+                        {statusLabel(t.status)}
+                      </span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary/60 transition-colors" />
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </>
       )}
 
-      {/* Ticket detail + replies */}
+      {/* ============ TICKET DETAIL / CHAT ============ */}
       {view === "detail" && selectedTicket && (
-        <div className="space-y-4">
-          <Card>
+        <div className="space-y-0">
+          {/* Ticket header card */}
+          <Card className="rounded-b-none border-b-0">
             <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
-                  <p className="font-mono text-xs text-muted-foreground">{selectedTicket.ticket_number}</p>
-                  <p className="font-bold mt-1">{selectedTicket.subject}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-xs text-muted-foreground/70 tracking-wide">{selectedTicket.ticket_number}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{selectedTicket.category}</Badge>
+                  </div>
+                  <h3 className="font-bold text-base leading-snug">{selectedTicket.subject}</h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5">
+                    <Calendar className="h-3 w-3" />
+                    {formatDate(selectedTicket.created_at)}
+                  </p>
                 </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor(selectedTicket.status)}`}>
-                  {selectedTicket.status === "in_progress" ? "In Progress" : selectedTicket.status?.charAt(0).toUpperCase() + selectedTicket.status?.slice(1)}
+                <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor(selectedTicket.status)}`}>
+                  {statusIcon(selectedTicket.status)}
+                  {statusLabel(selectedTicket.status)}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap">{selectedTicket.description}</p>
-              <p className="text-xs text-muted-foreground mt-3">{formatDate(selectedTicket.created_at)}</p>
             </CardContent>
           </Card>
 
-          {/* Replies */}
-          {replies.map((r: any, i: number) => (
-            <div key={r.id || i} className={`flex ${r.is_admin ? "justify-start" : "justify-end"}`}>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${r.is_admin ? "bg-muted rounded-tl-sm" : "bg-primary text-primary-foreground rounded-tr-sm"}`}>
-                <p className={`text-[10px] font-semibold mb-1 ${r.is_admin ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
-                  {r.is_admin ? "AMASI Admin" : "You"} &middot; {formatDate(r.created_at)}
-                </p>
-                <p className="whitespace-pre-wrap">{r.message?.replace(/📎 Attachment: (https?:\/\/\S+)/g, "").trim()}</p>
-                {r.message?.match(/📎 Attachment: (https?:\/\/\S+)/) && (
-                  <a href={r.message.match(/📎 Attachment: (https?:\/\/\S+)/)?.[1]} target="_blank" rel="noopener noreferrer" className="mt-2 block">
-                    <img src={r.message.match(/📎 Attachment: (https?:\/\/\S+)/)?.[1]} alt="Attachment" className="max-w-[200px] rounded-lg border" onError={(e) => { (e.target as HTMLElement).outerHTML = '<span class="text-xs underline">📎 View Attachment</span>' }} />
-                  </a>
-                )}
+          {/* Chat area */}
+          <div className="border border-t-0 rounded-b-xl bg-gradient-to-b from-muted/20 to-muted/5">
+            <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
+              {/* Original message */}
+              <div className="flex justify-end">
+                <div className="max-w-[85%]">
+                  <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 py-3 shadow-sm">
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{selectedTicket.description}</p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1 text-right px-1">
+                    You &middot; {formatDate(selectedTicket.created_at)}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
 
-          {/* Reply form */}
-          {selectedTicket.status !== "closed" && (
-            <div className="space-y-2">
-              {replyFile && (
-                <div className="flex items-center gap-2 text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                  <CheckCircle className="h-3 w-3 text-green-600" />
-                  <span className="truncate flex-1">{replyFile.name}</span>
-                  <button onClick={() => setReplyFile(null)} className="text-muted-foreground hover:text-destructive">✕</button>
+              {/* Replies */}
+              {replies.length === 0 && (
+                <div className="text-center py-6">
+                  <p className="text-xs text-muted-foreground/60">No replies yet. We&apos;ll get back to you soon.</p>
                 </div>
               )}
-              <div className="flex gap-2">
-                <label className="flex items-center justify-center h-10 w-10 rounded-lg border border-input bg-background cursor-pointer hover:bg-muted transition-colors shrink-0" title="Attach file">
-                  <Upload className="h-4 w-4 text-muted-foreground" />
-                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setReplyFile(e.target.files?.[0] || null)} />
-                </label>
-                <Input value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type your reply..." className="flex-1"
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply() } }} />
-                <Button onClick={handleReply} disabled={sendingReply || (!replyText.trim() && !replyFile)} size="sm">
-                  {sendingReply ? "..." : "Send"}
-                </Button>
-              </div>
+
+              {replies.map((r: any, i: number) => {
+                const { text, url } = extractAttachment(r.message)
+                return (
+                  <div key={r.id || i} className={`flex ${r.is_admin ? "justify-start" : "justify-end"}`}>
+                    <div className="max-w-[85%]">
+                      <div className={`rounded-2xl px-4 py-3 shadow-sm ${
+                        r.is_admin
+                          ? "bg-white border border-border/60 rounded-tl-md"
+                          : "bg-primary text-primary-foreground rounded-tr-md"
+                      }`}>
+                        {text && <p className="text-sm whitespace-pre-wrap leading-relaxed">{text}</p>}
+                        {url && (
+                          isImageUrl(url) ? (
+                            <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                              <div className="relative rounded-lg overflow-hidden border bg-muted/30 max-w-[220px]">
+                                <img src={url} alt="Attachment" className="w-full h-auto max-h-[200px] object-cover hover:opacity-90 transition-opacity" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/40 to-transparent p-2">
+                                  <span className="text-[10px] text-white font-medium flex items-center gap-1"><Image className="h-3 w-3" /> View full size</span>
+                                </div>
+                              </div>
+                            </a>
+                          ) : (
+                            <a href={url} target="_blank" rel="noopener noreferrer" className={`mt-2 inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg transition-colors ${
+                              r.is_admin ? "bg-muted hover:bg-muted/80 text-foreground" : "bg-primary-foreground/10 hover:bg-primary-foreground/20 text-primary-foreground"
+                            }`}>
+                              <FileIcon className="h-3.5 w-3.5" />
+                              View PDF Attachment
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )
+                        )}
+                      </div>
+                      <p className={`text-[10px] text-muted-foreground mt-1 px-1 ${r.is_admin ? "text-left" : "text-right"}`}>
+                        {r.is_admin ? "AMASI Support" : "You"} &middot; {formatDate(r.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={repliesEndRef} />
             </div>
-          )}
+
+            {/* Reply form */}
+            {selectedTicket.status !== "closed" ? (
+              <div className="border-t bg-white rounded-b-xl p-3">
+                {/* File preview strip */}
+                {replyFile && (
+                  <div className="mb-2 flex items-center gap-3 bg-muted/40 rounded-lg px-3 py-2">
+                    {replyFilePreview ? (
+                      <div className="w-10 h-10 rounded-md overflow-hidden border shrink-0">
+                        <img src={replyFilePreview} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-md bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
+                        <FileIcon className="h-4 w-4 text-red-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium truncate">{replyFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{(replyFile.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <button
+                      onClick={() => { setReplyFile(null); setReplyFilePreview(null) }}
+                      className="p-1 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  {/* Paperclip / attach button */}
+                  <button
+                    onClick={() => replyFileInputRef.current?.click()}
+                    className="flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                    title="Attach file"
+                  >
+                    <Paperclip className="h-5 w-5" />
+                    <input
+                      ref={replyFileInputRef}
+                      type="file"
+                      accept="image/*,.pdf"
+                      className="hidden"
+                      onChange={e => setReplyFile(e.target.files?.[0] || null)}
+                    />
+                  </button>
+
+                  {/* Text input (textarea for multiline) */}
+                  <textarea
+                    ref={replyInputRef}
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    placeholder="Type a message..."
+                    rows={1}
+                    className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-colors placeholder:text-muted-foreground/50 max-h-32 min-h-[40px]"
+                    style={{ height: "auto", minHeight: "40px" }}
+                    onInput={e => {
+                      const target = e.currentTarget
+                      target.style.height = "auto"
+                      target.style.height = Math.min(target.scrollHeight, 128) + "px"
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        handleReply()
+                      }
+                    }}
+                  />
+
+                  {/* Send button */}
+                  <Button
+                    onClick={handleReply}
+                    disabled={sendingReply || (!replyText.trim() && !replyFile)}
+                    size="icon"
+                    className="h-10 w-10 rounded-lg shrink-0 shadow-sm"
+                  >
+                    {sendingReply ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground/50 mt-1.5 text-center">
+                  Press Enter to send, Shift+Enter for new line
+                </p>
+              </div>
+            ) : (
+              <div className="border-t bg-muted/30 rounded-b-xl p-4 text-center">
+                <p className="text-sm text-muted-foreground">This ticket is closed.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

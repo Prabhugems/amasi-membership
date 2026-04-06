@@ -992,13 +992,14 @@ function MemberSupportTab({ member }: { member: any }) {
         const fd = new FormData()
         fd.append("message", replyText.trim())
         fd.append("author_name", member.name || "Member")
+        fd.append("as_member", "true")
         fd.append("attachment", replyFile)
         res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, { method: "POST", body: fd })
       } else {
         res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: replyText.trim(), is_admin: false, author_name: member.name || "Member" }),
+          body: JSON.stringify({ message: replyText.trim(), as_member: true, author_name: member.name || "Member" }),
         })
       }
       const data = await res.json()

@@ -15,6 +15,7 @@ export async function POST(
     // Support both JSON and FormData (for file attachments)
     let message = ""
     let clientAuthorName = ""
+    let asMember = false
     let attachmentUrl: string | null = null
 
     const contentType = request.headers.get("content-type") || ""
@@ -22,6 +23,7 @@ export async function POST(
       const formData = await request.formData()
       message = (formData.get("message") as string) || ""
       clientAuthorName = (formData.get("author_name") as string) || ""
+      asMember = (formData.get("as_member") as string) === "true"
 
       const file = formData.get("attachment") as File | null
       if (file && file.size > 0) {
@@ -38,6 +40,7 @@ export async function POST(
       const body = await request.json()
       message = body.message || ""
       clientAuthorName = body.author_name || ""
+      asMember = body.as_member === true
     }
 
     if (!message && !attachmentUrl) {
@@ -47,10 +50,10 @@ export async function POST(
       )
     }
 
-    // Determine admin status from server-side session, not client
+    // Determine admin status — respect as_member flag from member portal
     const adminSession = await getAdminSession()
-    const is_admin = !!adminSession
-    const author_name = adminSession
+    const is_admin = asMember ? false : !!adminSession
+    const author_name = (is_admin && adminSession)
       ? (adminSession.name as string) || "AMASI Admin"
       : clientAuthorName
 

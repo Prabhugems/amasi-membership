@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 
 function getResend() {
@@ -69,6 +71,19 @@ export async function POST(request: NextRequest) {
     } catch (emailErr) {
       console.error("Rejection email error:", emailErr)
     }
+
+    // Audit log
+    const session = await getAdminSession()
+    const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
+    await logAdminAction({
+      adminEmail: (session?.email as string) || "unknown",
+      adminName: (session?.name as string) || undefined,
+      action: "reject_application",
+      entityType: "application",
+      entityId: applicationId,
+      entityName: fullName,
+      details: { reason },
+    })
 
     return Response.json({ status: true, message: "Application rejected" })
   } catch (error: any) {

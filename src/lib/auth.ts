@@ -79,7 +79,10 @@ export async function getAdminSession() {
   if (!token) return null
   const payload = await verifyToken(token)
   if (!payload || payload.role !== "admin") return null
-  return payload
+  return payload as typeof payload & {
+    adminRole?: string
+    permissions?: string[]
+  }
 }
 
 export async function getMemberSession() {

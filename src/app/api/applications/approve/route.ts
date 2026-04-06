@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 
@@ -177,6 +179,18 @@ export async function POST(request: NextRequest) {
         String(nextAmasiNumber)
       ).catch(err => console.error("WhatsApp approve error:", err))
     }
+
+    // Audit log
+    const session = await getAdminSession()
+    await logAdminAction({
+      adminEmail: (session?.email as string) || "unknown",
+      adminName: (session?.name as string) || undefined,
+      action: "approve_application",
+      entityType: "application",
+      entityId: applicationId,
+      entityName: fullName,
+      details: { amasiNumber: nextAmasiNumber, membershipType: app.membership_type },
+    })
 
     return Response.json({
       status: true,

@@ -22,6 +22,9 @@ import {
   ExternalLink,
   LogOut,
   ArrowUpCircle,
+  Bell,
+  Shield,
+  ScrollText,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -31,6 +34,7 @@ interface NavItem {
   href: string
   icon: typeof LayoutDashboard
   badgeKey?: "pending" | "tickets" | "upgrades"
+  superAdminOnly?: boolean
 }
 
 interface NavSection {
@@ -49,6 +53,9 @@ const sections: NavSection[] = [
       { name: "Reports", href: "/reports", icon: BarChart3 },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
+      { name: "Notifications", href: "/notifications", icon: Bell },
+      { name: "Activity Log", href: "/audit", icon: ScrollText },
+      { name: "Admin Users", href: "/admin", icon: Shield, superAdminOnly: true },
     ],
   },
   {
@@ -61,6 +68,23 @@ const sections: NavSection[] = [
     ],
   },
 ]
+
+function useAdminRole() {
+  const [adminRole, setAdminRole] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.authenticated && data.user?.adminRole) {
+          setAdminRole(data.user.adminRole)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  return adminRole
+}
 
 function useBadgeCounts() {
   const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number }>({
@@ -112,6 +136,8 @@ export function Sidebar() {
   const { collapsed, toggle } = useSidebar()
   const counts = useBadgeCounts()
   const router = useRouter()
+  const adminRole = useAdminRole()
+  const isSuperAdmin = adminRole === "super_admin"
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
@@ -174,7 +200,7 @@ export function Sidebar() {
                 </p>
               )}
               {collapsed && idx > 0 && null}
-              {section.items.map((item) => {
+              {section.items.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
                 const isActive = pathname === item.href
                 const badgeCount = item.badgeKey ? counts[item.badgeKey] : 0
                 return (

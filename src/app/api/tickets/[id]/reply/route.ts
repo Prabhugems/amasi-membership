@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -138,6 +139,19 @@ export async function POST(
       } catch (emailErr) {
         console.error("Ticket reply email error:", emailErr)
       }
+    }
+
+    // Audit log for admin replies
+    if (is_admin && adminSession) {
+      await logAdminAction({
+        adminEmail: (adminSession.email as string) || "unknown",
+        adminName: (adminSession.name as string) || undefined,
+        action: "reply_ticket",
+        entityType: "ticket",
+        entityId: ticket.id,
+        entityName: ticket.ticket_number || ticket.subject,
+        details: { subject: ticket.subject },
+      })
     }
 
     return Response.json(reply, { status: 201 })

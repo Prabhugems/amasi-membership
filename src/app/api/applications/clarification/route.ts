@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 
 function getResend() {
@@ -120,6 +122,19 @@ export async function POST(request: NextRequest) {
     } catch (emailErr) {
       console.error("Clarification email error:", emailErr)
     }
+
+    // Audit log
+    const session = await getAdminSession()
+    const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
+    await logAdminAction({
+      adminEmail: (session?.email as string) || "unknown",
+      adminName: (session?.name as string) || undefined,
+      action: action === "need_clarification" ? "request_clarification" : action === "ask_resubmit" ? "request_resubmit" : "add_internal_note",
+      entityType: "application",
+      entityId: applicationId,
+      entityName: fullName,
+      details: { action, message },
+    })
 
     const actionLabel = action === "need_clarification" ? "Clarification requested" : "Resubmission requested"
     return Response.json({ status: true, message: actionLabel })

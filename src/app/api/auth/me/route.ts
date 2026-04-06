@@ -15,6 +15,7 @@ export async function GET(_request: NextRequest) {
         email: session.email,
         name: session.name,
         role: session.role,
+        adminRole: session.adminRole || "super_admin",
       },
     })
   } catch (error) {

@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 
 // UUID v4 pattern check
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -105,6 +107,20 @@ export async function PATCH(
 
     if (!data) {
       return Response.json({ error: "Ticket not found" }, { status: 404 })
+    }
+
+    // Audit log
+    const session = await getAdminSession()
+    if (session) {
+      await logAdminAction({
+        adminEmail: (session.email as string) || "unknown",
+        adminName: (session.name as string) || undefined,
+        action: status === "closed" ? "close_ticket" : "update_ticket_status",
+        entityType: "ticket",
+        entityId: data.id,
+        entityName: data.ticket_number || data.subject,
+        details: { status, priority: priority || undefined },
+      })
     }
 
     return Response.json(data)

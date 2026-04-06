@@ -352,31 +352,32 @@ export default function MembersPage() {
     setHover(null)
   }, [])
 
-  // Export CSV
-  const exportCSV = useCallback(() => {
-    if (!members.length) return
-    const headers = ["AMASI Number", "Name", "Email", "Phone", "Type", "State", "Zone", "Status", "PG Degree", "Joined"]
-    const rows = members.map((m: any) => [
-      m.amasi_number,
-      `Dr. ${m.name}`,
-      m.email || "",
-      m.phone || "",
-      m.membership_type || "",
-      m.state || "",
-      m.zone || "",
-      m.status || "",
-      m.pg_degree || "",
-      m.joining_date ? new Date(m.joining_date).getFullYear() : "",
-    ])
-    const csvContent = [headers, ...rows].map((row) => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n")
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `amasi-members-${new Date().toISOString().split("T")[0]}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [members])
+  // Export CSV — calls server API which exports ALL filtered members (not just current page)
+  const [exporting, setExporting] = useState(false)
+  const exportCSV = useCallback(async () => {
+    setExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (searchTerm) params.set("q", searchTerm)
+      if (typeFilter) params.set("type", typeFilter)
+      if (stateFilter) params.set("state", stateFilter)
+      if (zoneFilter) params.set("zone", zoneFilter)
+      if (statusFilter) params.set("status", statusFilter)
+      const res = await fetch(`/api/export/members?${params}`)
+      if (!res.ok) throw new Error("Export failed")
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `amasi-members-export-${new Date().toISOString().split("T")[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Export error:", err)
+    } finally {
+      setExporting(false)
+    }
+  }, [searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter])
 
   const SortableHeader = ({ col, label, className }: { col: SortCol; label: string; className?: string }) => (
     <th
@@ -431,8 +432,8 @@ export default function MembersPage() {
               <LayoutGrid className="h-4 w-4" />
             </button>
           </div>
-          <Button variant="outline" size="sm" className="gap-2 shadow-sm" onClick={exportCSV} disabled={!members.length}>
-            <Download className="h-4 w-4" /> Export CSV
+          <Button variant="outline" size="sm" className="gap-2 shadow-sm" onClick={exportCSV} disabled={exporting}>
+            <Download className="h-4 w-4" /> {exporting ? "Exporting..." : "Export All CSV"}
           </Button>
         </div>
       </div>

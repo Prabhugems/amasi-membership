@@ -13,7 +13,7 @@ function getConfig() {
   }
 }
 
-async function sendTemplate(
+export async function sendTemplate(
   phone: string,
   recipientName: string,
   templateName: string,

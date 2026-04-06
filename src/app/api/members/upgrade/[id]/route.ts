@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { logAdminAction } from "@/lib/audit-log"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { Resend } from "resend"
 
@@ -126,6 +127,17 @@ export async function PATCH(
         console.error("Upgrade WhatsApp error:", whatsappErr)
       }
 
+      // Audit log
+      await logAdminAction({
+        adminEmail: (session.email as string) || "unknown",
+        adminName: (session.name as string) || undefined,
+        action: "approve_upgrade",
+        entityType: "upgrade",
+        entityId: id,
+        entityName: upgrade.member_name,
+        details: { fromType: "ALM", toType: "LM", amasiNumber: upgrade.amasi_number },
+      })
+
       return Response.json({
         status: true,
         message: `Upgrade approved. ${upgrade.member_name} is now a Life Member.`,
@@ -174,6 +186,17 @@ export async function PATCH(
       } catch (emailErr) {
         console.error("Upgrade rejection email error:", emailErr)
       }
+
+      // Audit log
+      await logAdminAction({
+        adminEmail: (session.email as string) || "unknown",
+        adminName: (session.name as string) || undefined,
+        action: "reject_upgrade",
+        entityType: "upgrade",
+        entityId: id,
+        entityName: upgrade.member_name,
+        details: { notes },
+      })
 
       return Response.json({
         status: true,

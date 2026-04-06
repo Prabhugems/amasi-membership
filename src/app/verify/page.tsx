@@ -241,7 +241,7 @@ function VerifyContent() {
                   AMASI-{String(card.amasiNumber).padStart(5, "0")}
                 </p>
                 <div className="flex justify-center gap-2 mt-3">
-                  <Badge className="bg-green-600 shadow-sm">
+                  <Badge variant="success" className="shadow-sm">
                     {card.membershipLabel}
                   </Badge>
                   {card.votingEligible && (

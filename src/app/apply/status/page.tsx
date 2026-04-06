@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect, useCallback } from "react"
+import { Suspense, useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -125,6 +125,7 @@ interface TimelineStep {
   date?: string
   status: "completed" | "current" | "upcoming" | "error"
   icon: React.ReactNode
+  retryPayment?: boolean
 }
 
 function getTimelineSteps(app: ApplicationData): TimelineStep[] {
@@ -161,7 +162,8 @@ function getTimelineSteps(app: ApplicationData): TimelineStep[] {
     ) : (
       <CreditCard className="h-5 w-5" />
     ),
-  })
+    ...(paymentFailed ? { retryPayment: true } : {}),
+  } as TimelineStep)
 
   // Step 3: Under Review
   const isReviewing =
@@ -286,6 +288,15 @@ function Timeline({ steps }: { steps: TimelineStep[] }) {
               <p className="text-xs text-muted-foreground mt-0.5">
                 {step.description}
               </p>
+              {step.retryPayment && (
+                <a
+                  href="/apply"
+                  className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors shadow-sm"
+                >
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Retry Payment
+                </a>
+              )}
               {step.date && (
                 <p className="text-xs text-muted-foreground/70 mt-0.5">
                   {formatDate(step.date)}
@@ -314,6 +325,7 @@ function ApplicationCard({
   onToggle: () => void
   isOnly: boolean
 }) {
+  const cardRef = useRef<HTMLDivElement>(null)
   const displayName = [app.salutation, app.first_name, app.middle_name, app.last_name]
     .filter(Boolean)
     .join(" ") || app.name
@@ -325,6 +337,7 @@ function ApplicationCard({
 
   return (
     <Card
+      ref={cardRef}
       className={`transition-all duration-200 ${
         needsAction ? "border-amber-300 shadow-amber-100/50 shadow-md" : ""
       } ${isApproved ? "border-green-200" : ""}`}
@@ -362,7 +375,14 @@ function ApplicationCard({
             </Badge>
             {!isOnly && (
               <button
-                onClick={onToggle}
+                onClick={() => {
+                  onToggle()
+                  if (!isExpanded) {
+                    setTimeout(() => {
+                      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }, 50)
+                  }
+                }}
                 className="p-1 rounded-md hover:bg-muted transition-colors"
               >
                 {isExpanded ? (

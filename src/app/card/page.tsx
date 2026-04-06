@@ -344,6 +344,7 @@ function CardContent() {
   const [searchId, setSearchId] = useState(initialId)
   const [showBack, setShowBack] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
   const cardFrontRef = useRef<HTMLDivElement>(null)
   const cardBackRef = useRef<HTMLDivElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -387,6 +388,7 @@ function CardContent() {
   }, [])
 
   const handleDownloadPNG = async () => {
+    setDownloading("png")
     try {
       const canvas = await captureCard(showBack ? cardBackRef : cardFrontRef)
       if (!canvas) return
@@ -397,10 +399,13 @@ function CardContent() {
       toast.success("Card downloaded as PNG!")
     } catch {
       toast.error("Download failed. Try screenshot instead.")
+    } finally {
+      setDownloading(null)
     }
   }
 
   const handleDownloadPDF = async () => {
+    setDownloading("pdf")
     try {
       const frontCanvas = await captureCard(cardFrontRef, 2)
       const backCanvas = await captureCard(cardBackRef, 2)
@@ -425,6 +430,8 @@ function CardContent() {
       toast.success("Card downloaded as PDF!")
     } catch {
       toast.error("PDF generation failed.")
+    } finally {
+      setDownloading(null)
     }
   }
 
@@ -586,9 +593,9 @@ function CardContent() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowBack(!showBack)}
-                className="gap-1.5 text-xs"
+                className="group gap-1.5 text-xs"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <RotateCcw className="h-3.5 w-3.5 group-hover:rotate-180 transition-transform duration-300" />
                 Flip Card
               </Button>
             </div>
@@ -606,11 +613,11 @@ function CardContent() {
 
             {/* Primary actions */}
             <div className="grid grid-cols-2 gap-3">
-              <Button onClick={handleDownloadPNG} className="gap-2">
-                <FileImage className="h-4 w-4" /> Download PNG
+              <Button onClick={handleDownloadPNG} className="gap-2" disabled={downloading === "png"}>
+                {downloading === "png" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileImage className="h-4 w-4" />} Download PNG
               </Button>
-              <Button onClick={handleDownloadPDF} variant="outline" className="gap-2">
-                <FileText className="h-4 w-4" /> Download PDF
+              <Button onClick={handleDownloadPDF} variant="outline" className="gap-2" disabled={downloading === "pdf"}>
+                {downloading === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Download PDF
               </Button>
             </div>
 

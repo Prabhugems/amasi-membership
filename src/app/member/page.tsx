@@ -29,6 +29,17 @@ type Tab = "overview" | "card" | "certificate" | "profile" | "documents" | "supp
 const SESSION_TIMEOUT = 15 * 60 * 1000
 const SESSION_WARNING = 13 * 60 * 1000 // warn at 13 min (2 min before timeout)
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-32 bg-muted rounded-xl" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {[1,2,3,4,5].map(i => <div key={i} className="h-24 bg-muted rounded-xl" />)}
+      </div>
+    </div>
+  )
+}
+
 function MemberPortalContent() {
   const searchParams = useSearchParams()
   const [phase, setPhase] = useState<Phase>("login")
@@ -241,7 +252,7 @@ function MemberPortalContent() {
                     {error}
                   </div>
                 )}
-                <Button className="w-full h-12 font-semibold text-base" onClick={handleSendOtp} disabled={isSending || !email.trim()}>
+                <Button className="w-full h-11 font-semibold text-base" onClick={handleSendOtp} disabled={isSending || !email.trim()}>
                   {isSending ? (
                     <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Sending OTP...</>
                   ) : (
@@ -361,6 +372,17 @@ function MemberPortalContent() {
               <ChevronRight className="h-4 w-4 mr-1 rotate-180" /> Use a different email
             </Button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ===== LOADING SKELETON (between OTP verify and dashboard) =====
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-6">
+        <div className="w-full max-w-4xl">
+          <DashboardSkeleton />
         </div>
       </div>
     )

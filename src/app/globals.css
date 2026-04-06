@@ -60,7 +60,7 @@
   --foreground: #fafafa;
   --card: #111111;
   --card-foreground: #fafafa;
-  --primary: #14b8a6;
+  --primary: #2dd4bf;
   --primary-foreground: #0a0a0a;
   --secondary: #1e293b;
   --secondary-foreground: #f8fafc;
@@ -314,3 +314,25 @@ html {
 .stagger-item:nth-child(3) { animation-delay: 100ms; }
 .stagger-item:nth-child(4) { animation-delay: 150ms; }
 .stagger-item:nth-child(5) { animation-delay: 200ms; }
+
+/* ===== PLACEHOLDER CONTRAST ===== */
+input::placeholder, textarea::placeholder {
+  color: #6b7280;
+}
+
+/* ===== BACK-TO-TOP BUTTON ===== */
+.back-to-top {
+  position: fixed;
+  bottom: 6rem;
+  right: 1.5rem;
+  z-index: 40;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.back-to-top.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}

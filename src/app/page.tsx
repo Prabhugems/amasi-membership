@@ -154,6 +154,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch dashboard data")
       return res.json()
     },
+    refetchInterval: 30000,
   })
 
   const stats = data?.data

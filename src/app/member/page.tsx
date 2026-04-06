@@ -937,19 +937,32 @@ function MemberSupportTab({ member }: { member: any }) {
     } catch { /* ignore */ }
   }
 
+  const [replyFile, setReplyFile] = useState<File | null>(null)
+
   const handleReply = async () => {
-    if (!replyText.trim() || !selectedTicket) return
+    if (!replyText.trim() && !replyFile) return
+    if (!selectedTicket) return
     setSendingReply(true)
     try {
-      const res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: replyText.trim(), is_admin: false, author_name: member.name || "Member" }),
-      })
+      let res
+      if (replyFile) {
+        const fd = new FormData()
+        fd.append("message", replyText.trim())
+        fd.append("author_name", member.name || "Member")
+        fd.append("attachment", replyFile)
+        res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, { method: "POST", body: fd })
+      } else {
+        res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: replyText.trim(), is_admin: false, author_name: member.name || "Member" }),
+        })
+      }
       const data = await res.json()
       if (data.id || data.message) {
         setReplies(prev => [...prev, data])
         setReplyText("")
+        setReplyFile(null)
       }
     } catch { /* ignore */ }
     finally { setSendingReply(false) }
@@ -1089,19 +1102,37 @@ function MemberSupportTab({ member }: { member: any }) {
                 <p className={`text-[10px] font-semibold mb-1 ${r.is_admin ? "text-muted-foreground" : "text-primary-foreground/70"}`}>
                   {r.is_admin ? "AMASI Admin" : "You"} &middot; {formatDate(r.created_at)}
                 </p>
-                <p className="whitespace-pre-wrap">{r.message}</p>
+                <p className="whitespace-pre-wrap">{r.message?.replace(/📎 Attachment: (https?:\/\/\S+)/g, "").trim()}</p>
+                {r.message?.match(/📎 Attachment: (https?:\/\/\S+)/) && (
+                  <a href={r.message.match(/📎 Attachment: (https?:\/\/\S+)/)?.[1]} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                    <img src={r.message.match(/📎 Attachment: (https?:\/\/\S+)/)?.[1]} alt="Attachment" className="max-w-[200px] rounded-lg border" onError={(e) => { (e.target as HTMLElement).outerHTML = '<span class="text-xs underline">📎 View Attachment</span>' }} />
+                  </a>
+                )}
               </div>
             </div>
           ))}
 
           {/* Reply form */}
           {selectedTicket.status !== "closed" && (
-            <div className="flex gap-2">
-              <Input value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type your reply..." className="flex-1"
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply() } }} />
-              <Button onClick={handleReply} disabled={sendingReply || !replyText.trim()} size="sm">
-                {sendingReply ? "..." : "Send"}
-              </Button>
+            <div className="space-y-2">
+              {replyFile && (
+                <div className="flex items-center gap-2 text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <CheckCircle className="h-3 w-3 text-green-600" />
+                  <span className="truncate flex-1">{replyFile.name}</span>
+                  <button onClick={() => setReplyFile(null)} className="text-muted-foreground hover:text-destructive">✕</button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <label className="flex items-center justify-center h-10 w-10 rounded-lg border border-input bg-background cursor-pointer hover:bg-muted transition-colors shrink-0" title="Attach file">
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                  <input type="file" accept="image/*,.pdf" className="hidden" onChange={e => setReplyFile(e.target.files?.[0] || null)} />
+                </label>
+                <Input value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type your reply..." className="flex-1"
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleReply() } }} />
+                <Button onClick={handleReply} disabled={sendingReply || (!replyText.trim() && !replyFile)} size="sm">
+                  {sendingReply ? "..." : "Send"}
+                </Button>
+              </div>
             </div>
           )}
         </div>

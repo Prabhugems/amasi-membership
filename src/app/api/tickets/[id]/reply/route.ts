@@ -11,10 +11,36 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const body = await request.json()
-    const { message, author_name: clientAuthorName } = body
 
-    if (!message) {
+    // Support both JSON and FormData (for file attachments)
+    let message = ""
+    let clientAuthorName = ""
+    let attachmentUrl: string | null = null
+
+    const contentType = request.headers.get("content-type") || ""
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
+      message = (formData.get("message") as string) || ""
+      clientAuthorName = (formData.get("author_name") as string) || ""
+
+      const file = formData.get("attachment") as File | null
+      if (file && file.size > 0) {
+        const supabaseUpload = createAdminClient()
+        const ext = file.name.split(".").pop() || "png"
+        const path = `tickets/${id}/reply_${Date.now()}.${ext}`
+        const { error: uploadErr } = await supabaseUpload.storage.from("uploads").upload(path, file, { upsert: true })
+        if (!uploadErr) {
+          const { data: urlData } = supabaseUpload.storage.from("uploads").getPublicUrl(path)
+          attachmentUrl = urlData.publicUrl
+        }
+      }
+    } else {
+      const body = await request.json()
+      message = body.message || ""
+      clientAuthorName = body.author_name || ""
+    }
+
+    if (!message && !attachmentUrl) {
       return Response.json(
         { error: "Missing required field: message" },
         { status: 400 }
@@ -33,6 +59,11 @@ export async function POST(
         { error: "Missing required field: author_name" },
         { status: 400 }
       )
+    }
+
+    // Append attachment link to message if uploaded
+    if (attachmentUrl) {
+      message = message ? `${message}\n\n📎 Attachment: ${attachmentUrl}` : `📎 Attachment: ${attachmentUrl}`
     }
 
     const supabase = createAdminClient()

@@ -3,10 +3,5 @@
     "deploymentEnabled": {
       "main": true
     }
-  },
-  "functions": {
-    "src/**/*.ts": {
-      "maxDuration": 30
-    }
   }
 }

@@ -12,7 +12,7 @@ export async function logAdminAction(params: {
 }) {
   try {
     const supabase = createAdminClient()
-    await supabase.from("admin_audit_log").insert({
+    const { error } = await supabase.from("admin_audit_log").insert({
       admin_email: params.adminEmail,
       admin_name: params.adminName,
       action: params.action,
@@ -22,6 +22,9 @@ export async function logAdminAction(params: {
       details: params.details || null,
       ip_address: params.ipAddress,
     })
+    if (error) {
+      console.error("Audit log insert failed:", error.message, "| Table: admin_audit_log | Action:", params.action, "| Admin:", params.adminEmail)
+    }
   } catch (err) {
     console.error("Audit log error:", err)
   }

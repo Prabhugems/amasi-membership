@@ -113,7 +113,11 @@ export default function ReportsPage() {
   const reportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch("/api/reports")
+    setLoading(true)
+    setError(null)
+    const params = new URLSearchParams()
+    if (dateRange !== "all") params.set("range", dateRange)
+    fetch(`/api/reports${params.toString() ? `?${params}` : ""}`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch reports")
         return res.json()
@@ -121,7 +125,7 @@ export default function ReportsPage() {
       .then((json) => setData(json))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [dateRange])
 
   // Filter monthly data by date range
   const filteredMonthlyData = useMemo(() => {

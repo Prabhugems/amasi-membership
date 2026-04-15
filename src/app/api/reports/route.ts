@@ -2,9 +2,11 @@ import { createAdminClient } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = createAdminClient()
+    const { searchParams } = new URL(request.url)
+    const range = searchParams.get("range") // "30d", "90d", "year", or null for all
 
     const [zoneRes, stateRes, monthlyRes, typeRes] = await Promise.all([
       // Zone distribution
@@ -31,14 +33,25 @@ export async function GET() {
     // Check for RPC errors — fall back to JS-based aggregation if exec_sql doesn't exist
     if (zoneRes.error || stateRes.error || monthlyRes.error || typeRes.error) {
       // Fallback: fetch all members in batches and aggregate in JS
+      // Calculate date cutoff from range param
+      let dateCutoff: string | null = null
+      if (range) {
+        const now = new Date()
+        if (range === "30d") now.setDate(now.getDate() - 30)
+        else if (range === "90d") now.setDate(now.getDate() - 90)
+        else if (range === "year") { now.setMonth(0); now.setDate(1) }
+        dateCutoff = now.toISOString().split("T")[0]
+      }
+
       const rows: any[] = []
       let offset = 0
       const batchSize = 5000
       while (true) {
-        const { data: batch, error } = await supabase
+        let query = supabase
           .from("members")
           .select("zone, state, joining_date, membership_type")
-          .range(offset, offset + batchSize - 1)
+        if (dateCutoff) query = query.gte("joining_date", dateCutoff)
+        const { data: batch, error } = await query.range(offset, offset + batchSize - 1)
         if (error) return Response.json({ error: error.message }, { status: 500 })
         if (!batch || batch.length === 0) break
         rows.push(...batch)

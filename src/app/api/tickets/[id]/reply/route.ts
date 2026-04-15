@@ -31,10 +31,19 @@ export async function POST(
         const supabaseUpload = createAdminClient()
         const ext = file.name.split(".").pop() || "png"
         const path = `tickets/${id}/reply_${Date.now()}.${ext}`
-        const { error: uploadErr } = await supabaseUpload.storage.from("uploads").upload(path, file, { upsert: true })
+        const fileBuffer = Buffer.from(await file.arrayBuffer())
+        const { error: uploadErr } = await supabaseUpload.storage.from("uploads").upload(path, fileBuffer, {
+          contentType: file.type,
+          upsert: true,
+        })
         if (!uploadErr) {
-          const { data: urlData } = supabaseUpload.storage.from("uploads").getPublicUrl(path)
-          attachmentUrl = urlData.publicUrl
+          const { data: signedData } = await supabaseUpload.storage.from("uploads").createSignedUrl(path, 86400 * 30) // 30 days
+          attachmentUrl = signedData?.signedUrl || null
+          if (!attachmentUrl) {
+            console.error("Ticket attachment: signed URL creation failed for", path)
+          }
+        } else {
+          console.error("Ticket attachment upload failed:", uploadErr.message)
         }
       }
     } else {

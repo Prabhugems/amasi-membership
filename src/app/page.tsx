@@ -28,7 +28,7 @@ interface DashboardData {
   recentApplications: {
     id: string
     reference_number: string
-    full_name: string
+    name: string
     membership_type: string
     status: string
     payment_status: string
@@ -115,7 +115,7 @@ function buildActivityFeed(applications: DashboardData["recentApplications"]): A
   return applications.slice(0, 6).map((app) => {
     const isApproved = app.status === "approved" || app.status === "ai_approved"
     const isRejected = app.status === "rejected"
-    const name = app.full_name || "Unknown"
+    const name = app.name || "Unknown"
     const firstName = name.split(" ")[0]
 
     if (isApproved) {
@@ -331,7 +331,7 @@ export default function DashboardPage() {
                   </thead>
                   <tbody>
                     {stats.recentApplications.map((app) => {
-                      const initials = (app.full_name || "?")
+                      const initials = (app.name || "?")
                         .split(" ")
                         .map((n) => n[0])
                         .slice(0, 2)
@@ -364,7 +364,7 @@ export default function DashboardPage() {
                               </div>
                               <div className="min-w-0">
                                 <p className="font-medium text-sm truncate">
-                                  {app.full_name || "Unknown"}
+                                  {app.name || "Unknown"}
                                 </p>
                                 <p className="text-xs text-muted-foreground truncate">
                                   {app.reference_number}

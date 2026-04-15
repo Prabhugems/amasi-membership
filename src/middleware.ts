@@ -43,6 +43,7 @@ const PUBLIC_API_ROUTES = [
   "/api/members/upload",
   "/api/members/upgrade",
   "/api/nmc",
+  "/api/webhooks/",
 ]
 
 export async function middleware(request: NextRequest) {

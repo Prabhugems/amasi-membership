@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label"
 import {
   Upload, FileCheck, Sparkles, CheckCircle, AlertCircle, Loader2,
   ArrowRight, ArrowLeft, Send, Shield, Award, Clock, Users, Star,
-  ChevronRight, X, Eye, GraduationCap, Stethoscope, Copy, Check,
-  ExternalLink, FileText, ClipboardCheck,
+  ChevronRight, ChevronDown, X, Eye, GraduationCap, Stethoscope, Copy, Check,
+  ExternalLink, FileText, ClipboardCheck, Info,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -28,6 +28,43 @@ import { Autocomplete } from "@/components/ui/autocomplete"
 import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
 import { generateRefNumber, FIELD_HELP } from "@/lib/application-utils"
 import { FieldHelp } from "@/components/ui/field-help"
+const UPLOAD_TIPS: Record<string, { dos: string[]; donts: string[]; aiReads: string[] }> = {
+  mci_certificate: {
+    dos: ["Upload your MCI/State Medical Council registration certificate — not a degree or marksheet"],
+    donts: ["Don't upload a degree certificate or admission letter here"],
+    aiReads: ["Name", "Reg number", "Council", "State"],
+  },
+  pg_degree_certificate: {
+    dos: ["Upload your PG degree certificate (MS/MD/MCh/DNB) — not marksheet"],
+    donts: ["Don't upload MBBS degree here — this slot is for your postgraduate degree only"],
+    aiReads: ["Degree", "Specialisation", "University", "Year"],
+  },
+  asi_member_certificate: {
+    dos: ["Upload current-year ASI membership certificate or PDF from the ASI portal"],
+    donts: ["Don't upload a payment receipt or expired certificate"],
+    aiReads: ["Membership ID", "Year", "Category"],
+  },
+  mbbs_degree_certificate: {
+    dos: ["Upload your MBBS degree or provisional certificate"],
+    donts: ["Don't upload marksheets or admission letters"],
+    aiReads: ["Degree", "University", "Year"],
+  },
+  letter_hod: {
+    dos: ["Letter on institutional letterhead, signed by HOD, dated within last 6 months"],
+    donts: ["Don't upload unsigned or undated letters"],
+    aiReads: ["Name", "Department", "Institution", "Date"],
+  },
+  active_license: {
+    dos: ["Upload your current valid practice license"],
+    donts: ["Don't upload an expired license"],
+    aiReads: ["License number", "Validity", "Country"],
+  },
+  profile: {
+    dos: ["Recent passport-size photo, plain background, face clearly visible"],
+    donts: ["No sunglasses, filters, or group photos"],
+    aiReads: ["Face detection"],
+  },
+}
 import { ProgressBar } from "@/components/apply/progress-bar"
 
 const COLLEGE_OPTIONS = MEDICAL_COLLEGES_INDIA.map(c => ({
@@ -153,6 +190,7 @@ export default function ApplyPage() {
     return INITIAL_FORM_DATA
   })
   const [uploads, setUploads] = useState<Record<string, UploadEntry>>({})
+  const [expandedTips, setExpandedTips] = useState<Record<string, boolean>>({})
   const [processing, setProcessing] = useState(false)
   const [selectedType, setSelectedType] = useState<MembershipType | null>(() => {
     if (typeof window !== "undefined") {
@@ -250,25 +288,42 @@ export default function ApplyPage() {
 
       // Check eligibility for PG degree
       if (result.eligibility && !result.eligibility.eligible) {
-        setUploads((prev) => ({
-          ...prev,
-          [docType]: { file, preview, status: "blocked", extracted, eligibility: result.eligibility, message: result.eligibility.reason },
-        }))
-        toast.error(result.eligibility.reason)
+        if (result.eligibility.softBlock) {
+          // AI uncertain — show green "Document received", route silently to admin
+          setUploads((prev) => ({
+            ...prev,
+            [docType]: { file, preview, status: "extracted", extracted, eligibility: result.eligibility },
+          }))
+          toast.success("Document received — under review")
+        } else {
+          setUploads((prev) => ({
+            ...prev,
+            [docType]: { file, preview, status: "blocked", extracted, eligibility: result.eligibility, message: result.eligibility.reason },
+          }))
+          toast.error(result.eligibility.reason)
+        }
         return
+      }
+
+      // Show expiry warnings
+      if (result.expiryWarnings && result.expiryWarnings.length > 0) {
+        result.expiryWarnings.forEach((w: string) => toast.warning(w, { duration: 8000 }))
       }
 
       // Auto-fill form fields from ALL extracted data
       const updates: Partial<ApplicationFormData> = {}
 
       // --- Name extraction with validation ---
-      if (extracted.name) {
-        const cleanName = extracted.name
+      const rawName = extracted.full_name || extracted.name || extracted.applicant_name
+      if (rawName) {
+        const cleanName = rawName
           .replace(/^(Dr\.?|Prof\.?|Mr\.?|Mrs\.?|Ms\.?|Shri\.?)\s*/gi, "")
           .replace(/\s+/g, " ").trim()
-        const junkWords = ["the", "of", "and", "for", "this", "that", "with", "from", "qualification", "certificate", "registration", "additional", "medical", "council", "not visible", "null", "n/a"]
+        const junkWords = ["the", "of", "and", "for", "this", "that", "with", "from", "qualification", "certificate", "registration", "additional", "medical", "council", "not visible", "null", "n/a", "has", "been", "duly", "admitted", "hereby", "certify", "certified", "granted", "issued", "registered", "pursuant", "herewith", "whereas", "therefore", "hel", "she", "he", "is", "was", "are"]
+        const junkPhrases = ["duly admitted", "has been", "hereby certif", "is registered", "not visible", "granted to", "issued to"]
         const nameParts = cleanName.split(/\s+/)
-        const isValidName = nameParts.length >= 1 && nameParts.length <= 5 &&
+        const containsJunkPhrase = junkPhrases.some(p => cleanName.toLowerCase().includes(p))
+        const isValidName = !containsJunkPhrase && nameParts.length >= 1 && nameParts.length <= 6 &&
           cleanName.length >= 3 && cleanName.length <= 60 &&
           !junkWords.includes(nameParts[0].toLowerCase()) && /^[A-Za-z]/.test(nameParts[0])
         if (isValidName) {
@@ -280,8 +335,9 @@ export default function ApplyPage() {
 
       // --- MCI Certificate fields ---
       if (extracted.registration_number) updates.mciCouncilNumber = extracted.registration_number
-      if (extracted.council_state) {
-        const matchedState = INDIAN_STATES.find(s => extracted.council_state.toLowerCase().includes(s.toLowerCase()))
+      const councilState = extracted.state || extracted.council_state
+      if (councilState) {
+        const matchedState = INDIAN_STATES.find(s => councilState.toLowerCase().includes(s.toLowerCase()))
         if (matchedState) {
           updates.mciCouncilState = matchedState
           if (!formData.state) { updates.state = matchedState; updates.zone = STATE_TO_ZONE[matchedState] || "" }
@@ -293,7 +349,13 @@ export default function ApplyPage() {
         // Convert DD-MM-YYYY or DD/MM/YYYY to YYYY-MM-DD
         const ddmmyyyy = dob.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})$/)
         if (ddmmyyyy) dob = `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) updates.dob = dob
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+          const [y, m, d] = dob.split("-").map(Number)
+          const date = new Date(y, m - 1, d)
+          if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d && y >= 1940 && y <= 2010) {
+            updates.dob = dob
+          }
+        }
       }
       if (extracted.gender && extracted.gender !== "null") updates.gender = extracted.gender
       if (extracted.father_name && extracted.father_name !== "null") {
@@ -305,27 +367,32 @@ export default function ApplyPage() {
       }
       if (extracted.city && extracted.city !== "null" && !formData.city) updates.city = extracted.city
       if (extracted.pin_code && extracted.pin_code !== "null" && !formData.pin) updates.pin = extracted.pin_code
-      // Qualifications from MCI cert can tell us about degrees
-      if (extracted.qualifications && extracted.qualifications !== "null") {
-        const quals = extracted.qualifications.toLowerCase()
+      // Qualifications from MCI cert
+      const quals = extracted.qualification_noted || extracted.qualifications
+      if (quals && quals !== "null") {
+        const qualsLower = quals.toLowerCase()
         if (!formData.eduPostgradDegree) {
-          const pgMatch = quals.match(/(m\.?s\.?\s*\([^)]+\)|m\.?ch\.?\s*\([^)]+\)|m\.?d\.?\s*\([^)]+\)|d\.?n\.?b\.?\s*\([^)]+\))/i)
+          const pgMatch = qualsLower.match(/(m\.?s\.?\s*\([^)]+\)|m\.?ch\.?\s*\([^)]+\)|m\.?d\.?\s*\([^)]+\)|d\.?n\.?b\.?\s*\([^)]+\))/i)
           if (pgMatch) updates.eduPostgradDegree = pgMatch[1].trim()
         }
       }
 
       // --- Degree Certificate fields ---
-      if (extracted.degree) {
-        if (docType === "pg_degree_certificate") updates.eduPostgradDegree = extracted.degree
-        else updates.eduUndergradDegree = extracted.degree
+      const degree = extracted.degree_name || extracted.degree
+      if (degree) {
+        const fullDegree = extracted.specialisation ? `${degree} (${extracted.specialisation})` : degree
+        if (docType === "pg_degree_certificate") updates.eduPostgradDegree = fullDegree
+        else updates.eduUndergradDegree = fullDegree
       }
-      if (extracted.university) {
-        if (docType === "pg_degree_certificate") updates.eduPostgradUniversity = extracted.university
-        else updates.eduUndergradUniversity = extracted.university
+      const university = extracted.university_name || extracted.university
+      if (university) {
+        if (docType === "pg_degree_certificate") updates.eduPostgradUniversity = university
+        else updates.eduUndergradUniversity = university
       }
-      if (extracted.college) {
-        if (docType === "pg_degree_certificate") updates.eduPostgradCollege = extracted.college
-        else updates.eduUndergradCollege = extracted.college
+      const college = extracted.institution_name || extracted.college
+      if (college) {
+        if (docType === "pg_degree_certificate") updates.eduPostgradCollege = college
+        else updates.eduUndergradCollege = college
       }
       if (extracted.year_of_passing) {
         const year = String(extracted.year_of_passing)
@@ -336,11 +403,22 @@ export default function ApplyPage() {
       }
 
       // --- ASI Certificate fields ---
-      if (extracted.asi_membership_number) updates.asiMembershipNo = extracted.asi_membership_number
-      if (extracted.asi_state) {
-        const matchedState = INDIAN_STATES.find(s => extracted.asi_state.toLowerCase().includes(s.toLowerCase()))
+      const asiId = extracted.asi_membership_id || extracted.asi_membership_number
+      if (asiId) updates.asiMembershipNo = asiId
+      const asiBranch = extracted.branch || extracted.asi_state
+      if (asiBranch) {
+        const matchedState = INDIAN_STATES.find(s => asiBranch.toLowerCase().includes(s.toLowerCase()))
         if (matchedState) updates.asiState = matchedState
       }
+
+      // --- HOD Letter fields ---
+      if (docType === "letter_hod" && extracted.institution_name) {
+        if (!formData.eduPostgradCollege) updates.eduPostgradCollege = extracted.institution_name
+      }
+
+      // --- Active License fields ---
+      if (extracted.license_number) updates.mciCouncilNumber = extracted.license_number
+      if (extracted.country && extracted.country !== "null") updates.nationality = extracted.country
 
       // --- Smart defaults ---
       if (!formData.nationality && !updates.nationality) updates.nationality = "Indian"
@@ -353,16 +431,18 @@ export default function ApplyPage() {
 
       // Name cross-check between documents
       let nameWarning = ""
-      if (extracted.name) {
+      const extractedName = extracted.full_name || extracted.name || extracted.applicant_name
+      if (extractedName) {
         const otherDocs = Object.entries(uploads).filter(([key]) => key !== docType && key !== "profile")
         for (const [, otherUpload] of otherDocs) {
-          if (otherUpload.extracted?.name) {
-            const name1 = extracted.name.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
-            const name2 = otherUpload.extracted.name.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
+          const otherName = otherUpload.extracted?.full_name || otherUpload.extracted?.name || otherUpload.extracted?.applicant_name
+          if (otherName) {
+            const name1 = extractedName.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
+            const name2 = otherName.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
             const firstName1 = name1.split(/\s+/)[0]
             const firstName2 = name2.split(/\s+/)[0]
             if (firstName1 !== firstName2) {
-              nameWarning = `Name mismatch: "${extracted.name}" on this document vs "${otherUpload.extracted.name}" on another document. Please ensure all documents belong to the same person.`
+              nameWarning = `Name mismatch: "${extractedName}" on this document vs "${otherName}" on another document. Please ensure all documents belong to the same person.`
               toast.warning(nameWarning)
             }
           }
@@ -469,7 +549,7 @@ export default function ApplyPage() {
       const dupRes = await fetch("/api/applications/check-duplicate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email, mobile: formData.mobile }),
+        body: JSON.stringify({ email: formData.email, mobile: formData.mobile, mciCouncilNumber: formData.mciCouncilNumber }),
       })
       const dupData = await dupRes.json()
       if (dupData.isDuplicate) {
@@ -1249,6 +1329,7 @@ export default function ApplyPage() {
                 animate={{ opacity: 1, y: 0 }}
               >
                 {!upload ? (
+                  <div className="space-y-0">
                   <label className="flex items-center gap-4 rounded-xl border-2 border-dashed p-5 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all">
                     <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center shrink-0">
                       <Upload className="h-5 w-5 text-muted-foreground" />
@@ -1268,6 +1349,56 @@ export default function ApplyPage() {
                       }}
                     />
                   </label>
+                  {UPLOAD_TIPS[docType] && (
+                    <div className="px-1">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); setExpandedTips(prev => ({ ...prev, [docType]: !prev[docType] })) }}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                        <span>Upload tips</span>
+                        <ChevronDown className={`h-3 w-3 transition-transform ${expandedTips[docType] ? "rotate-180" : ""}`} />
+                      </button>
+                      {expandedTips[docType] && (
+                        <div className="rounded-lg border bg-muted/30 p-3 mb-1 text-xs space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="font-semibold text-green-700 mb-1">Do</p>
+                              <ul className="space-y-0.5 text-muted-foreground">
+                                {UPLOAD_TIPS[docType].dos.map((tip, i) => (
+                                  <li key={i} className="flex gap-1.5 items-start">
+                                    <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+                                    <span>{tip}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-red-700 mb-1">Don&apos;t</p>
+                              <ul className="space-y-0.5 text-muted-foreground">
+                                {UPLOAD_TIPS[docType].donts.map((tip, i) => (
+                                  <li key={i} className="flex gap-1.5 items-start">
+                                    <X className="h-3 w-3 text-red-400 mt-0.5 shrink-0" />
+                                    <span>{tip}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-primary mb-1">AI reads these fields</p>
+                            <div className="flex flex-wrap gap-1">
+                              {UPLOAD_TIPS[docType].aiReads.map((field, i) => (
+                                <span key={i} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">{field}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </div>
                 ) : (
                   <div className={`rounded-xl border-2 p-4 ${
                     upload.status === "extracted" ? "border-green-400 bg-green-50" :
@@ -1313,7 +1444,14 @@ export default function ApplyPage() {
                               <span>Extracted {Object.keys(upload.extracted || {}).filter(k => k !== "is_valid_medical_document" && upload.extracted[k]).length} fields</span>
                             </div>
                             <div className="flex flex-wrap gap-1">
-                              {Object.entries(upload.extracted || {}).filter(([k, v]) => v && k !== "is_valid_medical_document" && k !== "rejection_reason").map(([key, val]) => (
+                              {Object.entries(upload.extracted || {}).filter(([k, v]) => {
+                                if (!v || k === "is_valid_medical_document" || k === "rejection_reason" || k === "detected_document_type" || k.startsWith("_")) return false
+                                const s = String(v).toLowerCase()
+                                if (s === "null" || s === "n/a" || s === "true" || s === "false") return false
+                                // Filter junk from display
+                                if (["duly admitted", "has been", "hereby certif", "not visible"].some(j => s.includes(j))) return false
+                                return true
+                              }).map(([key, val]) => (
                                 <span key={key} className="text-xs bg-green-100 text-green-800 border border-green-200 px-2 py-0.5 rounded-full">
                                   {key}: {String(val).slice(0, 40)}
                                 </span>
@@ -1390,6 +1528,7 @@ export default function ApplyPage() {
           {/* Profile Photo */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             {!uploads.profile ? (
+              <div className="space-y-0">
               <label className="flex items-center gap-4 rounded-xl border-2 border-dashed p-5 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all">
                 <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center shrink-0">
                   <Eye className="h-5 w-5 text-muted-foreground" />
@@ -1442,6 +1581,56 @@ export default function ApplyPage() {
                   }}
                 />
               </label>
+              {UPLOAD_TIPS.profile && (
+                <div className="px-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setExpandedTips(prev => ({ ...prev, profile: !prev.profile })) }}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    <span>Photo tips</span>
+                    <ChevronDown className={`h-3 w-3 transition-transform ${expandedTips.profile ? "rotate-180" : ""}`} />
+                  </button>
+                  {expandedTips.profile && (
+                    <div className="rounded-lg border bg-muted/30 p-3 mb-1 text-xs space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="font-semibold text-green-700 mb-1">Do</p>
+                          <ul className="space-y-0.5 text-muted-foreground">
+                            {UPLOAD_TIPS.profile.dos.map((tip, i) => (
+                              <li key={i} className="flex gap-1.5 items-start">
+                                <CheckCircle className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+                                <span>{tip}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-red-700 mb-1">Don&apos;t</p>
+                          <ul className="space-y-0.5 text-muted-foreground">
+                            {UPLOAD_TIPS.profile.donts.map((tip, i) => (
+                              <li key={i} className="flex gap-1.5 items-start">
+                                <X className="h-3 w-3 text-red-400 mt-0.5 shrink-0" />
+                                <span>{tip}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-primary mb-1">AI checks</p>
+                        <div className="flex flex-wrap gap-1">
+                          {UPLOAD_TIPS.profile.aiReads.map((field, i) => (
+                            <span key={i} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">{field}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
             ) : (
               <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-4">
                 <div className="flex items-center gap-3">

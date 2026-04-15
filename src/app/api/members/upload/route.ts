@@ -47,6 +47,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate file type by magic bytes (not just extension)
+    const headerBytes = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+    const isJPEG = headerBytes[0] === 0xFF && headerBytes[1] === 0xD8
+    const isPNG = headerBytes[0] === 0x89 && headerBytes[1] === 0x50 && headerBytes[2] === 0x4E && headerBytes[3] === 0x47
+    const isPDF = headerBytes[0] === 0x25 && headerBytes[1] === 0x50 && headerBytes[2] === 0x44 && headerBytes[3] === 0x46
+    if (!isJPEG && !isPNG && !isPDF) {
+      return Response.json(
+        { status: false, message: "Invalid file format. Only JPG, PNG, and PDF files are accepted." },
+        { status: 400 }
+      )
+    }
+
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin"
     const timestamp = Date.now()
     const storagePath = `members/${memberId}/${docType}_${timestamp}.${ext}`
@@ -72,17 +84,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the public URL
-    const { data: urlData } = supabase.storage
-      .from("uploads")
-      .getPublicUrl(storagePath)
+    // Store the path (not public URL) — use signed URLs for access
+    const docUrl = storagePath
 
-    const publicUrl = urlData.publicUrl
-
-    // Update the member's document column
+    // Update the member's document column with storage path
     const { error: updateError } = await supabase
       .from("members")
-      .update({ [docType]: publicUrl, updated_at: new Date().toISOString() })
+      .update({ [docType]: docUrl, updated_at: new Date().toISOString() })
       .eq("id", memberId)
 
     if (updateError) {
@@ -93,7 +101,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return Response.json({ status: true, url: publicUrl })
+    // Generate a signed URL for immediate use (valid 1 hour)
+    const { data: signedData } = await supabase.storage
+      .from("uploads")
+      .createSignedUrl(storagePath, 3600)
+
+    return Response.json({ status: true, url: signedData?.signedUrl || docUrl, storagePath: docUrl })
   } catch (error: any) {
     console.error("Upload error:", error)
     return Response.json(

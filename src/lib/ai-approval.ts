@@ -25,29 +25,63 @@ function normalize(s: string): string {
     .trim()
 }
 
-/** Calculate similarity between two strings (0-1) */
+/** Levenshtein distance between two strings */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => {
+    const row = new Array(n + 1).fill(0)
+    row[0] = i
+    return row
+  })
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+/** Calculate similarity between two strings (0-1) using Levenshtein + token sort */
 function similarity(a: string, b: string): number {
   const s1 = normalize(a)
   const s2 = normalize(b)
   if (!s1 || !s2) return 0
   if (s1 === s2) return 1
 
-  // Check if one contains the other
+  // Check if one contains the other (handles abbreviations like "R. Kumar" vs "Rajesh Kumar")
   if (s1.includes(s2) || s2.includes(s1)) return 0.9
 
-  // Check word overlap
+  // Token sort — sort words alphabetically then compare (handles word order differences)
+  const sorted1 = s1.split(" ").sort().join(" ")
+  const sorted2 = s2.split(" ").sort().join(" ")
+  if (sorted1 === sorted2) return 1
+
+  // Levenshtein ratio on full strings
+  const maxLen = Math.max(s1.length, s2.length)
+  const fullRatio = 1 - levenshtein(s1, s2) / maxLen
+
+  // Levenshtein ratio on token-sorted strings
+  const sortedRatio = 1 - levenshtein(sorted1, sorted2) / Math.max(sorted1.length, sorted2.length)
+
+  // Word overlap (Jaccard)
   const words1 = new Set(s1.split(" "))
   const words2 = new Set(s2.split(" "))
   const intersection = [...words1].filter(w => words2.has(w) && w.length > 2)
   const union = new Set([...words1, ...words2])
-  const jaccard = intersection.length / union.size
+  const jaccard = union.size > 0 ? intersection.length / union.size : 0
 
-  // Check first name match (most important)
+  // First name match bonus
   const firstName1 = s1.split(" ")[0]
   const firstName2 = s2.split(" ")[0]
-  const firstNameMatch = firstName1 === firstName2 ? 0.5 : 0
+  const firstNameBonus = firstName1 === firstName2 ? 0.15
+    : (1 - levenshtein(firstName1, firstName2) / Math.max(firstName1.length, firstName2.length)) > 0.8 ? 0.1
+    : 0
 
-  return Math.min(1, jaccard + firstNameMatch)
+  // Best of all methods + first name bonus
+  return Math.min(1, Math.max(fullRatio, sortedRatio, jaccard) + firstNameBonus)
 }
 
 export interface ApprovalCheck {
@@ -97,7 +131,7 @@ export async function scoreApplication(
   formData: Record<string, any>,
   uploads: Record<string, { status: string; extracted: Record<string, any>; message?: string }>,
   paymentPaid: boolean
-): ApprovalResult {
+): Promise<ApprovalResult> {
   const checks: ApprovalCheck[] = []
   const flags: string[] = []
 

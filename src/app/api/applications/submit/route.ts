@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // Run AI scoring engine
-    const approval = scoreApplication(formData, uploads || {}, !!paymentId)
+    const approval = await scoreApplication(formData, uploads || {}, !!paymentId)
     const allAiVerified = approval.autoApprove
     const hasPendingReview = !approval.autoApprove
     const aiFlags = approval.flags

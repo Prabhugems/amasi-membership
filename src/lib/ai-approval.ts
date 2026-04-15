@@ -65,7 +65,35 @@ export interface ApprovalResult {
   flags: string[]
 }
 
-export function scoreApplication(
+/** Call NMC API to verify doctor registration */
+async function verifyWithNmc(regNo: string, state?: string): Promise<{ verified: boolean; name?: string; council?: string; degree?: string }> {
+  if (!regNo) return { verified: false }
+  try {
+    const res = await fetch("https://www.nmc.org.in/MCIRest/open/getDataFromService?service=searchDoctor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ registrationNo: regNo.trim(), smcId: "" }),
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return { verified: false }
+    const data = await res.json()
+    if (!Array.isArray(data) || data.length === 0) return { verified: false }
+
+    let match = data
+    if (state) {
+      const stateLower = state.toLowerCase()
+      const filtered = data.filter((d: any) => (d.smcName || "").toLowerCase().includes(stateLower))
+      if (filtered.length > 0) match = filtered
+    }
+
+    const doc = match[0]
+    return { verified: true, name: doc.firstName, council: doc.smcName, degree: doc.doctorDegree }
+  } catch {
+    return { verified: false }
+  }
+}
+
+export async function scoreApplication(
   formData: Record<string, any>,
   uploads: Record<string, { status: string; extracted: Record<string, any>; message?: string }>,
   paymentPaid: boolean
@@ -73,7 +101,7 @@ export function scoreApplication(
   const checks: ApprovalCheck[] = []
   const flags: string[] = []
 
-  // --- 1. Name Match Across Documents (weight: 25) ---
+  // --- 1. Name Match Across Documents (weight: 20) ---
   const formName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ")
   const docNames: { doc: string; name: string }[] = []
 
@@ -102,7 +130,7 @@ export function scoreApplication(
       check: "Name consistency across documents",
       passed: avgNameMatch >= 70,
       score: Math.round(avgNameMatch),
-      weight: 25,
+      weight: 20,
       detail: `${docNames.length} documents compared, ${Math.round(avgNameMatch)}% match`,
     })
   } else if (docNames.length === 1) {
@@ -111,7 +139,7 @@ export function scoreApplication(
       check: "Name matches form data",
       passed: sim >= 60,
       score: Math.round(sim),
-      weight: 25,
+      weight: 20,
       detail: `Form: "${formName}" vs Doc: "${docNames[0].name}" — ${Math.round(sim)}% match`,
     })
     if (sim < 60) flags.push(`Name on document doesn't match form: "${docNames[0].name}" vs "${formName}"`)
@@ -160,7 +188,7 @@ export function scoreApplication(
         : `${formData.eduPostgradDegree} — ${isSurgical ? "valid surgical" : "unverified"}`,
   })
 
-  // --- 3. College/University Match (weight: 20) ---
+  // --- 3. College/University Match (weight: 15) ---
   const formCollege = normalize(formData.eduPostgradCollege || "")
   const ocrCollege = normalize(uploads.pg_degree_certificate?.extracted?.college || "")
   const formUni = normalize(formData.eduPostgradUniversity || "")
@@ -187,7 +215,7 @@ export function scoreApplication(
     check: "College & University match",
     passed: collegeScore >= 50,
     score: Math.round(collegeScore),
-    weight: 20,
+    weight: 15,
     detail: `College: ${formCollege || "N/A"} ${ocrCollege ? `vs "${ocrCollege}"` : "(no OCR)"} | University: ${formUni || "N/A"} ${ocrUni ? `vs "${ocrUni}"` : "(no OCR)"}`,
   })
 
@@ -216,7 +244,7 @@ export function scoreApplication(
       : formMci ? "Number provided, no OCR verification" : "No MCI number",
   })
 
-  // --- 5. Document Verification Status (weight: 15) ---
+  // --- 5. Document Verification Status (weight: 10) ---
   const totalDocs = Object.keys(uploads).length
   const verifiedDocs = Object.values(uploads).filter(u => u.status === "extracted").length
   const pendingDocs = Object.values(uploads).filter(u => u.status === "uploaded").length
@@ -230,8 +258,43 @@ export function scoreApplication(
     check: "Document AI verification",
     passed: docScore >= 80,
     score: Math.round(docScore),
-    weight: 15,
+    weight: 10,
     detail: `${verifiedDocs}/${totalDocs} verified by AI${pendingDocs > 0 ? `, ${pendingDocs} pending` : ""}${rejectedDocs > 0 ? `, ${rejectedDocs} rejected` : ""}`,
+  })
+
+  // --- 6. NMC Live Verification (weight: 20) ---
+  const formMciNumber = (formData.mciCouncilNumber || "").trim()
+  const formMciState = formData.mciCouncilState || ""
+  let nmcScore = 0
+  let nmcDetail = "Not checked"
+
+  if (formMciNumber) {
+    const nmcResult = await verifyWithNmc(formMciNumber, formMciState)
+    if (nmcResult.verified) {
+      nmcScore = 100
+      nmcDetail = `NMC Verified: ${nmcResult.name} — ${nmcResult.council} (${nmcResult.degree})`
+      // Cross-check name
+      const nmcNameSim = similarity(formName, nmcResult.name || "")
+      if (nmcNameSim < 0.5) {
+        nmcScore = 60
+        flags.push(`NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}"`)
+        nmcDetail += ` — NAME MISMATCH`
+      }
+    } else {
+      nmcScore = 0
+      nmcDetail = `MCI #${formMciNumber} not found in NMC database`
+      flags.push(`MCI number ${formMciNumber} not found in NMC Indian Medical Register`)
+    }
+  } else {
+    nmcDetail = "No MCI number provided"
+  }
+
+  checks.push({
+    check: "NMC Live Verification",
+    passed: nmcScore >= 60,
+    score: nmcScore,
+    weight: 20,
+    detail: nmcDetail,
   })
 
   // --- Calculate total weighted score ---

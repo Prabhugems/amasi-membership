@@ -1,10 +1,34 @@
 import { NextRequest } from "next/server"
 import { signToken, setAdminCookie } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"
+import { logAdminAction } from "@/lib/audit-log"
+import { checkRateLimit } from "@/lib/rate-limit"
+
+function getRequestIp(req: NextRequest): string | undefined {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    req.headers.get("x-real-ip") ||
+    undefined
+  )
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
+    const body = await request.json().catch(() => ({}))
+    const { email, password } = body as { email?: string; password?: string }
+
+    // Rate limit per IP + email to mitigate brute-force attacks
+    const ip = getRequestIp(request) || "unknown"
+    const rateLimitKey = `login:${ip}:${(email || "").trim().toLowerCase()}`
+    const rl = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      const retryAfter = Math.ceil((rl.resetAt - Date.now()) / 1000)
+      return Response.json(
+        { error: "Too many login attempts. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      )
+    }
+
     if (!email || !password) {
       return Response.json(
         { error: "Email and password required" },
@@ -15,17 +39,18 @@ export async function POST(request: NextRequest) {
     const inputEmail = email.trim().toLowerCase()
 
     // 1. Check env var first (super admin bypass)
-    const adminEmail = (
-      process.env.ADMIN_DEFAULT_EMAIL || "admin@amasi.org"
-    )
-      .trim()
-      .toLowerCase()
-    const adminPassword = (process.env.ADMIN_DEFAULT_PASSWORD || "Amasi@2026").trim()
+    const envAdminEmail = process.env.ADMIN_DEFAULT_EMAIL?.trim().toLowerCase()
+    const envAdminPassword = process.env.ADMIN_DEFAULT_PASSWORD?.trim()
 
-    if (inputEmail === adminEmail && password === adminPassword) {
+    if (
+      envAdminEmail &&
+      envAdminPassword &&
+      inputEmail === envAdminEmail &&
+      password === envAdminPassword
+    ) {
       const token = await signToken({
         sub: "admin-1",
-        email: adminEmail,
+        email: envAdminEmail,
         name: "AMASI Admin",
         role: "admin",
         adminRole: "super_admin",
@@ -34,9 +59,21 @@ export async function POST(request: NextRequest) {
 
       await setAdminCookie(token)
 
+      await logAdminAction({
+        adminEmail: envAdminEmail,
+        adminName: "AMASI Admin",
+        action: "login",
+        entityType: "session",
+        details: {
+          source: "env_admin",
+          userAgent: request.headers.get("user-agent") || undefined,
+        },
+        ipAddress: getRequestIp(request),
+      })
+
       return Response.json({
         status: true,
-        user: { email: adminEmail, name: "AMASI Admin", role: "admin", adminRole: "super_admin" },
+        user: { email: envAdminEmail, name: "AMASI Admin", role: "admin", adminRole: "super_admin" },
       })
     }
 
@@ -74,6 +111,20 @@ export async function POST(request: NextRequest) {
       })
 
       await setAdminCookie(token)
+
+      await logAdminAction({
+        adminEmail: admin.email,
+        adminName: admin.name,
+        action: "login",
+        entityType: "session",
+        entityId: admin.id,
+        details: {
+          source: "db_admin",
+          role: admin.role,
+          userAgent: request.headers.get("user-agent") || undefined,
+        },
+        ipAddress: getRequestIp(request),
+      })
 
       return Response.json({
         status: true,

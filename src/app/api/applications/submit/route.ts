@@ -2,7 +2,8 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { Resend } from "resend"
 import { scoreApplication } from "@/lib/ai-approval"
-import { sendApplicationSubmittedWhatsApp, sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
+import { autoApproveApplication } from "@/lib/auto-approval"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -25,6 +26,59 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+
+    // --- Auth gate 1: verify payment exists & is paid (server-recorded via webhook/verify) ---
+    if (!paymentId) {
+      return Response.json({ status: false, message: "Payment not verified" }, { status: 401 })
+    }
+
+    const { data: paymentRow } = await supabase
+      .from("membership_payments")
+      .select("id, status")
+      .eq("gateway_payment_id", paymentId)
+      .eq("status", "paid")
+      .limit(1)
+      .maybeSingle()
+
+    if (!paymentRow) {
+      return Response.json({ status: false, message: "Payment not verified" }, { status: 401 })
+    }
+
+    // --- Auth gate 2: verify OTP completion (email and/or mobile) within last 60 min ---
+    const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const emailKey = (formData.email || "").toLowerCase()
+    const mobileKey = formData.mobile ? `sms:${formData.mobile}` : null
+
+    let emailVerified = false
+    let mobileVerified = false
+
+    if (emailKey) {
+      const { data: emailOtp } = await supabase
+        .from("otp_codes")
+        .select("id")
+        .eq("email", emailKey)
+        .eq("verified", true)
+        .gte("created_at", sixtyMinAgo)
+        .limit(1)
+        .maybeSingle()
+      emailVerified = !!emailOtp
+    }
+
+    if (mobileKey) {
+      const { data: mobileOtp } = await supabase
+        .from("otp_codes")
+        .select("id")
+        .eq("email", mobileKey)
+        .eq("verified", true)
+        .gte("created_at", sixtyMinAgo)
+        .limit(1)
+        .maybeSingle()
+      mobileVerified = !!mobileOtp
+    }
+
+    if (!emailVerified && !mobileVerified) {
+      return Response.json({ status: false, message: "Email/mobile not verified" }, { status: 401 })
+    }
 
     // Run AI scoring engine
     const approval = await scoreApplication(formData, uploads || {}, !!paymentId)
@@ -81,13 +135,14 @@ export async function POST(request: NextRequest) {
         intl_org_sages: formData.intlOrgSAGES,
         intl_org_elsa: formData.intlOrgELSA,
         intl_org_other: formData.intlOrgOther,
-        payment_status: paymentId ? "paid" : "pending",
-        payment_id: paymentId || null,
-        email_verified: true,
-        mobile_verified: true,
+        payment_status: "paid",
+        payment_id: paymentId,
+        email_verified: emailVerified,
+        mobile_verified: mobileVerified,
         ai_verified: allAiVerified,
         ai_confidence: `${approval.totalScore}% — ${aiConfidence}`,
         ai_flags: [...aiFlags, ...approval.checks.map(c => `${c.check}: ${c.score}% ${c.passed ? "✓" : "✗"} — ${c.detail}`)],
+        nmc_verification: approval.nmcVerification,
         needs_manual_review: hasPendingReview,
         manual_review_reason: hasPendingReview ? `Score: ${approval.totalScore}%. ${aiFlags.join("; ")}` : null,
         documents: Object.fromEntries(
@@ -106,73 +161,70 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Failed to save application" }, { status: 500 })
     }
 
-    const applicationId = app?.id
+    const applicationId: string | undefined = app?.id
 
     // --- AI AUTO-APPROVAL ---
-    if (allAiVerified && paymentId) {
-      // All docs verified by AI + payment done → auto-approve
-      // Get next AMASI number
-      const { data: maxNum } = await supabase
-        .from("members")
-        .select("amasi_number")
-        .order("amasi_number", { ascending: false })
-        .limit(1)
-        .single()
+    if (allAiVerified && paymentId && applicationId) {
+      const reviewNotes = `AI auto-approved — Score: ${approval.totalScore}%. ${approval.checks.map(c => `${c.check}: ${c.score}%`).join(", ")}`
 
-      const nextAmasiNumber = (maxNum?.amasi_number || 18135) + 1
-
-      // Create member record
-      const fullName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ")
-      const { error: memberInsertError } = await supabase.from("members").insert({
-        id: crypto.randomUUID(),
-        amasi_number: nextAmasiNumber,
-        name: fullName,
+      const result = await autoApproveApplication(supabase, {
+        applicationId,
+        referenceNumber,
+        salutation: formData.salutation,
+        firstName: formData.firstName,
+        middleName: formData.middleName,
+        lastName: formData.lastName,
+        fatherName: formData.fatherName,
+        dateOfBirth: formData.dob || null,
+        gender: formData.gender,
+        nationality: formData.nationality,
         email: formData.email,
         phone: formData.mobile || null,
-        mobile_code: formData.mobileCode,
-        membership_type: formData.membershipType,
-        status: "active",
-        voting_eligible: formData.membershipType === "LM",
-        salutation: formData.salutation,
-        father_name: formData.fatherName,
-        date_of_birth: formData.dob || null,
-        nationality: formData.nationality,
-        gender: formData.gender,
-        application_no: referenceNumber,
-        application_date: new Date().toISOString().split("T")[0],
-        street_address_1: formData.streetLine1,
-        street_address_2: formData.streetLine2,
+        mobileCode: formData.mobileCode,
+        membershipType: formData.membershipType,
+        streetAddress1: formData.streetLine1,
+        streetAddress2: formData.streetLine2,
         city: formData.city,
         state: formData.state,
         country: formData.country || "India",
-        postal_code: formData.pin,
+        postalCode: formData.pin,
         zone: formData.zone,
-        edu_undergrad_degree: formData.eduUndergradDegree,
-        ug_college: formData.eduUndergradCollege,
-        ug_university: formData.eduUndergradUniversity,
-        ug_year: formData.eduUndergradYear,
-        pg_degree: formData.eduPostgradDegree,
-        pg_college: formData.eduPostgradCollege,
-        pg_university: formData.eduPostgradUniversity,
-        pg_year: formData.eduPostgradYear,
-        edu_superspecialty_degree: formData.eduSuperspecialtyDegree,
-        mci_council_number: formData.mciCouncilNumber,
-        mci_council_state: formData.mciCouncilState,
-        imr_registration_no: formData.imrRegNo,
-        asi_membership_no: formData.asiMembershipNo,
-        asi_state: formData.asiState,
-        joining_date: new Date().toISOString().split("T")[0],
+        ugDegree: formData.eduUndergradDegree,
+        ugCollege: formData.eduUndergradCollege,
+        ugUniversity: formData.eduUndergradUniversity,
+        ugYear: formData.eduUndergradYear,
+        pgDegree: formData.eduPostgradDegree,
+        pgCollege: formData.eduPostgradCollege,
+        pgUniversity: formData.eduPostgradUniversity,
+        pgYear: formData.eduPostgradYear,
+        ssDegree: formData.eduSuperspecialtyDegree,
+        mciCouncilNumber: formData.mciCouncilNumber,
+        mciCouncilState: formData.mciCouncilState,
+        imrRegistrationNo: formData.imrRegNo,
+        asiMembershipNo: formData.asiMembershipNo,
+        asiState: formData.asiState,
+        reviewNotes,
       })
 
-      // If member insert failed, fall back to pending_review instead of approving
-      if (memberInsertError) {
-        console.error("Auto-approval member insert failed:", memberInsertError)
+      if (!result.success) {
+        // Helper already logged the root cause. Stage tells us what to do.
+        if (result.stage === "sequence") {
+          // No member was created and no mutation beyond the original app insert.
+          // Same behavior as the old inline path: surface a 500.
+          return Response.json(
+            { status: false, message: "Failed to assign membership number" },
+            { status: 500 },
+          )
+        }
+
+        // member_insert failed (application_update failures are treated as success by the helper).
+        // Fall back to pending_review so an admin can retry.
         await supabase
           .from("membership_applications")
           .update({
             status: "pending_review",
             needs_manual_review: true,
-            manual_review_reason: `AI approved but member creation failed: ${memberInsertError.message}`,
+            manual_review_reason: `AI approved but member creation failed: ${result.reason}`,
           })
           .eq("id", applicationId)
 
@@ -184,63 +236,10 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // Update application with assigned number
-      await supabase
-        .from("membership_applications")
-        .update({
-          status: "approved",
-          assigned_amasi_number: nextAmasiNumber,
-          reviewed_by: null,
-          reviewed_at: new Date().toISOString(),
-          review_notes: `AI auto-approved — Score: ${approval.totalScore}%. ${approval.checks.map(c => `${c.check}: ${c.score}%`).join(", ")}`,
-        })
-        .eq("id", applicationId)
-
-      // Send welcome email with membership number
-      try {
-        const resend = getResend()
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
-          to: formData.email,
-          subject: `Welcome to AMASI — Membership #${nextAmasiNumber}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-              <div style="text-align: center; margin-bottom: 24px;">
-                <h1 style="color: #0f766e; margin: 0;">AMASI</h1>
-                <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
-              </div>
-              <h2 style="color: #1a1a1a;">Welcome, ${formData.salutation} ${formData.firstName}!</h2>
-              <p style="color: #555;">Your AMASI membership has been <strong style="color: #16a34a;">approved</strong>.</p>
-              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
-                <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Your Membership Number</p>
-                <p style="font-size: 36px; font-weight: bold; color: #0f766e; margin: 0; font-family: monospace;">${nextAmasiNumber}</p>
-                <p style="color: #666; font-size: 13px; margin: 8px 0 0;">${formData.membershipType === "LM" ? "Life Member" : formData.membershipType === "ALM" ? "Associate Life Member" : formData.membershipType === "ACM" ? "Associate Candidate Member" : "International Life Member"}</p>
-              </div>
-              <p style="color: #555; font-size: 14px;">Reference: ${referenceNumber}</p>
-              <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
-              <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
-            </div>
-          `,
-        })
-      } catch (emailErr) {
-        console.error("Welcome email error:", emailErr)
-      }
-
-      // Send WhatsApp: Membership Approved
-      const memberType = formData.membershipType === "LM" ? "Life Member" :
-        formData.membershipType === "ALM" ? "Associate Life Member" :
-        formData.membershipType === "ACM" ? "Associate Candidate Member" : "International Life Member"
-      await sendMemberApprovedWhatsApp(
-        formData.mobile,
-        `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),
-        memberType,
-        String(nextAmasiNumber)
-      ).catch(err => console.error("WhatsApp approve error:", err))
-
       return Response.json({
         status: true,
         approved: true,
-        amasiNumber: nextAmasiNumber,
+        amasiNumber: result.amasiNumber,
         applicationId,
         message: "Application approved! Membership number assigned.",
       })

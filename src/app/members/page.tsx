@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
-  ChevronUp, ChevronDown, ChevronsUpDown, X, Filter, Eye,
+  ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
   MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -89,7 +89,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="appearance-none text-sm border rounded-lg pl-3 pr-8 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer transition-colors"
+        className="appearance-none text-sm border rounded-lg pl-3 pr-8 py-2 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary cursor-pointer transition-colors"
       >
         <option value="">{label}</option>
         {options.map((opt) => (
@@ -111,7 +111,7 @@ function MemberPreview({ hover }: { hover: HoverState }) {
       className="fixed z-50 pointer-events-none"
       style={{ left: hover.x + 16, top: hover.y - 10 }}
     >
-      <div className="bg-white border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
+      <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-start gap-3">
           <Avatar className="h-14 w-14 border shadow-sm shrink-0">
             {m.profile_photo && <AvatarImage src={m.profile_photo} />}
@@ -419,14 +419,14 @@ export default function MembersPage() {
           <div className="flex border rounded-lg overflow-hidden shadow-sm">
             <button
               onClick={() => setViewMode("table")}
-              className={`p-2 transition-colors ${viewMode === "table" ? "bg-primary text-primary-foreground" : "bg-white hover:bg-gray-50 text-muted-foreground"}`}
+              className={`p-2 transition-colors ${viewMode === "table" ? "bg-primary text-primary-foreground" : "bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 text-muted-foreground"}`}
               title="Table view"
             >
               <List className="h-4 w-4" />
             </button>
             <button
               onClick={() => setViewMode("grid")}
-              className={`p-2 transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "bg-white hover:bg-gray-50 text-muted-foreground"}`}
+              className={`p-2 transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "bg-white dark:bg-slate-900 hover:bg-gray-50 dark:hover:bg-slate-800 text-muted-foreground"}`}
               title="Grid view"
             >
               <LayoutGrid className="h-4 w-4" />
@@ -562,7 +562,7 @@ export default function MembersPage() {
                 {members.map((m: any, idx: number) => (
                   <tr
                     key={m.amasi_number}
-                    className={`hover:bg-primary/5 transition-colors group cursor-default ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
+                    className={`row-glow hover:bg-primary/5 transition-colors group cursor-default ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
                     onMouseEnter={(e) => handleRowMouseEnter(e, m)}
                     onMouseLeave={handleRowMouseLeave}
                   >

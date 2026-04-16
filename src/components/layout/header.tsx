@@ -2,6 +2,8 @@
 
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { ThemeToggle } from "@/components/theme/theme-toggle"
+import { FocusToggle } from "@/components/focus/focus-toggle"
 import { useRouter, usePathname } from "next/navigation"
 import { useState } from "react"
 
@@ -35,7 +37,9 @@ export function Header() {
           />
         </form>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <FocusToggle />
+        <ThemeToggle />
         <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
           <span className="text-primary-foreground text-xs font-bold">P</span>
         </div>

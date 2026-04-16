@@ -2,9 +2,11 @@ import { SignJWT, jwtVerify } from "jose"
 import { cookies } from "next/headers"
 import { NextRequest } from "next/server"
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET?.trim() || "fallback-secret-change-me"
-)
+function getJwtSecret(): Uint8Array {
+  const s = process.env.JWT_SECRET?.trim()
+  if (!s) throw new Error("JWT_SECRET is required")
+  return new TextEncoder().encode(s)
+}
 
 const ADMIN_COOKIE = "amasi_admin_token"
 const MEMBER_COOKIE = "amasi_member_token"
@@ -16,12 +18,12 @@ export async function signToken(payload: Record<string, unknown>, expiresIn = "2
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(expiresIn)
-    .sign(JWT_SECRET)
+    .sign(getJwtSecret())
 }
 
 export async function verifyToken(token: string) {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, getJwtSecret())
     return payload
   } catch {
     return null

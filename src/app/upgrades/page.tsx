@@ -56,8 +56,8 @@ const FILTER_TABS = [
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "bg-amber-50 text-amber-700 border-amber-200" },
-  pending_review: { label: "Pending Review", className: "bg-amber-50 text-amber-700 border-amber-200" },
+  pending: { label: "Pending", className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse" },
+  pending_review: { label: "Pending Review", className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse" },
   approved: { label: "Approved", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   rejected: { label: "Rejected", className: "bg-red-50 text-red-700 border-red-200" },
 }
@@ -92,7 +92,7 @@ function ConfidenceBadge({ confidence }: { confidence: string }) {
 
 function StatCard({ label, count, color }: { label: string; count: number; color: string }) {
   return (
-    <Card>
+    <Card className="card-lift">
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
@@ -269,7 +269,7 @@ function UpgradesContent() {
           return (
             <div
               key={upgrade.id}
-              className="rounded-xl border bg-card shadow-sm hover:shadow-md transition-all overflow-hidden"
+              className="row-glow rounded-xl border bg-card shadow-sm hover:shadow-md transition-all overflow-hidden card-lift"
             >
               {/* Card content - clickable */}
               <button

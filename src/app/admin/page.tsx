@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2,
+  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2, Activity,
 } from "lucide-react"
 import { toast } from "sonner"
+import { AdminActivityPanel, type AdminActivityAdmin } from "@/components/admin/admin-activity-panel"
 
 interface AdminUser {
   id: string
@@ -23,17 +24,17 @@ interface AdminUser {
 const ROLE_LABELS: Record<string, { label: string; color: string; description: string }> = {
   super_admin: {
     label: "Super Admin",
-    color: "bg-red-50 text-red-700 border-red-200",
+    color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-400/30",
     description: "Full access to all features including admin management",
   },
   admin: {
     label: "Admin",
-    color: "bg-blue-50 text-blue-700 border-blue-200",
+    color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30",
     description: "Can approve/reject applications and edit members",
   },
   reviewer: {
     label: "Reviewer",
-    color: "bg-gray-50 text-gray-700 border-gray-200",
+    color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
     description: "View-only access, cannot approve or edit",
   },
 }
@@ -56,6 +57,9 @@ export default function AdminUsersPage() {
   const [formEmail, setFormEmail] = useState("")
   const [formPassword, setFormPassword] = useState("")
   const [formRole, setFormRole] = useState("reviewer")
+
+  // Activity panel state
+  const [activityAdmin, setActivityAdmin] = useState<AdminActivityAdmin | null>(null)
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -183,8 +187,8 @@ export default function AdminUsersPage() {
   if (!authorized) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
-        <div className="h-16 w-16 rounded-full bg-red-50 flex items-center justify-center mb-4">
-          <Shield className="h-8 w-8 text-red-400" />
+        <div className="h-16 w-16 rounded-full bg-red-50 dark:bg-red-500/15 flex items-center justify-center mb-4">
+          <Shield className="h-8 w-8 text-red-400 dark:text-red-300" />
         </div>
         <h2 className="text-xl font-bold mb-2">Access Denied</h2>
         <p className="text-muted-foreground">Only super admins can manage admin users.</p>
@@ -215,7 +219,7 @@ export default function AdminUsersPage() {
           return (
             <div
               key={key}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${color}`}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm card-lift ${color}`}
             >
               <Icon className="h-4 w-4" />
               <span className="font-medium">{label}</span>
@@ -266,7 +270,7 @@ export default function AdminUsersPage() {
                 <select
                   value={formRole}
                   onChange={(e) => setFormRole(e.target.value)}
-                  className="w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  className="w-full h-10 border rounded-lg px-3 text-sm bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 >
                   <option value="reviewer">Reviewer (view only)</option>
                   <option value="admin">Admin (approve/reject/edit)</option>
@@ -294,8 +298,8 @@ export default function AdminUsersPage() {
       )}
 
       {/* Env-var super admin notice */}
-      <div className="border rounded-xl p-4 bg-amber-50/50 border-amber-200">
-        <div className="flex items-center gap-2 text-sm text-amber-800">
+      <div className="border rounded-xl p-4 bg-amber-50/50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-400/30 card-lift">
+        <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
           <ShieldCheck className="h-4 w-4 shrink-0" />
           <span>
             <strong>Environment Super Admin</strong> -- The default admin configured via environment variables always has super admin access and is not listed below.
@@ -348,8 +352,9 @@ export default function AdminUsersPage() {
                 {users.map((user) => {
                   const roleInfo = ROLE_LABELS[user.role] || ROLE_LABELS.reviewer
                   const RoleIcon = ROLE_ICONS[user.role] || Eye
+                  const isEnvAdmin = user.id === "env-admin"
                   return (
-                    <tr key={user.id} className="hover:bg-primary/5 transition-colors group">
+                    <tr key={user.id} className="row-glow hover:bg-primary/5 transition-colors group">
                       <td className="px-4 py-3.5">
                         <div>
                           <p className="font-semibold">{user.name}</p>
@@ -357,23 +362,32 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <select
-                          value={user.role}
-                          onChange={(e) => handleChangeRole(user, e.target.value)}
-                          className={`text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer ${roleInfo.color}`}
-                        >
-                          <option value="reviewer">Reviewer</option>
-                          <option value="admin">Admin</option>
-                          <option value="super_admin">Super Admin</option>
-                        </select>
+                        {isEnvAdmin ? (
+                          <span
+                            className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-full border ${roleInfo.color}`}
+                            title="Configured via environment variable"
+                          >
+                            {roleInfo.label}
+                          </span>
+                        ) : (
+                          <select
+                            value={user.role}
+                            onChange={(e) => handleChangeRole(user, e.target.value)}
+                            className={`text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer ${roleInfo.color}`}
+                          >
+                            <option value="reviewer">Reviewer</option>
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
                         <Badge
                           variant="outline"
                           className={
                             user.is_active
-                              ? "bg-green-50 text-green-700 border-green-200"
-                              : "bg-red-50 text-red-700 border-red-200"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-400/30"
+                              : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-400/30"
                           }
                         >
                           {user.is_active ? "Active" : "Inactive"}
@@ -396,27 +410,48 @@ export default function AdminUsersPage() {
                             variant="outline"
                             size="sm"
                             className="text-xs h-7 px-2.5 gap-1"
-                            onClick={() => handleToggleActive(user)}
-                            title={user.is_active ? "Deactivate" : "Activate"}
+                            onClick={() =>
+                              setActivityAdmin({
+                                id: user.id,
+                                email: user.email,
+                                name: user.name,
+                                role: user.role,
+                                last_login: user.last_login,
+                              })
+                            }
+                            title="View activity"
                           >
-                            {user.is_active ? (
-                              <>
-                                <UserX className="h-3 w-3" /> Deactivate
-                              </>
-                            ) : (
-                              <>
-                                <UserCheck className="h-3 w-3" /> Activate
-                              </>
-                            )}
+                            <Activity className="h-3 w-3" /> Activity
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-xs h-7 px-2.5 gap-1 text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDelete(user)}
-                          >
-                            <Trash2 className="h-3 w-3" /> Delete
-                          </Button>
+                          {!isEnvAdmin && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2.5 gap-1"
+                                onClick={() => handleToggleActive(user)}
+                                title={user.is_active ? "Deactivate" : "Activate"}
+                              >
+                                {user.is_active ? (
+                                  <>
+                                    <UserX className="h-3 w-3" /> Deactivate
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserCheck className="h-3 w-3" /> Activate
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs h-7 px-2.5 gap-1 text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDelete(user)}
+                              >
+                                <Trash2 className="h-3 w-3" /> Delete
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -427,6 +462,12 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      <AdminActivityPanel
+        admin={activityAdmin}
+        open={!!activityAdmin}
+        onClose={() => setActivityAdmin(null)}
+      />
     </div>
   )
 }

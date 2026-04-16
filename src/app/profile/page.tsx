@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle, ArrowLeft, LayoutDashboard, Users, Search } from "lucide-react"
+import { CheckCircle, ArrowLeft, Users, Search } from "lucide-react"
 import { HelpButton } from "@/components/ui/help-button"
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
@@ -179,6 +179,7 @@ function ProfileContent() {
               setError(null)
               setPhase("view")
             }}
+            isAdmin={isAdmin}
           />
         </>
       )}

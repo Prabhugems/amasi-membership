@@ -52,6 +52,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getAdminSession()
+    if (!session) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const { id } = await params
     const body = await request.json()
     const { status, priority } = body
@@ -110,18 +115,15 @@ export async function PATCH(
     }
 
     // Audit log
-    const session = await getAdminSession()
-    if (session) {
-      await logAdminAction({
-        adminEmail: (session.email as string) || "unknown",
-        adminName: (session.name as string) || undefined,
-        action: status === "closed" ? "close_ticket" : "update_ticket_status",
-        entityType: "ticket",
-        entityId: data.id,
-        entityName: data.ticket_number || data.subject,
-        details: { status, priority: priority || undefined },
-      })
-    }
+    await logAdminAction({
+      adminEmail: (session.email as string) || "unknown",
+      adminName: (session.name as string) || undefined,
+      action: status === "closed" ? "close_ticket" : "update_ticket_status",
+      entityType: "ticket",
+      entityId: data.id,
+      entityName: data.ticket_number || data.subject,
+      details: { status, priority: priority || undefined },
+    })
 
     return Response.json(data)
   } catch (err) {

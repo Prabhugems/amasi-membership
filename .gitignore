@@ -40,3 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# local dev artifacts (screenshots, agent memory, playwright snapshots)
+.claude/
+.playwright-mcp/
+/*.png

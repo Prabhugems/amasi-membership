@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
+import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
 function getResend() {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
             <p style="color: #555;">We regret to inform you that your AMASI membership application could not be approved at this time.</p>
             <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: #991b1b; font-weight: bold; margin: 0;">Reason</p>
-              <p style="color: #991b1b; font-size: 14px; margin: 4px 0 0;">${reason}</p>
+              <p style="color: #991b1b; font-size: 14px; margin: 4px 0 0;">${escapeHtml(reason)}</p>
             </div>
             <p style="color: #555; font-size: 14px;">You may reapply with corrected documents. If you have questions, please contact us.</p>
             <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, Suspense, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import {
   Mail, RefreshCw, CreditCard, Award, UserPen, Clock, LogOut,
   Shield, ChevronRight, LayoutDashboard, FileText, Upload, ShieldCheck,
@@ -48,6 +49,7 @@ function MemberPortalContent() {
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [showSessionWarning, setShowSessionWarning] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const reduced = useReducedMotion()
 
   // OTP state
   const [digits, setDigits] = useState<string[]>(["", "", "", "", "", ""])
@@ -522,6 +524,14 @@ function MemberPortalContent() {
           </header>
 
           <main className="flex-1 p-6 lg:p-8 overflow-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, x: 40 }}
+                animate={reduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
+                exit={reduced ? { opacity: 0 } : { opacity: 0, x: -40 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+              >
             {/* Overview Tab */}
             {activeTab === "overview" && (
               <div className="max-w-4xl space-y-6">
@@ -876,6 +886,8 @@ function MemberPortalContent() {
             {activeTab === "upgrade" && (
               <MemberUpgradeTab member={member} memberType={memberType} amasiNum={amasiNum} />
             )}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>
@@ -1198,6 +1210,7 @@ function MemberSupportTab({ member }: { member: any }) {
                   </div>
                   <button
                     onClick={e => { e.stopPropagation(); setAttachment(null); setAttachmentPreview(null) }}
+                    aria-label="Remove attachment"
                     className="p-1.5 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                   >
                     <X className="h-4 w-4" />
@@ -1484,6 +1497,7 @@ function MemberSupportTab({ member }: { member: any }) {
                     </div>
                     <button
                       onClick={() => { setReplyFile(null); setReplyFilePreview(null) }}
+                      aria-label="Remove attachment"
                       className="p-1 rounded-full hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -1494,6 +1508,7 @@ function MemberSupportTab({ member }: { member: any }) {
                   {/* Paperclip / attach button */}
                   <button
                     onClick={() => replyFileInputRef.current?.click()}
+                    aria-label="Attach file"
                     className="flex items-center justify-center h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
                     title="Attach file"
                   >

@@ -417,7 +417,10 @@ export default function ApplyPage() {
       }
 
       // --- Active License fields ---
-      if (extracted.license_number) updates.mciCouncilNumber = extracted.license_number
+      // NOTE: an international active license number is NOT an MCI/NMC council
+      // number — overwriting mciCouncilNumber here would break NMC verification
+      // for international members. Store separately in form state only.
+      if (extracted.license_number) updates.intlLicenseNumber = extracted.license_number
       if (extracted.country && extracted.country !== "null") updates.nationality = extracted.country
 
       // --- Smart defaults ---
@@ -544,7 +547,8 @@ export default function ApplyPage() {
 
     setSubmitting(true)
 
-    // Check for duplicate
+    // Check for duplicate. On network/parse failure, abort and let the user retry —
+    // silently proceeding would bypass duplicate detection and allow a double payment.
     try {
       const dupRes = await fetch("/api/applications/check-duplicate", {
         method: "POST",
@@ -557,7 +561,11 @@ export default function ApplyPage() {
         setSubmitting(false)
         return
       }
-    } catch {}
+    } catch {
+      toast.error("Could not verify duplicate. Please try again.")
+      setSubmitting(false)
+      return
+    }
 
     const ref = generateRefNumber()
     setRefNumber(ref)
@@ -1427,7 +1435,11 @@ export default function ApplyPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <p className="font-medium text-sm">{label}</p>
-                          <button onClick={() => handleRemoveFile(docType)} className="p-1 hover:bg-accent rounded">
+                          <button
+                            onClick={() => handleRemoveFile(docType)}
+                            aria-label={`Remove ${label}`}
+                            className="p-1 hover:bg-accent rounded"
+                          >
                             <X className="h-4 w-4" />
                           </button>
                         </div>
@@ -1641,7 +1653,11 @@ export default function ApplyPage() {
                       <CheckCircle className="h-3 w-3" /> Uploaded
                     </p>
                   </div>
-                  <button onClick={() => handleRemoveFile("profile")} className="p-1 hover:bg-accent rounded">
+                  <button
+                    onClick={() => handleRemoveFile("profile")}
+                    aria-label="Remove profile photo"
+                    className="p-1 hover:bg-accent rounded"
+                  >
                     <X className="h-4 w-4" />
                   </button>
                 </div>

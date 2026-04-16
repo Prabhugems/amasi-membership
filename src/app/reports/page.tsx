@@ -5,14 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
-  BarChart3, PieChart, TrendingUp, MapPin, Loader2, Users, DollarSign, Clock,
-  CheckCircle2, Download, FileText, Calendar, BarChart2, ArrowUpRight, ArrowDownRight,
+  BarChart3, PieChart, TrendingUp, MapPin, Loader2, Users, Clock,
+  CheckCircle2, Download, FileText, Calendar, ArrowUpRight, ArrowDownRight,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RechartsPie, Pie, Cell, Legend,
   LineChart, Line, Area, AreaChart,
 } from "recharts"
+import { StaggerContainer, StaggerItem } from "@/components/motion/stagger"
 
 interface ZoneRow { zone: string; count: number }
 interface StateRow { state: string; count: number }
@@ -56,7 +57,7 @@ const DATE_RANGES: { label: string; value: DateRange }[] = [
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-border rounded-lg shadow-lg px-3 py-2 text-sm">
+    <div className="bg-white dark:bg-slate-900 border border-border rounded-lg shadow-lg px-3 py-2 text-sm">
       <p className="font-semibold text-foreground">{label}</p>
       {payload.map((entry: any, i: number) => (
         <p key={i} className="text-muted-foreground">
@@ -72,7 +73,7 @@ function PieTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null
   const d = payload[0]
   return (
-    <div className="bg-white border border-border rounded-lg shadow-lg px-3 py-2 text-sm">
+    <div className="bg-white dark:bg-slate-900 border border-border rounded-lg shadow-lg px-3 py-2 text-sm">
       <p className="font-semibold">{d.name}</p>
       <p className="text-muted-foreground">
         Count: <span className="font-bold text-foreground">{d.value?.toLocaleString()}</span>
@@ -240,43 +241,51 @@ export default function ReportsPage() {
 
       {/* Summary cards */}
       {stats && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryCard
-            title="Total Members"
-            value={stats.total.toLocaleString()}
-            icon={Users}
-            trend="+12%"
-            trendUp
-            color="teal"
-          />
-          <SummaryCard
-            title="New This Period"
-            value={stats.monthlyTotal.toLocaleString()}
-            icon={ArrowUpRight}
-            subtitle={`Avg ${stats.avgPerMonth}/month`}
-            color="blue"
-          />
-          <SummaryCard
-            title="Approval Rate"
-            value={`${stats.approvalRate}%`}
-            icon={CheckCircle2}
-            subtitle="Approved vs total"
-            color="emerald"
-          />
-          <SummaryCard
-            title="Avg Processing"
-            value="3.2 days"
-            icon={Clock}
-            subtitle="Submit to approval"
-            color="purple"
-          />
-        </div>
+        <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StaggerItem>
+            <SummaryCard
+              title="Total Members"
+              value={stats.total.toLocaleString()}
+              icon={Users}
+              trend="+12%"
+              trendUp
+              color="teal"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <SummaryCard
+              title="New This Period"
+              value={stats.monthlyTotal.toLocaleString()}
+              icon={ArrowUpRight}
+              subtitle={`Avg ${stats.avgPerMonth}/month`}
+              color="blue"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <SummaryCard
+              title="Approval Rate"
+              value={`${stats.approvalRate}%`}
+              icon={CheckCircle2}
+              subtitle="Approved vs total"
+              color="emerald"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <SummaryCard
+              title="Avg Processing"
+              value="3.2 days"
+              icon={Clock}
+              subtitle="Submit to approval"
+              color="purple"
+            />
+          </StaggerItem>
+        </StaggerContainer>
       )}
 
       {/* Charts grid */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Zone Distribution */}
-        <Card>
+        <Card className="card-lift">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -300,7 +309,15 @@ export default function ReportsPage() {
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="count" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="count"
+                        fill="#0d9488"
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
@@ -316,6 +333,10 @@ export default function ReportsPage() {
                         dataKey="value"
                         label={({ name, percent }: any) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
                         labelLine={{ stroke: "#94a3b8" }}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
                       >
                         {zonePieData.map((_, i) => (
                           <Cell key={i} fill={TEAL_PALETTE[i % TEAL_PALETTE.length]} />
@@ -331,7 +352,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Membership Type Distribution */}
-        <Card>
+        <Card className="card-lift">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -355,7 +376,14 @@ export default function ReportsPage() {
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      <Bar
+                        dataKey="count"
+                        radius={[4, 4, 0, 0]}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
+                      >
                         {typeData.map((t, i) => (
                           <Cell key={i} fill={TYPE_COLORS[t.membership_type] || "#94a3b8"} />
                         ))}
@@ -375,6 +403,10 @@ export default function ReportsPage() {
                         dataKey="value"
                         label={({ name, percent }: any) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
                         labelLine={{ stroke: "#94a3b8" }}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
                       >
                         {typePieData.map((entry, i) => (
                           <Cell key={i} fill={TYPE_COLORS[entry.name] || "#94a3b8"} />
@@ -391,7 +423,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Monthly Applications - Line/Area chart */}
-        <Card className="md:col-span-2">
+        <Card className="md:col-span-2 card-lift">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -430,6 +462,10 @@ export default function ReportsPage() {
                       fill="url(#colorApplications)"
                       dot={{ fill: "#0d9488", strokeWidth: 2, r: 4 }}
                       activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
+                      isAnimationActive={true}
+                      animationDuration={1200}
+                      animationBegin={300}
+                      animationEasing="ease-out"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -439,7 +475,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Top 10 States - Horizontal bar */}
-        <Card>
+        <Card className="card-lift">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -463,7 +499,14 @@ export default function ReportsPage() {
                       <XAxis type="number" tick={{ fontSize: 12 }} />
                       <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={110} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                      <Bar
+                        dataKey="count"
+                        radius={[0, 4, 4, 0]}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
+                      >
                         {stateBarData.map((_, i) => (
                           <Cell key={i} fill={STATE_PALETTE[i % STATE_PALETTE.length]} />
                         ))}
@@ -483,6 +526,10 @@ export default function ReportsPage() {
                         dataKey="value"
                         label={({ name, percent }: any) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
                         labelLine={{ stroke: "#94a3b8" }}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
                       >
                         {stateBarData.map((_, i) => (
                           <Cell key={i} fill={STATE_PALETTE[i % STATE_PALETTE.length]} />
@@ -498,7 +545,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Approval Rate Chart */}
-        <Card>
+        <Card className="card-lift">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
@@ -525,6 +572,10 @@ export default function ReportsPage() {
                     dataKey="value"
                     label={({ name, percent }: any) => `${name} (${((percent ?? 0) * 100).toFixed(1)}%)`}
                     labelLine={{ stroke: "#94a3b8" }}
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={300}
+                    animationEasing="ease-out"
                   >
                     <Cell fill="#10b981" />
                     <Cell fill="#f59e0b" />
@@ -562,7 +613,7 @@ function SummaryCard({
   const c = colorMap[color]
 
   return (
-    <Card>
+    <Card className="card-lift">
       <CardContent className="py-5 px-6">
         <div className="flex items-start justify-between">
           <div>

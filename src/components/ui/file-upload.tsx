@@ -89,6 +89,7 @@ export function FileUpload({
                 <button
                   type="button"
                   onClick={onRemove}
+                  aria-label={`Remove ${label}`}
                   className="p-1 hover:bg-accent rounded"
                 >
                   <X className="h-4 w-4" />

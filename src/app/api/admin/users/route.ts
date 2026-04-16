@@ -15,17 +15,52 @@ export async function GET() {
     }
 
     const supabase = createAdminClient()
-    const { data, error } = await supabase
+    const { data: rawData, error } = await supabase
       .from("admin_users")
-      .select("id, email, name, role, permissions, is_active, last_login, created_at")
+      .select("id, email, name, role, is_active, last_login, created_at")
       .order("created_at", { ascending: false })
 
+    // Normalize — `permissions` column was removed from the schema; default to ["all"]
+    const data = (rawData ?? []).map((u) => ({ ...u, permissions: ["all"] as string[] }))
+
+    // Log but don't fail — if `admin_users` table is missing we still
+    // want to show the env-admin row (at least) so /admin is usable.
     if (error) {
-      console.error("List admin users error:", error)
-      return Response.json({ error: "Failed to fetch admin users" }, { status: 500 })
+      console.error("List admin users error:", JSON.stringify(error), "— falling back to env-admin only")
     }
 
-    return Response.json({ status: true, data: data || [] })
+    // Prepend the env-admin (super admin bypass) as a virtual row so the
+    // currently-logged-in super admin can view their own activity from /admin.
+    const envAdminEmail = (process.env.ADMIN_DEFAULT_EMAIL || "admin@amasi.org").trim().toLowerCase()
+    const dbHasEnvAdmin = (data || []).some(
+      (u) => u.email?.toLowerCase() === envAdminEmail
+    )
+
+    const rows = [...(data || [])]
+    if (!dbHasEnvAdmin) {
+      // Pull latest login time from audit log so "Last login" is accurate
+      const { data: lastLoginRow } = await supabase
+        .from("admin_audit_log")
+        .select("created_at")
+        .eq("admin_email", envAdminEmail)
+        .eq("action", "login")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      rows.unshift({
+        id: "env-admin",
+        email: envAdminEmail,
+        name: "AMASI Admin (env)",
+        role: "super_admin",
+        permissions: ["all"],
+        is_active: true,
+        last_login: lastLoginRow?.created_at ?? null,
+        created_at: new Date(0).toISOString(),
+      })
+    }
+
+    return Response.json({ status: true, data: rows })
   } catch (error: any) {
     console.error("Admin users GET error:", error)
     return Response.json({ error: "Failed to fetch admin users" }, { status: 500 })

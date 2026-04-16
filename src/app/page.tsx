@@ -1,173 +1,262 @@
 "use client"
 
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { StatCard } from "@/components/dashboard/stat-card"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { toast } from "sonner"
+import { AnimatePresence, motion } from "framer-motion"
 import {
   Users,
-  UserCheck,
   Clock,
   IndianRupee,
+  Timer,
   AlertCircle,
-  Loader2,
   ArrowRight,
-  CheckCircle2,
-  UserPlus,
-  FileCheck,
-  Eye,
+  BarChart3,
+  Target,
+  PieChart,
+  FileText,
+  Activity,
   CalendarDays,
-  ShieldCheck,
-  UserX,
 } from "lucide-react"
-import { formatDate } from "@/lib/utils"
-import Link from "next/link"
+
+import { SectionHeader } from "@/components/dashboard/section-header"
+import { StatCard } from "@/components/dashboard/stat-card"
+import { DashboardHeader } from "@/components/dashboard/dashboard-header"
+import { SystemHealth, type HealthStatus, type SystemHealthKey } from "@/components/dashboard/system-health"
+import { ActionStrip } from "@/components/dashboard/action-strip"
+import { RecentRoutes } from "@/components/dashboard/recent-routes"
+import { TimeRangeTabs, type TimeRange } from "@/components/dashboard/time-range-tabs"
+import { ApplicationsChart } from "@/components/dashboard/applications-chart"
+import { ApprovalFunnel } from "@/components/dashboard/approval-funnel"
+import { MembershipMix } from "@/components/dashboard/membership-mix"
+import { RecentApplicationsTable, type AppRow } from "@/components/dashboard/recent-applications-table"
+import { ActivityTimeline, type ActivityEvent, type ActivityEventType } from "@/components/dashboard/activity-timeline"
+import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap"
+import { StaggerContainer, StaggerItem } from "@/components/motion/stagger"
+import { useRealtimeCount } from "@/hooks/use-realtime-count"
+import { cn } from "@/lib/utils"
+
+interface Trend {
+  deltaPct: number
+  positive: boolean
+}
 
 interface DashboardData {
-  totalMembers: number
-  membersByType: Record<string, number>
-  recentApplications: {
-    id: string
-    reference_number: string
-    name: string
-    membership_type: string
-    status: string
-    payment_status: string
-    created_at: string
-  }[]
-  pendingApplicationsCount: number
-  incompleteProfilesCount: number
+  adminName: string
   approvedThisMonth: number
-  totalPayments: number
-}
 
-const TYPE_LABELS: Record<string, { name: string; shortName: string; color: string; bg: string; barColor: string }> = {
-  LM: { name: "Life Member", shortName: "LM", color: "bg-teal-500", bg: "bg-teal-50 text-teal-700 border border-teal-200", barColor: "bg-teal-500" },
-  ALM: { name: "Associate Life Member", shortName: "ALM", color: "bg-blue-500", bg: "bg-blue-50 text-blue-700 border border-blue-200", barColor: "bg-blue-500" },
-  ACM: { name: "Associate Candidate Member", shortName: "ACM", color: "bg-purple-500", bg: "bg-purple-50 text-purple-700 border border-purple-200", barColor: "bg-purple-500" },
-  ILM: { name: "International Life Member", shortName: "ILM", color: "bg-amber-500", bg: "bg-amber-50 text-amber-700 border border-amber-200", barColor: "bg-amber-500" },
-}
+  totalMembers: number
+  totalMembersTrend: Trend
+  totalMembersSparkline: number[]
 
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "approved":
-    case "ai_approved":
-      return "bg-emerald-50 text-emerald-700 border border-emerald-200"
-    case "rejected":
-      return "bg-red-50 text-red-700 border border-red-200"
-    case "pending_review":
-      return "bg-blue-50 text-blue-700 border border-blue-200"
-    default:
-      return "bg-amber-50 text-amber-700 border border-amber-200"
+  pendingApplicationsCount: number
+  pendingOldestHours: number
+
+  revenueThisMonth: number
+  revenueTrend: Trend
+  revenueSparkline: number[]
+  revenueAllTime: number
+
+  avgApprovalHours: number
+  avgApprovalTrend: Trend
+  avgApprovalSparkline: number[]
+
+  membersByType: { LM: number; ALM: number; ACM: number; ILM: number }
+
+  timeseries: Array<{ date: string; submitted: number; approved: number; manual: number }>
+
+  funnel: {
+    submitted: number
+    autoApproved: number
+    manualReview: number
+    midScore: number
+    lowScore: number
+    nmcSkipped: number
+  }
+
+  recentApplications: AppRow[]
+
+  systemHealth: {
+    nmc: HealthStatus
+    email: HealthStatus
+    razorpay: HealthStatus
+    webhooks: HealthStatus
   }
 }
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case "ai_approved":
-      return "AI Approved"
-    case "pending_review":
-      return "Under Review"
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1)
+function formatHours(h: number): string {
+  if (!h || !Number.isFinite(h)) return "—"
+  if (h < 1) return `${Math.round(h * 60)}m`
+  if (h < 24) return `${h.toFixed(1)}h`
+  const days = h / 24
+  return `${days.toFixed(1)}d`
+}
+
+function fmtTrend(t: Trend): { value: string; positive: boolean } {
+  return {
+    value: `${Math.abs(t.deltaPct)}% vs last month`,
+    positive: t.positive,
   }
 }
 
-function getGreeting(): string {
-  const hour = new Date().getHours()
-  if (hour < 12) return "Good morning"
-  if (hour < 17) return "Good afternoon"
-  return "Good evening"
-}
+function buildActivityEvents(
+  apps: AppRow[],
+  systemHealth: DashboardData["systemHealth"]
+): ActivityEvent[] {
+  const events: ActivityEvent[] = []
 
-function formatRelativeTime(dateStr: string): string {
-  const now = new Date()
-  const date = new Date(dateStr)
-  const diffMs = now.getTime() - date.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  if (diffMin < 1) return "Just now"
-  if (diffMin < 60) return `${diffMin} min ago`
-  const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr}h ago`
-  const diffDays = Math.floor(diffHr / 24)
-  if (diffDays === 1) return "Yesterday"
-  return `${diffDays} days ago`
-}
-
-// Static sparkline data for visual appeal (would come from real time-series in production)
-const SPARKLINES = {
-  members: [120, 135, 128, 142, 155, 168, 172, 180],
-  pending: [8, 12, 6, 9, 14, 11, 7, 10],
-  approved: [5, 8, 12, 9, 15, 11, 18, 14],
-  revenue: [25000, 32000, 28000, 41000, 38000, 45000, 52000, 48000],
-  incomplete: [22, 18, 15, 20, 16, 14, 12, 10],
-}
-
-// Activity feed item types
-interface ActivityItem {
-  id: string
-  icon: typeof CheckCircle2
-  iconColor: string
-  text: string
-  time: string
-}
-
-function buildActivityFeed(applications: DashboardData["recentApplications"]): ActivityItem[] {
-  return applications.slice(0, 6).map((app) => {
-    const isApproved = app.status === "approved" || app.status === "ai_approved"
-    const isRejected = app.status === "rejected"
+  for (const app of apps.slice(0, 5)) {
     const name = app.name || "Unknown"
-    const firstName = name.split(" ")[0]
+    const subtitle = `${app.reference_number} · ${app.membership_type}`
+    let type: ActivityEventType
+    let title: string
 
-    if (isApproved) {
-      return {
-        id: app.id,
-        icon: CheckCircle2,
-        iconColor: "text-emerald-500",
-        text: `${name}'s application approved`,
-        time: formatRelativeTime(app.created_at),
-      }
+    switch (app.status) {
+      case "ai_approved":
+        type = "auto_approved"
+        title = `${name}'s application auto-approved`
+        break
+      case "approved":
+        type = "approved"
+        title = `${name} was approved`
+        break
+      case "rejected":
+        type = "rejected"
+        title = `${name}'s application was rejected`
+        break
+      case "pending_review":
+      case "need_clarification":
+        type = "needs_review"
+        title = `${name} needs manual review`
+        break
+      default:
+        type = "application_submitted"
+        title = `New application from ${name.split(" ")[0]}`
     }
-    if (isRejected) {
-      return {
-        id: app.id,
-        icon: UserX,
-        iconColor: "text-red-500",
-        text: `${name}'s application was rejected`,
-        time: formatRelativeTime(app.created_at),
-      }
-    }
-    return {
+
+    events.push({
       id: app.id,
-      icon: UserPlus,
-      iconColor: "text-blue-500",
-      text: `New application from ${firstName}`,
-      time: formatRelativeTime(app.created_at),
-    }
-  })
+      type,
+      title,
+      subtitle,
+      timestamp: app.created_at,
+      href: `/pending/${app.id}`,
+    })
+  }
+
+  // Prepend system events if any integrations are not healthy
+  if (systemHealth.nmc !== "ok") {
+    events.unshift({
+      id: "sys-nmc",
+      type: "nmc_skipped",
+      title:
+        systemHealth.nmc === "down"
+          ? "NMC verification service is down"
+          : "NMC verification is degraded",
+      subtitle: "Some applications may skip live NMC checks",
+      timestamp: new Date().toISOString(),
+      href: "/audit?tag=nmc",
+    })
+  }
+  if (systemHealth.webhooks === "down") {
+    events.unshift({
+      id: "sys-webhook",
+      type: "system",
+      title: "Webhook delivery is down",
+      subtitle: "Check orphaned submissions",
+      timestamp: new Date().toISOString(),
+      href: "/audit?tag=webhook",
+    })
+  }
+
+  return events
 }
 
 export default function DashboardPage() {
-  const { data, isLoading, isError } = useQuery<{ status: boolean; data: DashboardData }>({
-    queryKey: ["dashboard"],
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // Dev-only override so we can preview the pending-pulse state in non-prod.
+  // Use ?cb=pending5 (or any number) — stripped in production builds.
+  const pendingOverride =
+    process.env.NODE_ENV !== "production"
+      ? (() => {
+          const cb = searchParams.get("cb")
+          if (!cb?.startsWith("pending")) return undefined
+          const n = parseInt(cb.replace("pending", ""), 10)
+          return Number.isFinite(n) ? n : undefined
+        })()
+      : undefined
+  const [range, setRange] = useState<TimeRange>("30d")
+
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<{ status: boolean; data: DashboardData }>({
+    queryKey: ["dashboard", range],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard")
+      const res = await fetch(`/api/dashboard?range=${range}`)
       if (!res.ok) throw new Error("Failed to fetch dashboard data")
       return res.json()
     },
     refetchInterval: 30000,
   })
 
-  const stats = data?.data
+  const { data: heatmapData } = useQuery<{ counts: Record<string, number> }>({
+    queryKey: ["dashboard-heatmap"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/heatmap")
+      if (!res.ok) throw new Error("Failed to fetch heatmap")
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
+  const stats =
+    data?.data && pendingOverride !== undefined
+      ? {
+          ...data.data,
+          pendingApplicationsCount: pendingOverride,
+          pendingOldestHours: data.data.pendingOldestHours || 26,
+        }
+      : data?.data
+
+  const { count: liveTotalMembers, flashing: membersFlashing } = useRealtimeCount({
+    table: "members",
+    initialCount: stats?.totalMembers ?? 0,
+  })
+
+  const activityEvents = useMemo(
+    () => (stats ? buildActivityEvents(stats.recentApplications, stats.systemHealth) : []),
+    [stats]
+  )
+
+  const handleHealthPillClick = (key: SystemHealthKey) => {
+    if (key === "nmc") router.push("/audit?tag=nmc")
+    else if (key === "webhooks") router.push("/audit?tag=webhook")
+    else router.push("/audit")
   }
 
-  if (isError || !stats) {
+  const handleApprove = async (id: string) => {
+    try {
+      const res = await fetch("/api/applications/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: id, notes: "Approved from dashboard" }),
+      })
+      const result = await res.json()
+      if (res.ok && result.status) {
+        toast.success("Application approved")
+        refetch()
+      } else {
+        toast.error(result.message || "Failed to approve")
+      }
+    } catch {
+      toast.error("Failed to approve")
+    }
+  }
+
+  // Render the dashboard shell immediately even while the query is in-flight.
+  // Each section handles its own loading state — no more full-page spinner.
+  if (isError) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-3 text-muted-foreground">
         <AlertCircle className="h-10 w-10" />
@@ -177,318 +266,282 @@ export default function DashboardPage() {
     )
   }
 
-  const totalByType = Object.values(stats.membersByType).reduce((s, v) => s + v, 0) || 1
-  const activityFeed = buildActivityFeed(stats.recentApplications)
+  const cardChrome =
+    "rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_2px_4px_rgba(15,23,42,0.03)] card-lift"
 
-  const today = new Date().toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
+  const statsLoading = !stats
 
   return (
-    <div className="space-y-8">
-      {/* Welcome Header */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">{getGreeting()}, Admin</h2>
-          <p className="text-muted-foreground mt-1 flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" />
-            {today}
-          </p>
-        </div>
-        {stats.pendingApplicationsCount > 0 && (
-          <Link
+    <div className="dashboard-bg -mx-6 -my-6 min-h-[calc(100vh-4rem)] px-6 py-8 space-y-6">
+      {/* Top: greeting + system health pills */}
+      <div className="dash-reveal dash-reveal-1">
+        <DashboardHeader
+          adminName={stats?.adminName ?? "Admin"}
+          isRefetching={isFetching && !isLoading}
+          pendingCount={stats?.pendingApplicationsCount}
+          contextPills={
+            stats
+              ? (() => {
+                  const parts: string[] = []
+                  parts.push(
+                    stats.pendingApplicationsCount > 0
+                      ? `${stats.pendingApplicationsCount} awaiting review`
+                      : "Queue clear"
+                  )
+                  if (stats.approvedThisMonth) {
+                    parts.push(`${stats.approvedThisMonth} approved this month`)
+                  }
+                  const healthy = Object.values(stats.systemHealth).every((s) => s === "ok")
+                  parts.push(healthy ? "All systems healthy" : "Check system status")
+                  return parts
+                })()
+              : undefined
+          }
+          contextLine={stats ? undefined : "Loading dashboard…"}
+        >
+          {stats && <SystemHealth health={stats.systemHealth} onPillClick={handleHealthPillClick} />}
+        </DashboardHeader>
+      </div>
+
+      {/* Recently viewed admin pages/records */}
+      <div className="dash-reveal dash-reveal-1">
+        <RecentRoutes />
+      </div>
+
+      {/* Action-required strip (auto-hides when nothing pending) */}
+      {stats && stats.pendingApplicationsCount > 0 && (
+        <div className="dash-reveal dash-reveal-2">
+          <ActionStrip
+            pendingCount={stats.pendingApplicationsCount}
+            oldestHours={stats.pendingOldestHours}
             href="/pending"
-            className="inline-flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors"
-          >
-            <Clock className="h-4 w-4" />
-            {stats.pendingApplicationsCount} application{stats.pendingApplicationsCount !== 1 ? "s" : ""} awaiting your review
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        )}
-      </div>
+          />
+        </div>
+      )}
 
-      {/* Stat Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard
-          title="Total Members"
-          value={stats.totalMembers.toLocaleString()}
-          trend={{ value: "12% vs last month", positive: true }}
-          icon={Users}
-          iconClassName="bg-blue-100 text-blue-600"
-          gradient="bg-gradient-to-br from-blue-50/80 to-white border border-blue-100"
-          sparklineData={SPARKLINES.members}
-        />
-        <StatCard
-          title="Pending Applications"
-          value={stats.pendingApplicationsCount}
-          trend={{ value: "3 new today", positive: false }}
-          icon={Clock}
-          iconClassName="bg-amber-100 text-amber-600"
-          gradient="bg-gradient-to-br from-amber-50/80 to-white border border-amber-100"
-          sparklineData={SPARKLINES.pending}
-        />
-        <StatCard
-          title="Approved This Month"
-          value={stats.approvedThisMonth}
-          trend={{ value: "8% vs last month", positive: true }}
-          icon={ShieldCheck}
-          iconClassName="bg-emerald-100 text-emerald-600"
-          gradient="bg-gradient-to-br from-emerald-50/80 to-white border border-emerald-100"
-          sparklineData={SPARKLINES.approved}
-        />
-        <StatCard
-          title="Revenue Collected"
-          value={`₹${stats.totalPayments.toLocaleString()}`}
-          trend={{ value: "15% vs last month", positive: true }}
-          icon={IndianRupee}
-          iconClassName="bg-green-100 text-green-600"
-          gradient="bg-gradient-to-br from-green-50/80 to-white border border-green-100"
-          sparklineData={SPARKLINES.revenue}
-        />
-        <StatCard
-          title="Incomplete Profiles"
-          value={stats.incompleteProfilesCount}
-          trend={{ value: "5 resolved this week", positive: true }}
-          icon={UserCheck}
-          iconClassName="bg-red-100 text-red-600"
-          gradient="bg-gradient-to-br from-red-50/80 to-white border border-red-100"
-          sparklineData={SPARKLINES.incomplete}
-        />
-        <StatCard
-          title="Active Tickets"
-          value={0}
-          description="Support queue"
-          icon={FileCheck}
-          iconClassName="bg-violet-100 text-violet-600"
-          gradient="bg-gradient-to-br from-violet-50/80 to-white border border-violet-100"
-        />
-      </div>
-
-      {/* Membership Distribution Bar */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Membership Type Distribution</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex h-5 w-full rounded-full overflow-hidden bg-secondary">
-            {Object.entries(TYPE_LABELS).map(([key, { barColor }]) => {
-              const count = stats.membersByType[key] ?? 0
-              const pct = (count / totalByType) * 100
-              if (pct === 0) return null
-              return (
-                <div
-                  key={key}
-                  className={`${barColor} transition-all duration-700 first:rounded-l-full last:rounded-r-full`}
-                  style={{ width: `${pct}%` }}
-                  title={`${TYPE_LABELS[key].name}: ${count} (${Math.round(pct)}%)`}
-                />
-              )
-            })}
+      {/* KPI grid */}
+      <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerItem>
+          <div className={cn(membersFlashing && "flash-success")}>
+            <StatCard
+              variant="hero"
+              href="/members"
+              title="Total Members"
+              value={stats ? liveTotalMembers.toLocaleString("en-IN") : ""}
+              icon={Users}
+              trend={stats && stats.totalMembersTrend.deltaPct !== 0 ? fmtTrend(stats.totalMembersTrend) : undefined}
+              sparklineData={stats?.totalMembersSparkline}
+              loading={statsLoading}
+              showHoverArrow
+            />
           </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
-            {Object.entries(TYPE_LABELS).map(([key, { name, shortName, color }]) => {
-              const count = stats.membersByType[key] ?? 0
-              const pct = Math.round((count / totalByType) * 100)
-              return (
-                <div key={key} className="flex items-center gap-2 text-sm">
-                  <span className={`inline-block h-3 w-3 rounded-full ${color}`} />
-                  <span className="font-medium">{shortName}</span>
-                  <span className="text-muted-foreground">{count.toLocaleString()} ({pct}%)</span>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            variant="dark"
+            accent="amber"
+            href="/pending"
+            title="Pending"
+            value={stats?.pendingApplicationsCount ?? 0}
+            icon={Clock}
+            description={
+              stats
+                ? stats.pendingApplicationsCount === 0
+                  ? "queue clear"
+                  : `${stats.pendingApplicationsCount} awaiting action`
+                : undefined
+            }
+            loading={statsLoading}
+            pulse={!!stats && stats.pendingApplicationsCount > 0}
+            showHoverArrow
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            variant="dark"
+            accent="blue"
+            href="/reports"
+            title="Revenue"
+            value={stats ? `₹${stats.revenueThisMonth.toLocaleString("en-IN")}` : ""}
+            icon={IndianRupee}
+            trend={stats && stats.revenueTrend.deltaPct !== 0 ? fmtTrend(stats.revenueTrend) : undefined}
+            description={stats && stats.revenueTrend.deltaPct === 0 ? "no change" : undefined}
+            sparklineData={stats?.revenueSparkline}
+            loading={statsLoading}
+            showHoverArrow
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            variant="dark"
+            accent="violet"
+            href="/reports"
+            title="Avg approval time"
+            value={stats ? formatHours(stats.avgApprovalHours) : ""}
+            icon={Timer}
+            trend={
+              stats && stats.avgApprovalHours > 0 && stats.avgApprovalTrend.deltaPct !== 0
+                ? fmtTrend(stats.avgApprovalTrend)
+                : undefined
+            }
+            description={stats && stats.avgApprovalHours === 0 ? "no data yet" : undefined}
+            sparklineData={stats?.avgApprovalSparkline}
+            loading={statsLoading}
+            empty={!!stats && stats.avgApprovalHours === 0}
+            showHoverArrow
+          />
+        </StaggerItem>
+      </StaggerContainer>
 
-      {/* Main Content: Applications Table + Activity Feed */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Recent Applications Table — 2/3 width */}
-        <Card className="lg:col-span-2 border-0 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
-            <CardTitle className="text-lg font-semibold">Recent Applications</CardTitle>
-            <Link href="/pending" className="text-xs text-primary hover:underline flex items-center gap-1">
-              View all <ArrowRight className="h-3 w-3" />
+      {/* Main row: chart + funnel/mix. items-start prevents the chart card from stretching
+          to match the (taller) funnel/mix card, which was producing ~400px of empty space. */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_340px] items-start">
+        {/* Applications chart card */}
+        <div className={`${cardChrome} dash-reveal dash-reveal-6`}>
+          <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
+            <div className="flex items-center gap-3">
+              <SectionHeader
+                title="Applications"
+                subtitle="Submissions & outcomes"
+                icon={BarChart3}
+                accent="blue"
+              />
+              <TimeRangeTabs value={range} onChange={setRange} />
+            </div>
+            <Link
+              href="/reports"
+              className="group inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            >
+              View report
+              <ArrowRight className="h-3 w-3 transition-transform duration-150 group-hover:translate-x-1" />
             </Link>
-          </CardHeader>
-          <CardContent>
-            {stats.recentApplications.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No applications yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="pb-3 text-left font-medium">Applicant</th>
-                      <th className="pb-3 text-left font-medium hidden sm:table-cell">Type</th>
-                      <th className="pb-3 text-left font-medium hidden md:table-cell">Date</th>
-                      <th className="pb-3 text-left font-medium">Status</th>
-                      <th className="pb-3 text-right font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.recentApplications.map((app) => {
-                      const initials = (app.name || "?")
-                        .split(" ")
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()
+          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={range}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+            >
+              <ApplicationsChart data={stats?.timeseries ?? []} loading={statsLoading} />
+            </motion.div>
+          </AnimatePresence>
+          <div className="flex gap-4 mt-4 text-xs text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#378ADD" }} />
+              Submitted
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1D9E75" }} />
+              Approved
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#EF9F27" }} />
+              Manual review
+            </span>
+          </div>
+        </div>
 
-                      const isPending =
-                        app.status === "pending" ||
-                        app.status === "submitted" ||
-                        app.status === "pending_review"
-
-                      const avatarColors: Record<string, string> = {
-                        LM: "bg-teal-100 text-teal-700",
-                        ALM: "bg-blue-100 text-blue-700",
-                        ACM: "bg-purple-100 text-purple-700",
-                        ILM: "bg-amber-100 text-amber-700",
-                      }
-
-                      return (
-                        <tr
-                          key={app.id}
-                          className="border-b last:border-0 hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="py-3 pr-3">
-                            <div className="flex items-center gap-3">
-                              <div
-                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarColors[app.membership_type] || "bg-muted text-muted-foreground"}`}
-                              >
-                                {initials}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-sm truncate">
-                                  {app.name || "Unknown"}
-                                </p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {app.reference_number}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 pr-3 hidden sm:table-cell">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${TYPE_LABELS[app.membership_type]?.bg || "bg-muted text-muted-foreground"}`}
-                            >
-                              {app.membership_type}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-3 text-sm text-muted-foreground hidden md:table-cell whitespace-nowrap">
-                            {formatDate(app.created_at)}
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span
-                              className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${statusBadgeClass(app.status)}`}
-                            >
-                              {statusLabel(app.status)}
-                            </span>
-                          </td>
-                          <td className="py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Link
-                                href={`/pending/${app.id}`}
-                                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                View
-                              </Link>
-                              {isPending && (
-                                <Link
-                                  href={`/pending/${app.id}`}
-                                  className="inline-flex items-center gap-1 rounded-md bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Review
-                                </Link>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Activity Feed — 1/3 width */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activityFeed.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No recent activity.</p>
-            ) : (
-              <div className="relative">
-                {/* Timeline line */}
-                <div className="absolute left-[15px] top-2 bottom-2 w-px bg-border" />
-
-                <div className="space-y-5">
-                  {activityFeed.map((item) => {
-                    const IconComp = item.icon
-                    return (
-                      <div key={item.id} className="flex gap-3 relative">
-                        <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-background border border-border">
-                          <IconComp className={`h-4 w-4 ${item.iconColor}`} />
-                        </div>
-                        <div className="flex-1 min-w-0 pt-0.5">
-                          <p className="text-sm leading-snug">{item.text}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{item.time}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Funnel + Mix combined card */}
+        <div className={`${cardChrome} dash-reveal dash-reveal-7 space-y-5`}>
+          <div>
+            <SectionHeader
+              title="Approval funnel"
+              subtitle="Where submissions land"
+              icon={Target}
+              accent="emerald"
+              className="mb-4"
+            />
+            <ApprovalFunnel
+              submitted={stats?.funnel.submitted ?? 0}
+              autoApproved={stats?.funnel.autoApproved ?? 0}
+              manualReview={stats?.funnel.manualReview ?? 0}
+              midScore={stats?.funnel.midScore ?? 0}
+              lowScore={stats?.funnel.lowScore ?? 0}
+              nmcSkipped={stats?.funnel.nmcSkipped ?? 0}
+              loading={statsLoading}
+              activePeriod={
+                range === "today" ? "Today"
+                  : range === "7d" ? "Last 7 days"
+                  : range === "30d" ? "Last 30 days"
+                  : "Last 90 days"
+              }
+              avgProcessingDays={
+                stats && stats.avgApprovalHours > 0 ? stats.avgApprovalHours / 24 : undefined
+              }
+            />
+          </div>
+          <div className="h-px bg-slate-200/60 dark:bg-slate-800/60" />
+          <div>
+            <SectionHeader
+              title="Membership mix"
+              subtitle="Distribution by type"
+              icon={PieChart}
+              accent="violet"
+              className="mb-4"
+            />
+            <MembershipMix
+              counts={stats?.membersByType ?? { LM: 0, ALM: 0, ACM: 0, ILM: 0 }}
+              loading={statsLoading}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Membership Types Detail */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold">Membership Breakdown</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(TYPE_LABELS).map(([key, { name, shortName, color }]) => {
-              const count = stats.membersByType[key] ?? 0
-              const pct = Math.round((count / totalByType) * 100)
-              return (
-                <div key={key} className="rounded-xl border p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-block h-3 w-3 rounded-full ${color}`} />
-                      <span className="text-sm font-medium">{shortName}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{pct}%</span>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">{count.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">{name}</p>
-                  </div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${color} transition-all duration-500`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
+      {/* Recent applications + Activity timeline row */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className={`${cardChrome} dash-reveal dash-reveal-8`}>
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <SectionHeader
+              title="Recent applications"
+              subtitle="Latest submissions, hover to act"
+              icon={FileText}
+              accent="sky"
+            />
+            <Link
+              href="/pending"
+              className="group inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            >
+              View all
+              <ArrowRight className="h-3 w-3 transition-transform duration-150 group-hover:translate-x-1" />
+            </Link>
           </div>
-        </CardContent>
-      </Card>
+          <RecentApplicationsTable
+            applications={stats?.recentApplications ?? []}
+            onApprove={handleApprove}
+            loading={statsLoading}
+          />
+        </div>
+
+        <div className={`${cardChrome} dash-reveal dash-reveal-9`}>
+          <SectionHeader
+            title="Activity"
+            subtitle="Latest events & system signals"
+            icon={Activity}
+            accent="amber"
+            className="mb-5"
+          />
+          <ActivityTimeline events={activityEvents} loading={statsLoading} />
+        </div>
+      </div>
+
+      {/* Full-width heatmap of last year's applications */}
+      <div className={`${cardChrome} dash-reveal dash-reveal-9`}>
+        <SectionHeader
+          title="Application activity"
+          subtitle="Daily submissions · last 12 months"
+          icon={CalendarDays}
+          accent="teal"
+          className="mb-4"
+        />
+        <ActivityHeatmap
+          data={{ counts: heatmapData?.counts ?? {} }}
+          title=""
+          subtitle=""
+          loading={!heatmapData}
+        />
+      </div>
     </div>
   )
 }

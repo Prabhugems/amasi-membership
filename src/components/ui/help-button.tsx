@@ -20,7 +20,11 @@ export function HelpButton() {
               <HelpCircle className="h-4 w-4" />
               <span className="text-sm font-semibold">Need Help?</span>
             </div>
-            <button onClick={() => setOpen(false)} className="text-primary-foreground/80 hover:text-primary-foreground">
+            <button
+              onClick={() => setOpen(false)}
+              aria-label="Close help menu"
+              className="text-primary-foreground/80 hover:text-primary-foreground"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -86,6 +90,8 @@ export function HelpButton() {
 
       <button
         onClick={() => setOpen(!open)}
+        aria-label={open ? "Close help menu" : "Open help menu"}
+        aria-expanded={open}
         className={`h-14 w-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-200 ${
           open
             ? "bg-muted text-muted-foreground hover:bg-muted/80"

@@ -3,14 +3,20 @@ import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
 
 // Inline token verification — cannot import from @/lib/auth because it uses next/headers
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET?.trim() || "fallback-secret-change-me"
-)
 const ADMIN_COOKIE = "amasi_admin_token"
+
+let cachedSecret: Uint8Array | null = null
+function getJwtSecret(): Uint8Array {
+  if (cachedSecret) return cachedSecret
+  const s = process.env.JWT_SECRET?.trim()
+  if (!s) throw new Error("JWT_SECRET is required")
+  cachedSecret = new TextEncoder().encode(s)
+  return cachedSecret
+}
 
 async function verifyToken(token: string) {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
+    const { payload } = await jwtVerify(token, getJwtSecret())
     return payload
   } catch {
     return null
@@ -41,7 +47,6 @@ const PUBLIC_API_ROUTES = [
   "/api/certificate",
   "/api/members/search",
   "/api/members/upload",
-  "/api/members/upgrade",
   "/api/nmc",
   "/api/webhooks/",
 ]
@@ -74,6 +79,11 @@ export async function middleware(request: NextRequest) {
 
   // Allow member update API (needs member auth, not admin)
   if (pathname.match(/^\/api\/members\/[^/]+\/update$/)) {
+    return NextResponse.next()
+  }
+
+  // Allow member upgrade API (route does its own admin-or-member auth check)
+  if (pathname === "/api/members/upgrade") {
     return NextResponse.next()
   }
 

@@ -1,5 +1,11 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession, getMemberSession } from "@/lib/auth"
+
+// Public-safe field list for non-admin callers. Excludes PII such as email,
+// phone, DOB, address, MCI number/state, and all document URLs except photo.
+const PUBLIC_SELECT =
+  "id, name, membership_type, amasi_number, membership_no, city, state, zone, pg_degree, is_active, photo_url"
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -9,24 +15,34 @@ export async function GET(request: NextRequest) {
     return Response.json({ status: false, message: "Query parameter 'q' is required", data: [] }, { status: 400 })
   }
 
+  // Auth-aware field selection: admins get full record; everyone else
+  // (logged-in members and anonymous callers) gets the limited, safe set.
+  const adminSession = await getAdminSession()
+  const memberSession = adminSession ? null : await getMemberSession()
+  const isAdmin = !!adminSession
+  // memberSession referenced for future member-self redaction; kept intentionally.
+  void memberSession
+
   try {
     const supabase = createAdminClient()
     const isEmail = query.includes("@")
     const isPhone = /^\d{10}$/.test(query)
+
+    const selectFields = isAdmin ? "*" : PUBLIC_SELECT
 
     let data = null
 
     if (isEmail) {
       const { data: result } = await supabase
         .from("members")
-        .select("*")
+        .select(selectFields)
         .ilike("email", query.trim())
         .limit(1)
       data = result
     } else if (isPhone) {
       const { data: result } = await supabase
         .from("members")
-        .select("*")
+        .select(selectFields)
         .eq("phone", query.trim())
         .limit(1)
       data = result
@@ -36,14 +52,14 @@ export async function GET(request: NextRequest) {
       if (!isNaN(asNum)) {
         const { data: result } = await supabase
           .from("members")
-          .select("*")
+          .select(selectFields)
           .eq("amasi_number", asNum)
           .limit(1)
         data = result
       } else {
         const { data: result } = await supabase
           .from("members")
-          .select("*")
+          .select(selectFields)
           .ilike("name", `%${query}%`)
           .limit(5)
         data = result
@@ -51,14 +67,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (data && data.length > 0) {
-      // Check if profile is incomplete
-      const member = data[0]
-      const isIncomplete = !member.pg_degree && !member.mci_council_number && !member.date_of_birth && !member.gender
-
       return Response.json({
         status: true,
         message: "Member found",
-        data: data.map((m: any) => ({
+        data: (data as any[]).map((m: any) => ({
           ...m,
           _id: m.id, // Supabase row ID for update API
           profile_incomplete: !m.pg_degree && !m.mci_council_number && !m.date_of_birth && !m.gender,

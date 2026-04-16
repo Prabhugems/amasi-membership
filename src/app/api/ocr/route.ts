@@ -458,16 +458,16 @@ export async function POST(request: Request) {
           usedClaude = true
         }
       } catch (claudeError: any) {
-        console.error("Claude Vision failed, falling back to Tesseract:", claudeError.message)
+        console.error("Claude Vision failed, falling back to OCR.space:", claudeError.message)
       }
     }
 
-    // Fallback to Tesseract OCR
+    // Fallback to OCR.space
     if (!usedClaude) {
       try {
         extracted = await fallbackOCR(buffer, file.name, docType)
-      } catch (tessError: any) {
-        console.error("Tesseract also failed:", tessError.message)
+      } catch (ocrErr: any) {
+        console.error("OCR.space fallback also failed:", ocrErr.message)
         return Response.json({ success: false, error: "Could not process document" }, { status: 500 })
       }
     }

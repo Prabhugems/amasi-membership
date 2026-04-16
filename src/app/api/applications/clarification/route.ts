@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
+import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
 function getResend() {
@@ -107,7 +108,7 @@ export async function POST(request: NextRequest) {
             <p style="color: #555;">${intro}</p>
             <div style="background: ${boxBg}; border: 1px solid ${boxBorder}; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: ${boxTextColor}; font-weight: bold; margin: 0;">Message from reviewer</p>
-              <p style="color: ${boxTextColor}; font-size: 14px; margin: 4px 0 0;">${message}</p>
+              <p style="color: ${boxTextColor}; font-size: 14px; margin: 4px 0 0;">${escapeHtml(message)}</p>
             </div>
             <p style="color: #555;">Please click the link below to review and update your application:</p>
             <p style="text-align: center; margin: 24px 0;">

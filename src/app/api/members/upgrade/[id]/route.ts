@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
 function getResend() {
@@ -103,7 +104,7 @@ export async function PATCH(
                 <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">Life Member (LM)</p>
                 <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${upgrade.amasi_number}</p>
               </div>
-              ${notes ? `<p style="color: #555; font-size: 14px;"><strong>Note:</strong> ${notes}</p>` : ""}
+              ${notes ? `<p style="color: #555; font-size: 14px;"><strong>Note:</strong> ${escapeHtml(notes)}</p>` : ""}
               <p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
               <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
@@ -174,7 +175,7 @@ export async function PATCH(
               ${notes ? `
               <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; margin: 24px 0;">
                 <p style="color: #991b1b; font-weight: bold; margin: 0 0 8px;">Reason</p>
-                <p style="color: #dc2626; margin: 0;">${notes}</p>
+                <p style="color: #dc2626; margin: 0;">${escapeHtml(notes)}</p>
               </div>
               ` : ""}
               <p style="color: #555; font-size: 14px;">You may resubmit your upgrade request with the correct documentation. If you have questions, please contact us through the Member Portal support system.</p>

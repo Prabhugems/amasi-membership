@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "@/components/providers/sidebar-provider"
 import {
@@ -18,7 +19,6 @@ import {
   Headphones,
   LogIn,
   ChevronsLeft,
-  ChevronsRight,
   ExternalLink,
   LogOut,
   ArrowUpCircle,
@@ -138,6 +138,24 @@ export function Sidebar() {
   const router = useRouter()
   const adminRole = useAdminRole()
   const isSuperAdmin = adminRole === "super_admin"
+  const reduced = useReducedMotion()
+  const [isDesktop, setIsDesktop] = useState(false)
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)")
+    const onChange = () => setIsDesktop(mql.matches)
+    onChange()
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
+  // Mobile is always 256px (lg:w-16 / w-64 original behavior). On desktop, width
+  // animates between 64 (collapsed) and 256 (expanded).
+  const width = isDesktop ? (collapsed ? 64 : 256) : 256
+  const widthTransition = reduced
+    ? { duration: 0 }
+    : { duration: 0.25, ease: [0.22, 1, 0.36, 1] as const }
+  const labelTransition = reduced ? { duration: 0 } : { duration: 0.2 }
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" })
@@ -168,38 +186,90 @@ export function Sidebar() {
       )}
 
       {/* Sidebar */}
-      <aside
+      <motion.aside
         data-sidebar
+        initial={false}
+        animate={{ width }}
+        transition={widthTransition}
+        suppressHydrationWarning
         className={cn(
-          "fixed left-0 top-0 z-40 h-screen border-r bg-card flex flex-col transition-all duration-200 lg:translate-x-0",
-          collapsed ? "lg:w-16 w-64" : "w-64",
+          "fixed left-0 top-0 z-40 h-screen border-r bg-card flex flex-col lg:translate-x-0 transition-transform duration-200 overflow-hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Logo / brand */}
-        <div className="flex h-16 items-center gap-3 border-b px-4 shrink-0">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+        <div className="flex h-16 items-center gap-3 border-b px-4 shrink-0 relative">
+          <button
+            type="button"
+            onClick={toggle}
+            className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center shrink-0 hover:bg-primary/90 transition-colors cursor-pointer"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
             <span className="text-primary-foreground font-bold text-sm">A</span>
-          </div>
+          </button>
+          <AnimatePresence mode="wait" initial={false}>
+            {!collapsed && (
+              <motion.div
+                key="brand"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={labelTransition}
+                className="overflow-hidden whitespace-nowrap flex-1"
+              >
+                <h1 className="font-semibold text-sm leading-tight">AMASI</h1>
+                <p className="text-xs text-muted-foreground truncate">Membership Management</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {/* Prominent expand/collapse toggle — visible in both states */}
           {!collapsed && (
-            <div className="overflow-hidden">
-              <h1 className="font-semibold text-sm leading-tight">AMASI</h1>
-              <p className="text-xs text-muted-foreground truncate">Membership Management</p>
-            </div>
+            <button
+              type="button"
+              onClick={toggle}
+              className="h-7 w-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <motion.span animate={{ rotate: 0 }} transition={widthTransition} className="inline-flex">
+                <ChevronsLeft className="h-4 w-4" />
+              </motion.span>
+            </button>
           )}
         </div>
+        {/* When collapsed — show a floating expand chevron at the top of the nav */}
+        {collapsed && (
+          <button
+            type="button"
+            onClick={toggle}
+            className="absolute top-4 -right-3 z-10 h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+          >
+            <ChevronsLeft className="h-3 w-3 rotate-180" />
+          </button>
+        )}
 
         {/* Navigation */}
         <nav className="flex flex-col gap-1 p-3 overflow-y-auto flex-1">
           {sections.map((section, idx) => (
             <div key={section.label}>
               {idx > 0 && <div className="my-3 border-t" />}
-              {!collapsed && (
-                <p className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
-                  {section.label}
-                </p>
-              )}
-              {collapsed && idx > 0 && null}
+              <AnimatePresence mode="wait" initial={false}>
+                {!collapsed && (
+                  <motion.p
+                    key={`section-${section.label}`}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={labelTransition}
+                    className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wider overflow-hidden whitespace-nowrap"
+                  >
+                    {section.label}
+                  </motion.p>
+                )}
+              </AnimatePresence>
               {section.items.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
                 const isActive = pathname === item.href
                 const badgeCount = item.badgeKey ? counts[item.badgeKey] : 0
@@ -214,29 +284,38 @@ export function Sidebar() {
                       collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
                       isActive
                         ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        : "text-muted-foreground hover:bg-slate-100/50 dark:hover:bg-slate-800/50 hover:text-accent-foreground"
                     )}
                   >
-                    {/* Active indicator bar */}
+                    {/* Animated active-state glow bar */}
                     {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-primary-foreground" />
+                      <span className="sidebar-active-bar" aria-hidden="true" />
                     )}
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {!collapsed && (
-                      <>
-                        <span className="truncate flex-1">{item.name}</span>
-                        {badgeCount > 0 && (
-                          <span className={cn(
-                            "ml-auto text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5",
-                            isActive
-                              ? "bg-primary-foreground/20 text-primary-foreground"
-                              : "bg-primary/10 text-primary"
-                          )}>
-                            {badgeCount > 99 ? "99+" : badgeCount}
-                          </span>
-                        )}
-                      </>
-                    )}
+                    <AnimatePresence mode="wait" initial={false}>
+                      {!collapsed && (
+                        <motion.span
+                          key={`label-${item.href}`}
+                          initial={{ opacity: 0, width: 0 }}
+                          animate={{ opacity: 1, width: "auto" }}
+                          exit={{ opacity: 0, width: 0 }}
+                          transition={labelTransition}
+                          className="overflow-hidden whitespace-nowrap flex-1 flex items-center gap-3"
+                        >
+                          <span className="truncate flex-1">{item.name}</span>
+                          {badgeCount > 0 && (
+                            <span className={cn(
+                              "ml-auto text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5",
+                              isActive
+                                ? "bg-primary-foreground/20 text-primary-foreground"
+                                : "bg-primary/10 text-primary"
+                            )}>
+                              {badgeCount > 99 ? "99+" : badgeCount}
+                            </span>
+                          )}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
                     {/* Badge dot in collapsed mode */}
                     {collapsed && badgeCount > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
@@ -287,7 +366,13 @@ export function Sidebar() {
                 title="Collapse sidebar"
                 aria-label="Collapse sidebar"
               >
-                <ChevronsLeft className="h-4 w-4" />
+                <motion.span
+                  animate={{ rotate: collapsed ? 180 : 0 }}
+                  transition={widthTransition}
+                  className="inline-flex"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </motion.span>
               </button>
             </div>
           ) : (
@@ -298,12 +383,18 @@ export function Sidebar() {
                 title="Expand sidebar"
                 aria-label="Expand sidebar"
               >
-                <ChevronsRight className="h-4 w-4" />
+                <motion.span
+                  animate={{ rotate: collapsed ? 180 : 0 }}
+                  transition={widthTransition}
+                  className="inline-flex"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </motion.span>
               </button>
             </div>
           )}
         </div>
-      </aside>
+      </motion.aside>
     </>
   )
 }

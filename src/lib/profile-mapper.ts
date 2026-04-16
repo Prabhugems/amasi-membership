@@ -144,6 +144,8 @@ export function dbToFormData(row: Record<string, any>): ProfileFormData {
 
 // Form field → DB column mapping (only editable fields)
 const formToDbMap: Record<string, string> = {
+  email: "email",
+  phone: "phone",
   salutation: "salutation",
   fatherName: "father_name",
   dob: "date_of_birth",
@@ -225,6 +227,8 @@ export interface ChangeEntry {
 // Human-readable labels for DB columns
 const fieldLabels: Record<string, string> = {
   name: "Full Name",
+  email: "Email",
+  phone: "Mobile Number",
   salutation: "Salutation",
   father_name: "Father's Name",
   date_of_birth: "Date of Birth",

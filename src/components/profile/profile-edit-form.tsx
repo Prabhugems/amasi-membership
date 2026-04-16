@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { ChevronDown, ChevronRight, CheckCircle2, AlertCircle, CircleDot, Camera, User, MapPin, GraduationCap, ShieldCheck, Zap, Lock, FileText, Upload, ExternalLink, Loader2, Mail, Hash, CalendarDays, ImagePlus, Search, BookOpen, Award, Plus, Info, ArrowRight, CloudUpload, Eye, RefreshCw, FileImage, File as FileIcon, X, Briefcase, Building2, Trash2 } from "lucide-react"
+import { ChevronDown, CheckCircle2, AlertCircle, CircleDot, Camera, User, MapPin, GraduationCap, ShieldCheck, Zap, Lock, FileText, Upload, Loader2, Mail, Hash, CalendarDays, ImagePlus, Search, Award, Plus, Info, ArrowRight, CloudUpload, Eye, RefreshCw, File as FileIcon, X, Briefcase, Building2, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -83,9 +83,10 @@ interface ProfileEditFormProps {
   onChange: (updated: ProfileFormData) => void
   onSave: () => void
   onCancel: () => void
+  isAdmin?: boolean
 }
 
-export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEditFormProps) {
+export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = false }: ProfileEditFormProps) {
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["personal", "address", "education", "registration", "documents", "experience", "clinic"]))
   const [quickFill, setQuickFill] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
@@ -508,30 +509,106 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
           <div className="flex items-start gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">Member Profile</span>
+                {isAdmin ? (
+                  <ShieldCheck className="h-3 w-3 text-primary shrink-0" />
+                ) : (
+                  <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
+                )}
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">
+                  {isAdmin ? "Admin Edit — Member Profile" : "Member Profile"}
+                </span>
               </div>
-              <p className="text-xl font-bold tracking-tight truncate">
-                {data.salutation} {data.firstName} {data.middleName} {data.lastName}
-              </p>
+              {!isAdmin && (
+                <p className="text-xl font-bold tracking-tight truncate">
+                  {data.salutation} {data.firstName} {data.middleName} {data.lastName}
+                </p>
+              )}
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Hash className="h-3 w-3" />
                   AMASI {data.amasi_number}
                 </span>
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Mail className="h-3 w-3" />
-                  {data.email}
-                </span>
+                {!isAdmin && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Mail className="h-3 w-3" />
+                    {data.email}
+                  </span>
+                )}
               </div>
             </div>
             <Badge variant={data.membership_type === "LM" ? "default" : "secondary"} className="shrink-0 text-[11px]">
               {data.membership_type}
             </Badge>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-3 border-t border-border/40 pt-2.5">
-            Contact the admin to update your name
-          </p>
+          {isAdmin && (
+            <div className="mt-4 pt-3 border-t border-border/40 grid gap-3 sm:grid-cols-4">
+              <div className="sm:col-span-1">
+                <Label className="text-xs font-medium">Salutation</Label>
+                <Input
+                  value={data.salutation}
+                  onChange={(e) => onChange({ ...data, salutation: e.target.value })}
+                  className="mt-1.5"
+                  placeholder="Dr."
+                />
+              </div>
+              <div className="sm:col-span-1">
+                <Label className="text-xs font-medium">First Name</Label>
+                <Input
+                  value={data.firstName}
+                  onChange={(e) => onChange({ ...data, firstName: e.target.value })}
+                  className="mt-1.5"
+                />
+              </div>
+              <div className="sm:col-span-1">
+                <Label className="text-xs font-medium">Middle Name</Label>
+                <Input
+                  value={data.middleName}
+                  onChange={(e) => onChange({ ...data, middleName: e.target.value })}
+                  className="mt-1.5"
+                />
+              </div>
+              <div className="sm:col-span-1">
+                <Label className="text-xs font-medium">Last Name</Label>
+                <Input
+                  value={data.lastName}
+                  onChange={(e) => onChange({ ...data, lastName: e.target.value })}
+                  className="mt-1.5"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-medium flex items-center gap-1.5">
+                  <Mail className="h-3 w-3" />
+                  Email (sign-in identity)
+                </Label>
+                <Input
+                  type="email"
+                  value={data.email}
+                  onChange={(e) => onChange({ ...data, email: e.target.value.trim() })}
+                  className="mt-1.5"
+                  placeholder="member@example.com"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-medium">Mobile Number</Label>
+                <Input
+                  type="tel"
+                  value={data.phone}
+                  onChange={(e) => onChange({ ...data, phone: e.target.value.replace(/\D/g, "") })}
+                  className="mt-1.5"
+                  placeholder="9876543210"
+                  inputMode="numeric"
+                />
+              </div>
+              <p className="sm:col-span-4 text-[11px] text-muted-foreground">
+                Admin session: all identity fields are editable. Every change is recorded in the audit log.
+              </p>
+            </div>
+          )}
+          {!isAdmin && (
+            <p className="text-[11px] text-muted-foreground mt-3 border-t border-border/40 pt-2.5">
+              Contact the admin to update your name, email, or mobile number.
+            </p>
+          )}
         </div>
 
         {/* Divider label */}
@@ -1032,6 +1109,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel }: ProfileEdi
                     <span>{uploadError}</span>
                     <button
                       type="button"
+                      aria-label="Dismiss error"
                       className="ml-auto p-0.5 hover:bg-red-100 rounded"
                       onClick={(e) => { e.preventDefault(); setUploadError(null); setUploadErrorDoc(null) }}
                     >

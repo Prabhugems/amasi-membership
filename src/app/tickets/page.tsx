@@ -5,9 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Ticket,
   Search,
-  CircleDot,
   Clock,
-  CheckCircle2,
   XCircle,
   Send,
   ChevronDown,
@@ -54,7 +52,7 @@ const STATUS_CONFIG: Record<
   open: {
     label: "Open",
     variant: "warning",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
+    className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse",
     dotColor: "bg-amber-500",
     tabBg: "bg-amber-50 border-amber-200 hover:bg-amber-100",
     tabText: "text-amber-700",
@@ -62,7 +60,7 @@ const STATUS_CONFIG: Record<
   in_progress: {
     label: "In Progress",
     variant: "default",
-    className: "bg-blue-50 text-blue-700 border-blue-200",
+    className: "bg-blue-50 text-blue-700 border-blue-200 soft-pulse",
     dotColor: "bg-blue-500",
     tabBg: "bg-blue-50 border-blue-200 hover:bg-blue-100",
     tabText: "text-blue-700",
@@ -78,10 +76,10 @@ const STATUS_CONFIG: Record<
   closed: {
     label: "Closed",
     variant: "secondary",
-    className: "bg-gray-100 text-gray-500 border-gray-200",
+    className: "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700",
     dotColor: "bg-gray-400",
-    tabBg: "bg-gray-50 border-gray-200 hover:bg-gray-100",
-    tabText: "text-gray-500",
+    tabBg: "bg-gray-50 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800",
+    tabText: "text-gray-500 dark:text-slate-400",
   },
 }
 
@@ -91,7 +89,7 @@ const PRIORITY_CONFIG: Record<
 > = {
   low: {
     label: "Low",
-    className: "bg-gray-50 text-gray-600 border-gray-200",
+    className: "bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-700",
     borderColor: "border-l-gray-300",
     dotColor: "bg-gray-400",
   },
@@ -386,7 +384,7 @@ function ChatBubble({ reply }: { reply: TicketReply }) {
           className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 shadow-sm ${
             isAdmin
               ? "bg-teal-100 text-teal-700"
-              : "bg-gray-100 text-gray-500"
+              : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
           }`}
         >
           {isAdmin ? (
@@ -401,13 +399,13 @@ function ChatBubble({ reply }: { reply: TicketReply }) {
             className={`px-4 py-3 text-sm leading-relaxed ${
               isAdmin
                 ? "bg-teal-600 text-white rounded-2xl rounded-tr-md shadow-md"
-                : "bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-md shadow-sm"
+                : "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 text-gray-800 dark:text-slate-200 rounded-2xl rounded-tl-md shadow-sm"
             }`}
           >
             {text && <p className="whitespace-pre-wrap">{text}</p>}
             {/* Inline attachment */}
             {url && (
-              <div className={`mt-2 ${text ? "pt-2 border-t" : ""} ${isAdmin ? "border-teal-500/30" : "border-gray-100"}`}>
+              <div className={`mt-2 ${text ? "pt-2 border-t" : ""} ${isAdmin ? "border-teal-500/30" : "border-gray-100 dark:border-slate-800"}`}>
                 {isImage ? (
                   <a href={url} target="_blank" rel="noopener noreferrer" className="block">
                     <img
@@ -424,7 +422,7 @@ function ChatBubble({ reply }: { reply: TicketReply }) {
                     className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg transition-colors ${
                       isAdmin
                         ? "bg-teal-500/30 text-teal-50 hover:bg-teal-500/40"
-                        : "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200"
+                        : "bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700"
                     }`}
                   >
                     <FileText className="h-3.5 w-3.5" />
@@ -752,7 +750,7 @@ function TicketsContent() {
         style={{ height: "calc(100vh - 160px)" }}
       >
         {/* ============ LEFT PANEL: Ticket List ============ */}
-        <div className="w-[380px] min-w-[320px] border-r flex flex-col bg-white">
+        <div className="w-[380px] min-w-[320px] border-r flex flex-col bg-white dark:bg-slate-900">
           {/* Search */}
           <div className="p-3 border-b">
             <form onSubmit={handleSearch}>
@@ -765,7 +763,7 @@ function TicketsContent() {
                     setSearchQuery(e.target.value)
                     if (!e.target.value) setSearchTerm("")
                   }}
-                  className="pl-9 h-9 text-xs bg-gray-50/80 border-gray-200 focus:bg-white transition-colors"
+                  className="pl-9 h-9 text-xs bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-colors"
                 />
               </div>
             </form>
@@ -785,7 +783,7 @@ function TicketsContent() {
                     className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border whitespace-nowrap transition-all duration-150 ${
                       isActive
                         ? tab.color
-                        : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50 hover:text-gray-700"
+                        : "bg-white dark:bg-slate-900 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/60 hover:text-gray-700 dark:hover:text-slate-300"
                     }`}
                   >
                     {tab.label}
@@ -794,7 +792,7 @@ function TicketsContent() {
                         className={`ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
                           isActive
                             ? "bg-white/25 text-inherit"
-                            : "bg-gray-100 text-gray-500"
+                            : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
                         }`}
                       >
                         {count}
@@ -811,7 +809,7 @@ function TicketsContent() {
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="w-full appearance-none rounded-md border border-gray-200 bg-gray-50/80 px-2.5 py-1.5 pr-7 text-[11px] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="w-full appearance-none rounded-md border border-gray-200 dark:border-slate-700 bg-gray-50/80 dark:bg-slate-800/60 px-2.5 py-1.5 pr-7 text-[11px] text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <option value="">All Categories</option>
                   {CATEGORIES.map((c) => (
@@ -851,14 +849,14 @@ function TicketsContent() {
           </div>
 
           {/* Bottom count */}
-          <div className="px-4 py-2 border-t bg-gray-50/50 text-[10px] text-muted-foreground/60 font-medium">
+          <div className="px-4 py-2 border-t bg-gray-50/50 dark:bg-slate-800/40 text-[10px] text-muted-foreground/60 font-medium">
             {sortedTickets.length} ticket{sortedTickets.length !== 1 ? "s" : ""}
             {statusFilter && ` (${STATUS_CONFIG[statusFilter]?.label || statusFilter})`}
           </div>
         </div>
 
         {/* ============ RIGHT PANEL: Conversation ============ */}
-        <div className="flex-1 flex flex-col min-w-0 bg-gray-50/30">
+        <div className="flex-1 flex flex-col min-w-0 bg-gray-50/30 dark:bg-slate-800/30">
           {!selectedTicketId ? (
             <EmptyConversation />
           ) : detailLoading || !ticketDetail ? (
@@ -873,7 +871,7 @@ function TicketsContent() {
           ) : (
             <>
               {/* Ticket header */}
-              <div className="px-6 py-3.5 border-b bg-white shrink-0">
+              <div className="px-6 py-3.5 border-b bg-white dark:bg-slate-900 shrink-0">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h3 className="text-base font-bold truncate leading-tight">
@@ -907,7 +905,7 @@ function TicketsContent() {
               </div>
 
               {/* Admin action bar */}
-              <div className="px-6 py-2.5 border-b bg-white/80 backdrop-blur-sm flex items-center gap-4 flex-wrap shrink-0">
+              <div className="px-6 py-2.5 border-b bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center gap-4 flex-wrap shrink-0">
                 {/* Status dropdown */}
                 <div className="flex items-center gap-1.5">
                   <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
@@ -917,7 +915,7 @@ function TicketsContent() {
                     <select
                       value={editStatus}
                       onChange={(e) => setEditStatus(e.target.value)}
-                      className="appearance-none rounded-lg border border-gray-200 bg-white pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                      className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
                     >
                       {STATUS_OPTIONS.map((s) => (
                         <option key={s} value={s}>
@@ -938,7 +936,7 @@ function TicketsContent() {
                     <select
                       value={editPriority}
                       onChange={(e) => setEditPriority(e.target.value)}
-                      className="appearance-none rounded-lg border border-gray-200 bg-white pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                      className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
                     >
                       {PRIORITY_OPTIONS.map((p) => (
                         <option key={p} value={p}>
@@ -959,7 +957,7 @@ function TicketsContent() {
                     <select
                       value={editAssignee}
                       onChange={(e) => setEditAssignee(e.target.value)}
-                      className="appearance-none rounded-lg border border-gray-200 bg-white pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                      className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
                     >
                       {ADMIN_ASSIGNEES.map((a) => (
                         <option key={a} value={a}>
@@ -976,7 +974,7 @@ function TicketsContent() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs gap-1.5 border-gray-200 hover:bg-gray-50"
+                    className="h-7 text-xs gap-1.5 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/60"
                     onClick={handleSaveChanges}
                     disabled={updateMutation.isPending}
                   >
@@ -1020,11 +1018,11 @@ function TicketsContent() {
                 {/* Original message */}
                 <div className="flex justify-start mb-5">
                   <div className="flex gap-2.5 max-w-[75%]">
-                    <div className="shrink-0 h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold mt-1 shadow-sm text-gray-600">
+                    <div className="shrink-0 h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold mt-1 shadow-sm text-gray-600 dark:text-slate-400">
                       {ticketDetail.name?.charAt(0)?.toUpperCase() || "?"}
                     </div>
                     <div>
-                      <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-md px-4 py-3.5 shadow-sm">
+                      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl rounded-tl-md px-4 py-3.5 shadow-sm">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-xs font-bold text-foreground">
                             {ticketDetail.name}
@@ -1034,7 +1032,7 @@ function TicketsContent() {
                             opened this ticket
                           </span>
                         </div>
-                        <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-700">
+                        <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-700 dark:text-slate-300">
                           {ticketDetail.description}
                         </p>
                       </div>
@@ -1054,10 +1052,10 @@ function TicketsContent() {
               </div>
 
               {/* Reply composer */}
-              <div className="border-t bg-white px-6 py-3.5 shrink-0 space-y-2.5">
+              <div className="border-t bg-white dark:bg-slate-900 px-6 py-3.5 shrink-0 space-y-2.5">
                 {/* Quick reply templates */}
                 {showQuickReplies && (
-                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 shadow-sm">
+                  <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                         <Zap className="h-3 w-3 text-amber-500" />
@@ -1065,6 +1063,7 @@ function TicketsContent() {
                       </span>
                       <button
                         onClick={() => setShowQuickReplies(false)}
+                        aria-label="Hide quick replies"
                         className="text-muted-foreground/50 hover:text-foreground transition-colors"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1112,6 +1111,7 @@ function TicketsContent() {
                     </div>
                     <button
                       onClick={() => setAttachedFile(null)}
+                      aria-label="Remove attachment"
                       className="text-teal-500 hover:text-teal-700 transition-colors shrink-0"
                     >
                       <X className="h-4 w-4" />
@@ -1136,7 +1136,7 @@ function TicketsContent() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-10 w-10 p-0 shrink-0 hover:bg-gray-100"
+                    className="h-10 w-10 p-0 shrink-0 hover:bg-gray-100 dark:hover:bg-slate-800"
                     onClick={() => fileInputRef.current?.click()}
                     title="Attach file"
                   >
@@ -1156,7 +1156,7 @@ function TicketsContent() {
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     rows={2}
-                    className="flex-1 resize-none min-h-[42px] max-h-[120px] bg-gray-50/80 border-gray-200 focus:bg-white transition-colors"
+                    className="flex-1 resize-none min-h-[42px] max-h-[120px] bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-colors"
                     onKeyDown={(e) => {
                       if (
                         e.key === "Enter" &&

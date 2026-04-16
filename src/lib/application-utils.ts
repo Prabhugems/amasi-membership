@@ -1,11 +1,22 @@
 // Application utilities: reference numbers, confirmation emails, duplicate detection
 
+import { randomBytes } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase"
 
-/** Generate a unique application reference number: AMASI-2026-XXXXX */
+/**
+ * Values containing PostgREST filter-syntax characters (`,` `(` `)` `.` `\` `"`)
+ * cannot be safely interpolated into a `.or()` filter string. We reject them
+ * before querying rather than building a corrupted filter.
+ */
+function isUnsafeForOrFilter(value: string): boolean {
+  return /[,()."\\]/.test(value)
+}
+
+/** Generate a unique application reference number: AMASI-2026-XXXXXXXX (10 hex chars) */
 export function generateRefNumber(): string {
   const year = new Date().getFullYear()
-  const random = Math.floor(10000 + Math.random() * 90000)
+  // 5 bytes → 10 hex chars → 16^10 ≈ 1.1 trillion values per year
+  const random = randomBytes(5).toString("hex").toUpperCase()
   return `AMASI-${year}-${random}`
 }
 
@@ -17,17 +28,49 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
 }> {
   const supabase = createAdminClient()
 
-  // Check membership_applications table by email/phone
-  const { data } = await supabase
-    .from("membership_applications")
-    .select("id, reference_number, status, created_at")
-    .or(`email.eq.${email},mobile.eq.${mobile}`)
-    .order("created_at", { ascending: false })
-    .limit(1)
+  // Check membership_applications table by email/phone using two separate queries
+  // (instead of a string-interpolated .or() which is vulnerable to filter injection
+  // when values contain commas/parens/dots/quotes).
+  const emailSafe = !isUnsafeForOrFilter(email)
+  const mobileSafe = !isUnsafeForOrFilter(mobile)
 
-  if (data && data.length > 0) {
+  type AppRow = { id: string; reference_number: string; status: string; created_at: string }
+  const appRows: AppRow[] = []
+  if (emailSafe && email) {
+    const { data: byEmail } = await supabase
+      .from("membership_applications")
+      .select("id, reference_number, status, created_at")
+      .eq("email", email)
+      .order("created_at", { ascending: false })
+      .limit(1)
+    if (byEmail) appRows.push(...byEmail)
+  }
+  if (mobileSafe && mobile) {
+    const { data: byMobile } = await supabase
+      .from("membership_applications")
+      .select("id, reference_number, status, created_at")
+      .eq("mobile", mobile)
+      .order("created_at", { ascending: false })
+      .limit(1)
+    if (byMobile) appRows.push(...byMobile)
+  }
+
+  // Pick the most-recently-created row across both queries
+  appRows.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+  const data = appRows.slice(0, 1)
+
+  if (data.length > 0) {
     const app = data[0]
-    if (app.status === "pending" || app.status === "submitted" || app.status === "under_review" || app.status === "pending_review") {
+    // `ai_approved` is included to close the race where an application has been
+    // auto-approved but the `members` row creation is still in-flight — a second
+    // submission with the same email could otherwise sneak past the dup check.
+    if (
+      app.status === "pending" ||
+      app.status === "submitted" ||
+      app.status === "under_review" ||
+      app.status === "pending_review" ||
+      app.status === "ai_approved"
+    ) {
       return {
         isDuplicate: true,
         existingRef: app.reference_number,
@@ -69,17 +112,30 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
     }
   }
 
-  // Also check members table by email/phone
-  const { data: members } = await supabase
-    .from("members")
-    .select("amasi_number, email, status")
-    .or(`email.ilike.${email},phone.eq.${mobile}`)
-    .limit(1)
+  // Also check members table by email/phone via two separate queries (no filter injection).
+  type MemberRow = { amasi_number: number; email: string | null; status: string | null }
+  const memberRows: MemberRow[] = []
+  if (emailSafe && email) {
+    const { data: byEmail } = await supabase
+      .from("members")
+      .select("amasi_number, email, status")
+      .ilike("email", email)
+      .limit(1)
+    if (byEmail) memberRows.push(...byEmail)
+  }
+  if (mobileSafe && mobile) {
+    const { data: byPhone } = await supabase
+      .from("members")
+      .select("amasi_number, email, status")
+      .eq("phone", mobile)
+      .limit(1)
+    if (byPhone) memberRows.push(...byPhone)
+  }
 
-  if (members && members.length > 0) {
+  if (memberRows.length > 0) {
     return {
       isDuplicate: true,
-      message: `An active membership already exists for this email/phone (AMASI #${members[0].amasi_number}).`,
+      message: `An active membership already exists for this email/phone (AMASI #${memberRows[0].amasi_number}).`,
     }
   }
 

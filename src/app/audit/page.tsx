@@ -209,7 +209,7 @@ export default function AuditPage() {
                       return (
                         <tr
                           key={entry.id}
-                          className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                          className="border-b last:border-0 hover:bg-muted/30 transition-colors row-glow"
                         >
                           <td className="py-3 pr-3">
                             <div>

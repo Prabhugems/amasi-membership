@@ -1,21 +1,38 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { SidebarProvider } from "@/components/providers/sidebar-provider"
 import { MainContent } from "@/components/layout/main-content"
+import { CommandPaletteProvider } from "@/components/command/command-palette-provider"
+import { ShortcutHelp } from "@/components/keyboard/shortcut-help"
+import { NavChord } from "@/components/keyboard/nav-chord"
+import { ThemeProvider } from "@/components/providers/theme-provider"
+import { FocusModeProvider } from "@/components/providers/focus-mode-provider"
+import { ExitFocusPill } from "@/components/focus/exit-focus-pill"
+import { ViewTransitions } from "@/components/transitions/view-transitions"
+import { PageTransition } from "@/components/transitions/page-transition"
+import { DynamicTitle } from "@/components/header/dynamic-title"
 import { Toaster } from "sonner"
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const fraunces = Fraunces({
+  variable: "--font-display",
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+})
+
+const interTight = Inter_Tight({
+  variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
 })
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
   display: "swap",
 })
@@ -47,16 +64,29 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="en" className={`${fraunces.variable} ${interTight.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background">
         <QueryProvider>
-          <SidebarProvider>
-            <Sidebar />
-            <MainContent>
-              <Header />
-              <main className="p-6">{children}</main>
-            </MainContent>
-          </SidebarProvider>
+          <ThemeProvider defaultTheme="system">
+            <SidebarProvider>
+              <FocusModeProvider>
+                <CommandPaletteProvider>
+                  <ViewTransitions />
+                  <DynamicTitle />
+                  <NavChord />
+                  <ShortcutHelp />
+                  <Sidebar />
+                  <MainContent>
+                    <Header />
+                    <main className="p-6">
+                      <PageTransition>{children}</PageTransition>
+                    </main>
+                  </MainContent>
+                </CommandPaletteProvider>
+                <ExitFocusPill />
+              </FocusModeProvider>
+            </SidebarProvider>
+          </ThemeProvider>
           <Toaster position="top-right" />
         </QueryProvider>
         <script

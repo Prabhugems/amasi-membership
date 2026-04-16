@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, getMemberSession } from "@/lib/auth"
+import { verifyMemberOwnership } from "@/lib/member-ownership"
 import { extractTextFromImage } from "@/lib/ocr"
 import { Resend } from "resend"
 
@@ -12,6 +13,12 @@ function getResend() {
 
 export async function POST(request: NextRequest) {
   try {
+    const adminSession = await getAdminSession()
+    const memberSession = adminSession ? null : await getMemberSession()
+    if (!adminSession && !memberSession) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const formData = await request.formData()
     const dataStr = formData.get("data") as string
 
@@ -27,6 +34,14 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+
+    // If a member is submitting, ensure they own this memberId
+    if (!adminSession && memberSession?.email) {
+      const owns = await verifyMemberOwnership(supabase, memberSession.email as string, memberId)
+      if (!owns) {
+        return Response.json({ error: "Forbidden" }, { status: 403 })
+      }
+    }
 
     // Verify member exists and is ALM (try by id first, then by amasi_number)
     let member = null

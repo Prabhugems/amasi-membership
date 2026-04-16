@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
+import { verifyMemberOwnership } from "@/lib/member-ownership"
 
 export async function GET(
   request: NextRequest,
@@ -20,6 +21,12 @@ export async function GET(
 
   try {
     const supabase = createAdminClient()
+
+    // IDOR guard: non-admin members may only read their own clinics
+    if (!adminSession && memberSession?.email) {
+      const ok = await verifyMemberOwnership(supabase, String(memberSession.email), id)
+      if (!ok) return Response.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     const { data, error } = await supabase
       .from("member_clinics")
@@ -76,6 +83,12 @@ export async function POST(
     }
 
     const supabase = createAdminClient()
+
+    // IDOR guard: non-admin members may only modify their own clinics
+    if (!adminSession && memberSession?.email) {
+      const ok = await verifyMemberOwnership(supabase, String(memberSession.email), id)
+      if (!ok) return Response.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     // Delete existing clinics for this member
     const { error: deleteError } = await supabase

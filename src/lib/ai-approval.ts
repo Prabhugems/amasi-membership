@@ -92,38 +92,75 @@ export interface ApprovalCheck {
   detail: string
 }
 
+export type NmcStatus = "verified" | "name_mismatch" | "not_found" | "skipped"
+
+export interface NmcVerification {
+  status: NmcStatus
+  checked_at: string              // ISO timestamp
+  returned_name: string | null
+  returned_council: string | null
+  returned_degree: string | null
+}
+
 export interface ApprovalResult {
   totalScore: number        // 0-100
   autoApprove: boolean
   checks: ApprovalCheck[]
   flags: string[]
+  nmcVerification: NmcVerification | null
 }
 
-/** Call NMC API to verify doctor registration */
-async function verifyWithNmc(regNo: string, state?: string): Promise<{ verified: boolean; name?: string; council?: string; degree?: string }> {
-  if (!regNo) return { verified: false }
+type NmcResult =
+  | { reachable: true; found: true; name: string; council: string; degree: string }
+  | { reachable: true; found: false }
+  | { reachable: false }
+
+// Gov API SLA: either answers <2s or is down. Short, non-additive retry.
+async function callNmcOnce(regNo: string, timeoutMs: number): Promise<any> {
+  const res = await fetch("https://www.nmc.org.in/MCIRest/open/getDataFromService?service=searchDoctor", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ registrationNo: regNo.trim(), smcId: "" }),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!res.ok) throw new Error(`NMC HTTP ${res.status}`)
+  return res.json()
+}
+
+/** Call NMC API to verify doctor registration. Retries once with shorter timeout. */
+async function verifyWithNmc(regNo: string, state?: string): Promise<NmcResult> {
+  if (!regNo) return { reachable: true, found: false }
+
+  let data: any
   try {
-    const res = await fetch("https://www.nmc.org.in/MCIRest/open/getDataFromService?service=searchDoctor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ registrationNo: regNo.trim(), smcId: "" }),
-      signal: AbortSignal.timeout(10000),
-    })
-    if (!res.ok) return { verified: false }
-    const data = await res.json()
-    if (!Array.isArray(data) || data.length === 0) return { verified: false }
-
-    let match = data
-    if (state) {
-      const stateLower = state.toLowerCase()
-      const filtered = data.filter((d: any) => (d.smcName || "").toLowerCase().includes(stateLower))
-      if (filtered.length > 0) match = filtered
+    data = await callNmcOnce(regNo, 5000)
+  } catch (err1) {
+    console.warn("NMC attempt 1 failed:", (err1 as Error)?.message)
+    await new Promise((r) => setTimeout(r, 2000))
+    try {
+      data = await callNmcOnce(regNo, 3000)
+    } catch (err2) {
+      console.warn("NMC attempt 2 failed:", (err2 as Error)?.message)
+      return { reachable: false }
     }
+  }
 
-    const doc = match[0]
-    return { verified: true, name: doc.firstName, council: doc.smcName, degree: doc.doctorDegree }
-  } catch {
-    return { verified: false }
+  if (!Array.isArray(data) || data.length === 0) return { reachable: true, found: false }
+
+  let match = data
+  if (state) {
+    const stateLower = state.toLowerCase()
+    const filtered = data.filter((d: any) => (d.smcName || "").toLowerCase().includes(stateLower))
+    if (filtered.length > 0) match = filtered
+  }
+
+  const doc = match[0]
+  return {
+    reachable: true,
+    found: true,
+    name: doc.firstName || "",
+    council: doc.smcName || "",
+    degree: doc.doctorDegree || "",
   }
 }
 
@@ -296,28 +333,71 @@ export async function scoreApplication(
     detail: `${verifiedDocs}/${totalDocs} verified by AI${pendingDocs > 0 ? `, ${pendingDocs} pending` : ""}${rejectedDocs > 0 ? `, ${rejectedDocs} rejected` : ""}`,
   })
 
-  // --- 6. NMC Live Verification (weight: 20) ---
+  // --- 6. NMC Live Verification (weight: 20, or 0 when skipped) ---
   const formMciNumber = (formData.mciCouncilNumber || "").trim()
   const formMciState = formData.mciCouncilState || ""
   let nmcScore = 0
+  let nmcWeight = 20
+  let nmcPassed = false
   let nmcDetail = "Not checked"
+  let nmcVerification: NmcVerification | null = null
 
   if (formMciNumber) {
     const nmcResult = await verifyWithNmc(formMciNumber, formMciState)
-    if (nmcResult.verified) {
-      nmcScore = 100
-      nmcDetail = `NMC Verified: ${nmcResult.name} — ${nmcResult.council} (${nmcResult.degree})`
-      // Cross-check name
-      const nmcNameSim = similarity(formName, nmcResult.name || "")
-      if (nmcNameSim < 0.5) {
-        nmcScore = 60
-        flags.push(`NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}"`)
-        nmcDetail += ` — NAME MISMATCH`
-      }
-    } else {
+    const checkedAt = new Date().toISOString()
+
+    if (!nmcResult.reachable) {
+      // Gov API down — skip, don't penalize. Weight 0 renormalizes totalScore to /80.
       nmcScore = 0
+      nmcWeight = 0
+      nmcPassed = true
+      nmcDetail = "NMC service unreachable — verification skipped, re-verify manually"
+      flags.push("NMC service unreachable — verification skipped; admin to re-verify manually")
+      nmcVerification = {
+        status: "skipped",
+        checked_at: checkedAt,
+        returned_name: null,
+        returned_council: null,
+        returned_degree: null,
+      }
+    } else if (!nmcResult.found) {
+      nmcScore = 0
+      nmcPassed = false
       nmcDetail = `MCI #${formMciNumber} not found in NMC database`
       flags.push(`MCI number ${formMciNumber} not found in NMC Indian Medical Register`)
+      nmcVerification = {
+        status: "not_found",
+        checked_at: checkedAt,
+        returned_name: null,
+        returned_council: null,
+        returned_degree: null,
+      }
+    } else {
+      const nmcNameSim = similarity(formName, nmcResult.name)
+      if (nmcNameSim < 0.5) {
+        nmcScore = 60
+        nmcPassed = true
+        nmcDetail = `NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}" — ${nmcResult.council} (${nmcResult.degree})`
+        flags.push(`NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}"`)
+        nmcVerification = {
+          status: "name_mismatch",
+          checked_at: checkedAt,
+          returned_name: nmcResult.name,
+          returned_council: nmcResult.council,
+          returned_degree: nmcResult.degree,
+        }
+      } else {
+        nmcScore = 100
+        nmcPassed = true
+        nmcDetail = `NMC Verified: ${nmcResult.name} — ${nmcResult.council} (${nmcResult.degree})`
+        nmcVerification = {
+          status: "verified",
+          checked_at: checkedAt,
+          returned_name: nmcResult.name,
+          returned_council: nmcResult.council,
+          returned_degree: nmcResult.degree,
+        }
+      }
     }
   } else {
     nmcDetail = "No MCI number provided"
@@ -325,26 +405,35 @@ export async function scoreApplication(
 
   checks.push({
     check: "NMC Live Verification",
-    passed: nmcScore >= 60,
+    passed: nmcPassed,
     score: nmcScore,
-    weight: 20,
+    weight: nmcWeight,
     detail: nmcDetail,
   })
 
-  // --- Calculate total weighted score ---
+  // --- Calculate total weighted score (auto-renormalizes when NMC skipped → weight 0) ---
   const totalWeight = checks.reduce((sum, c) => sum + c.weight, 0)
   const weightedScore = checks.reduce((sum, c) => sum + (c.score * c.weight / 100), 0)
-  const totalScore = Math.round((weightedScore / totalWeight) * 100)
+  const totalScore = totalWeight > 0 ? Math.round((weightedScore / totalWeight) * 100) : 0
 
   // --- Auto-approve decision ---
+  // Critical checks = weight >= 20. NMC skipped (weight 0) drops out naturally.
+  // NMC name_mismatch forces manual review regardless of total score (the 60-point
+  // scoring is intentional, but a flagged name must never auto-approve).
   const hasBlockedDegree = isBlocked
   const allCriticalPassed = checks.filter(c => c.weight >= 20).every(c => c.passed)
-  const autoApprove = totalScore >= 80 && paymentPaid && !hasBlockedDegree && allCriticalPassed
+  const autoApprove =
+    totalScore >= 80 &&
+    paymentPaid &&
+    !hasBlockedDegree &&
+    allCriticalPassed &&
+    nmcVerification?.status !== "name_mismatch"
 
   return {
     totalScore,
     autoApprove,
     checks,
     flags,
+    nmcVerification,
   }
 }

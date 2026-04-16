@@ -205,6 +205,9 @@ export interface ApplicationFormData {
   imrRegNo: string
   asiMembershipNo: string
   asiState: string
+  // International license number (from active_license OCR for non-Indian members).
+  // NOT the same as MCI — kept in form state only, never overwrites mciCouncilNumber.
+  intlLicenseNumber: string
   // Clinic / Mailing Address
   clinicName: string
   clinicStreetLine1: string
@@ -284,6 +287,7 @@ export const INITIAL_FORM_DATA: ApplicationFormData = {
   imrRegNo: "",
   asiMembershipNo: "",
   asiState: "",
+  intlLicenseNumber: "",
   clinicName: "",
   clinicStreetLine1: "",
   clinicStreetLine2: "",

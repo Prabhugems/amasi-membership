@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode (ThemeProvider toggles `.dark` on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -26,8 +29,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
 }
 
 :root {
@@ -87,6 +91,17 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+.tabular-nums {
+  font-feature-settings: "tnum" on, "lnum" on;
 }
 
 /* ===== MICRO-INTERACTIONS ===== */
@@ -95,9 +110,8 @@ body {
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 textarea:focus,
 select:focus {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
-  transition: all 0.2s ease;
+  outline: none;
+  transition: box-shadow 0.2s ease, border-color 0.15s ease;
 }
 
 /* Input hover — subtle border change */
@@ -117,11 +131,6 @@ select:hover:not(:focus) {
 button:active:not(:disabled) {
   transform: scale(0.98);
   transition: transform 0.1s ease;
-}
-
-/* Cards and sections — smooth hover lift */
-[class*="border"]:not(input):not(select):not(textarea):not(hr):not(button) {
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 /* Labels — subtle transition */
@@ -320,6 +329,311 @@ input::placeholder, textarea::placeholder {
   color: #6b7280;
 }
 
+/* ===== DASHBOARD V4 ANIMATIONS ===== */
+
+/* Staggered reveal for dashboard sections */
+@keyframes kpi-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.dash-reveal {
+  animation: kpi-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dash-reveal-1 { animation-delay: 0ms; }
+.dash-reveal-2 { animation-delay: 80ms; }
+.dash-reveal-3 { animation-delay: 160ms; }
+.dash-reveal-4 { animation-delay: 240ms; }
+.dash-reveal-5 { animation-delay: 320ms; }
+.dash-reveal-6 { animation-delay: 400ms; }
+.dash-reveal-7 { animation-delay: 480ms; }
+.dash-reveal-8 { animation-delay: 560ms; }
+.dash-reveal-9 { animation-delay: 640ms; }
+
+/* Dashboard page background — subtle gradient mesh */
+.dashboard-bg {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(245, 158, 11, 0.03) 0%, transparent 40%),
+    #f8fafc;
+  background-attachment: fixed;
+}
+
+/* KPI value count-up — subtle scale pulse on mount */
+@keyframes value-pop {
+  from { opacity: 0; transform: scale(0.92); }
+  60% { opacity: 1; transform: scale(1.04); }
+  to { transform: scale(1); }
+}
+.value-pop { animation: value-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
+
+/* Soft shimmer over hero cards (very subtle) */
+@keyframes hero-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(150%); }
+}
+.hero-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: hero-shimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Connector line draw-in for activity timeline */
+@keyframes draw-line {
+  from { transform: scaleY(0); transform-origin: top; }
+  to { transform: scaleY(1); transform-origin: top; }
+}
+.draw-line { animation: draw-line 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
+
+/* Card hover lift for dashboard cards */
+.dash-card-hover {
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.dash-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.12),
+              0 4px 12px -4px rgba(15, 23, 42, 0.06);
+}
+.dark .dash-card-hover:hover {
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.5),
+              0 4px 12px -4px rgba(16, 185, 129, 0.08);
+}
+
+/* ===== HOVER + INTERACTION UTILITIES (used everywhere) ===== */
+
+/* Card lift on hover — apply to ANY card */
+.card-lift {
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.10),
+              0 4px 12px -4px rgba(15, 23, 42, 0.05);
+}
+.dark .card-lift:hover {
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.5),
+              0 4px 12px -4px rgba(99, 102, 241, 0.08);
+}
+
+/* Table row highlight with animated left accent — apply to <tr> */
+.row-glow {
+  border-left: 2px solid transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.row-glow:hover {
+  background-color: rgb(248 250 252); /* slate-50 */
+  border-left-color: rgb(129 140 248); /* indigo-400 */
+}
+.dark .row-glow:hover {
+  background-color: rgb(30 41 59 / 0.5); /* slate-800/50 */
+  border-left-color: rgb(129 140 248);
+}
+
+/* Icon pulse on hover — for action icon buttons */
+.icon-pulse {
+  transition: transform 150ms ease, color 150ms ease;
+}
+.icon-pulse:hover {
+  transform: scale(1.10);
+  color: rgb(99 102 241); /* indigo-500 */
+}
+
+/* Soft pulse for "in-progress" status badges */
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.soft-pulse { animation: soft-pulse 3s ease-in-out infinite; will-change: opacity; }
+
+@media (prefers-reduced-motion: reduce) {
+  .soft-pulse { animation: none; opacity: 1; }
+}
+
+/* Input focus ring — soft expanding glow */
+.input-focus-ring {
+  outline: none;
+  transition: box-shadow 200ms ease, border-color 150ms ease;
+}
+.input-focus-ring:focus,
+.input-focus-ring:focus-visible {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  border-color: rgb(99 102 241);
+}
+
+/* Sidebar nav active glow — animated left bar */
+@keyframes sidebar-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+.sidebar-active-bar {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(to bottom, rgb(99 102 241), rgb(45 212 191));
+  transform-origin: top;
+  animation: sidebar-bar-grow 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Button ripple — child span animates on click */
+@keyframes ripple-spread {
+  to { transform: scale(4); opacity: 0; }
+}
+.ripple-effect {
+  position: absolute;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple-spread 600ms ease-out;
+}
+
+/* ===== ALWAYS-ON AMBIENT EFFECTS ===== */
+
+/* Continuous breathing pulse for KPI radial glows — never stops */
+@keyframes glow-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+.glow-breathe {
+  animation: glow-breathe 6s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+/* Stagger glow timing per card so they don't pulse in unison */
+.glow-breathe-1 { animation-delay: 0s; }
+.glow-breathe-2 { animation-delay: 1.5s; }
+.glow-breathe-3 { animation-delay: 3s; }
+.glow-breathe-4 { animation-delay: 4.5s; }
+
+/* Subtle continuous gradient shift on hero card bg */
+@keyframes hero-gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.hero-gradient-shift {
+  background-size: 200% 200%;
+  animation: hero-gradient-shift 12s ease infinite;
+}
+
+/* Floating accent line — sweeps under section titles slowly */
+@keyframes accent-sweep {
+  0%, 100% { transform: translateX(0); opacity: 0.6; }
+  50% { transform: translateX(8px); opacity: 1; }
+}
+.accent-sweep {
+  animation: accent-sweep 4s ease-in-out infinite;
+}
+
+/* Sparkle rotation for icon badges */
+@keyframes badge-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.15); }
+  50% { box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.18); }
+}
+.badge-glow {
+  animation: badge-glow 3.5s ease-in-out infinite;
+}
+
+/* Funnel bar grow-in */
+@keyframes bar-grow {
+  from { width: 0; }
+}
+.bar-grow {
+  animation: bar-grow 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.4s both;
+}
+
+/* Funnel active-bar shimmer sweep (used via Tailwind arbitrary animation) */
+@keyframes funnel-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* Skeleton shimmer sweep — used for no-data KPI placeholders */
+@keyframes skeleton {
+  to { transform: translateX(200%); }
+}
+
+/* Pending KPI card pulse — outward amber glow that breathes every 2s when pendingCount > 0 */
+@keyframes pending-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  50%       { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.18); }
+}
+
+/* Live pulse dot (used in system health) */
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+.live-pulse { animation: live-pulse 2s infinite; }
+
+/* Reduce motion preference — only kill the EXPRESSIVE animations,
+   keep ambient breathing/hover so the dashboard never feels dead */
+/* Only kill the EXPRESSIVE one-time mount animations under reduced-motion.
+   Keep ambient breathing/hover/shimmer — they're gentle and don't trigger vestibular issues. */
+@media (prefers-reduced-motion: reduce) {
+  .dash-reveal,
+  .value-pop,
+  .draw-line,
+  .bar-grow {
+    animation: none !important;
+  }
+  /* hero-shimmer, glow-breathe, live-pulse, dash-card-hover stay on — they're ambient */
+}
+
+/* ===== DARK MODE — dashboard bg variant ===== */
+.dark .dashboard-bg {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 100% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(245, 158, 11, 0.05) 0%, transparent 40%),
+    #020617;
+  background-attachment: fixed;
+}
+
+/* ===== VIEW TRANSITIONS ===== */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 280ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  ::view-transition-old(root) { animation-name: vt-fade-out; }
+  ::view-transition-new(root) { animation-name: vt-fade-in; }
+
+  @keyframes vt-fade-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-8px); }
+  }
+  @keyframes vt-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
 /* ===== BACK-TO-TOP BUTTON ===== */
 .back-to-top {
   position: fixed;
@@ -335,4 +649,78 @@ input::placeholder, textarea::placeholder {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+}
+
+/* Flash success border for realtime updates */
+@keyframes flash-success {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.35); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.flash-success > * { animation: flash-success 1s ease-out; }
+.flash-success { border-radius: 1rem; }
+
+/* ===== ADMIN ACTIVITY PANEL ===== */
+@keyframes adminPanelSlideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.admin-activity-panel-slide-in {
+  animation: adminPanelSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-activity-panel-slide-in { animation: none !important; }
+}
+
+/* ===== ROW SELECTION INDICATOR ===== */
+
+/* Active row indicator — left border + subtle bg */
+.row-active {
+  border-left: 2px solid hsl(var(--primary, 15 118 110));
+  background-color: rgb(15 118 110 / 0.04);
+}
+.dark .row-active {
+  background-color: rgb(45 212 191 / 0.08);
+}
+
+/* Dim other rows when one is selected */
+.rows-dimmed tr:not(.row-active):not(thead tr) {
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+/* Also dim non-tr children (card-based lists) when rows-dimmed is applied */
+.rows-dimmed > [data-app-card]:not(.row-active),
+.rows-dimmed > *:not(.row-active):not(thead):not(thead tr) {
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+/* ===== FOCUS MODE =====
+   Sidebar collapse is driven by SidebarProvider (setCollapsed(true)) —
+   the existing `lg:w-16` collapsed state handles width + label hiding.
+   Only chrome-level tweaks remain here. */
+
+/* Hide secondary header items — keep only the last child group (actions) visible */
+body.focus-mode header > *:not(:last-child) {
+  visibility: hidden;
+}
+
+/* Shrink header chrome */
+body.focus-mode header {
+  height: 40px !important;
+  transition: height 0.25s ease;
+}
+
+/* Tighten main content padding */
+body.focus-mode main {
+  padding: 1rem 1.5rem !important;
+  transition: padding 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.focus-mode header,
+  body.focus-mode main { transition: none !important; }
 }

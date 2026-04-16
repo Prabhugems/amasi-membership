@@ -38,7 +38,7 @@ export function Autocomplete({ value, onChange, options, placeholder, className,
   }, [])
 
   return (
-    <div className={`relative ${open ? "z-[60]" : ""}`}>
+    <div className={`relative ${open ? "z-[100]" : ""}`}>
       <Input
         ref={inputRef}
         value={open ? search : value}
@@ -57,7 +57,7 @@ export function Autocomplete({ value, onChange, options, placeholder, className,
         autoComplete="off"
       />
       {open && filtered.length > 0 && (
-        <div ref={listRef} className="absolute z-[60] mt-1 w-full max-h-[200px] overflow-y-auto rounded-md border bg-popover shadow-lg">
+        <div ref={listRef} className="absolute z-[100] mt-1 w-full max-h-[240px] overflow-y-auto rounded-md border border-border bg-background text-foreground shadow-xl ring-1 ring-black/5">
           {filtered.map((opt, i) => (
             <button
               key={i}

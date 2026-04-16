@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon, Briefcase, Building2, Loader2, Search, XCircle } from "lucide-react"
+import { User, Mail, Phone, MapPin, GraduationCap, FileText, ExternalLink, AlertTriangle, AlertCircle, Pencil, Shield, Camera, Clock, History, CheckCircle2, ChevronRight, ImageIcon, Briefcase, Building2, Loader2, Search, XCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -91,7 +91,7 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
   const [experiences, setExperiences] = useState<WorkExperienceEntry[]>([])
   const [clinics, setClinics] = useState<ClinicEntry[]>([])
   const [nmcVerifying, setNmcVerifying] = useState(false)
-  const [nmcResult, setNmcResult] = useState<{ verified: boolean; doctors: any[]; message?: string } | null>(null)
+  const [nmcResult, setNmcResult] = useState<{ reachable?: boolean; verified: boolean; doctors: any[]; message?: string } | null>(null)
 
   const verifyNmc = useCallback(async () => {
     if (!data.mciCouncilNumber) return
@@ -104,7 +104,7 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
       const result = await res.json()
       setNmcResult(result)
     } catch {
-      setNmcResult({ verified: false, doctors: [], message: "Failed to connect to NMC" })
+      setNmcResult({ reachable: false, verified: false, doctors: [], message: "Failed to reach NMC. Please try again later." })
     } finally {
       setNmcVerifying(false)
     }
@@ -420,7 +420,12 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
                     )}
                     {nmcVerifying ? "Verifying..." : "Verify with NMC"}
                   </Button>
-                  {nmcResult && !nmcResult.verified && (
+                  {nmcResult && nmcResult.reachable === false && (
+                    <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50 gap-1 py-1">
+                      <AlertCircle className="h-3 w-3" /> Verification unavailable
+                    </Badge>
+                  )}
+                  {nmcResult && nmcResult.reachable !== false && !nmcResult.verified && (
                     <Badge variant="outline" className="text-xs text-red-600 border-red-300 bg-red-50 gap-1 py-1">
                       <XCircle className="h-3 w-3" /> Not found in NMC registry
                     </Badge>
@@ -446,7 +451,10 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
                     ))}
                   </div>
                 )}
-                {nmcResult && !nmcResult.verified && nmcResult.message && (
+                {nmcResult && nmcResult.reachable === false && nmcResult.message && (
+                  <p className="mt-2 text-xs text-amber-700">{nmcResult.message}</p>
+                )}
+                {nmcResult && nmcResult.reachable !== false && !nmcResult.verified && nmcResult.message && (
                   <p className="mt-2 text-xs text-red-500">{nmcResult.message}</p>
                 )}
               </div>

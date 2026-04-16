@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -172,6 +173,7 @@ function CompareRow({ label, formValue, ocrValue }: { label: string; formValue: 
 // ─── Main page ──────────────────────────────────────────────────────────────
 export default function PendingPage() {
   const [tab, setTab] = useState<TabFilter>("pending")
+  const reduced = useReducedMotion()
   const [search, setSearch] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actionMode, setActionMode] = useState<ActionMode>(null)
@@ -191,7 +193,7 @@ export default function PendingPage() {
   const [confidenceFilter, setConfidenceFilter] = useState<"" | "high" | "medium" | "low">("")
   const [showCompare, setShowCompare] = useState<string | null>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
-  const [nmcResults, setNmcResults] = useState<Record<string, { loading: boolean; verified?: boolean; doctors?: any[]; message?: string }>>({})
+  const [nmcResults, setNmcResults] = useState<Record<string, { loading: boolean; reachable?: boolean; verified?: boolean; doctors?: any[]; message?: string }>>({})
 
   const verifyNmc = useCallback(async (appId: string, regNo: string, state?: string) => {
     setNmcResults((prev) => ({ ...prev, [appId]: { loading: true } }))
@@ -202,7 +204,7 @@ export default function PendingPage() {
       const result = await res.json()
       setNmcResults((prev) => ({ ...prev, [appId]: { loading: false, ...result } }))
     } catch {
-      setNmcResults((prev) => ({ ...prev, [appId]: { loading: false, verified: false, message: "Failed to connect to NMC" } }))
+      setNmcResults((prev) => ({ ...prev, [appId]: { loading: false, reachable: false, verified: false, message: "Failed to reach NMC. Please try again later." } }))
     }
   }, [])
   const queryClient = useQueryClient()
@@ -419,10 +421,8 @@ export default function PendingPage() {
         setInternalNote("")
         setShowNotes(null)
       }
-    } else if (e.key === "?") {
-      e.preventDefault()
-      setShowKeyboardHelp(h => !h)
     }
+    // Note: '?' handler removed — the global ShortcutHelp listener handles it.
   }, [applications, focusIndex, expandedId, approveNotes, approveMutation, lightboxUrl])
 
   useEffect(() => {
@@ -609,7 +609,11 @@ export default function PendingPage() {
       {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/5 border border-primary/20">
-          <button onClick={deselectAll} className="text-muted-foreground hover:text-foreground">
+          <button
+            onClick={deselectAll}
+            aria-label="Clear selection"
+            className="text-muted-foreground hover:text-foreground"
+          >
             <X className="h-4 w-4" />
           </button>
           <span className="text-sm font-semibold">{selectedIds.size} selected</span>
@@ -668,6 +672,15 @@ export default function PendingPage() {
         </div>
       )}
 
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={tab}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, x: 40 }}
+          animate={reduced ? { opacity: 1 } : { opacity: 1, x: 0 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, x: -40 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="space-y-6"
+        >
       {/* Loading */}
       {isLoading && (
         <div className="flex items-center justify-center py-12">
@@ -688,7 +701,7 @@ export default function PendingPage() {
       )}
 
       {/* Application cards */}
-      <div className="space-y-3" ref={listRef}>
+      <div className={`space-y-3 ${selectedIds.size > 0 ? "rows-dimmed" : ""}`} ref={listRef}>
         {applications.map((app: any, idx: number) => {
           const isExpanded = expandedId === app.id
           const isFocused = focusIndex === idx
@@ -716,7 +729,7 @@ export default function PendingPage() {
             <Card
               key={app.id}
               data-app-card
-              className={`transition-all hover:shadow-md ${borderClass} ${isFocused ? "ring-2 ring-primary/40" : ""} ${isSelected ? "bg-primary/[0.02]" : ""}`}
+              className={`row-glow transition-all hover:shadow-md ${borderClass} ${isFocused ? "ring-2 ring-primary/40" : ""} ${isSelected ? "row-active bg-primary/[0.02]" : ""}`}
             >
               <CardContent className="p-5">
                 {/* Summary row */}
@@ -748,7 +761,7 @@ export default function PendingPage() {
                         app.status === "rejected" ? "destructive" :
                         app.status === "need_clarification" || app.status === "resubmit_requested" ? "outline" :
                         "warning"
-                      } className={`text-xs ${app.status === "need_clarification" ? "border-orange-300 text-orange-700 bg-orange-50" : app.status === "resubmit_requested" ? "border-amber-300 text-amber-700 bg-amber-50" : ""}`}>
+                      } className={`text-xs ${app.status === "need_clarification" ? "border-orange-300 text-orange-700 bg-orange-50 soft-pulse" : app.status === "resubmit_requested" ? "border-amber-300 text-amber-700 bg-amber-50 soft-pulse" : ["pending_review", "submitted", "pending"].includes(app.status) ? "soft-pulse" : ""}`}>
                         {app.status === "ai_approved" ? "AI Approved" :
                          app.status === "pending_review" ? "Needs Review" :
                          app.status === "submitted" ? "Submitted" :
@@ -781,7 +794,7 @@ export default function PendingPage() {
                         </span>
                       )}
                       {app.needs_manual_review && (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 soft-pulse">
                           <AlertCircle className="h-3 w-3" />
                           Manual Review
                         </span>
@@ -1024,6 +1037,10 @@ export default function PendingPage() {
                                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
                                       <CheckCircle className="h-3 w-3" /> NMC Verified
                                     </span>
+                                  ) : nmcResults[app.id].reachable === false ? (
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
+                                      <AlertCircle className="h-3 w-3" /> Verification unavailable
+                                    </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
                                       <XCircle className="h-3 w-3" /> Not found
@@ -1044,7 +1061,7 @@ export default function PendingPage() {
                                 </div>
                               )}
                               {nmcResults[app.id] && !nmcResults[app.id].loading && !nmcResults[app.id].verified && nmcResults[app.id].message && (
-                                <p className="mt-1.5 text-[10px] text-red-500">{nmcResults[app.id].message}</p>
+                                <p className={`mt-1.5 text-[10px] ${nmcResults[app.id].reachable === false ? "text-amber-700" : "text-red-500"}`}>{nmcResults[app.id].message}</p>
                               )}
                             </div>
                           )}
@@ -1337,7 +1354,7 @@ export default function PendingPage() {
                           value={actionMessage}
                           onChange={(e) => setActionMessage(e.target.value)}
                           placeholder="e.g. Please provide a clearer copy of your MCI registration certificate..."
-                          className="border-blue-200 bg-white min-h-[80px]"
+                          className="border-blue-200 bg-white dark:bg-slate-900 min-h-[80px]"
                         />
                         <div className="flex gap-2">
                           <Button
@@ -1366,7 +1383,7 @@ export default function PendingPage() {
                           value={actionMessage}
                           onChange={(e) => setActionMessage(e.target.value)}
                           placeholder="e.g. Your PG degree certificate appears to be a bank statement. Please upload the correct document..."
-                          className="border-amber-200 bg-white min-h-[80px]"
+                          className="border-amber-200 bg-white dark:bg-slate-900 min-h-[80px]"
                         />
                         <div className="flex gap-2">
                           <Button
@@ -1394,7 +1411,7 @@ export default function PendingPage() {
                           value={rejectReason}
                           onChange={(e) => setRejectReason(e.target.value)}
                           placeholder="e.g. Invalid MCI certificate, degree not verified..."
-                          className="border-red-200 bg-white min-h-[80px]"
+                          className="border-red-200 bg-white dark:bg-slate-900 min-h-[80px]"
                         />
                         <div className="flex gap-2">
                           <Button
@@ -1420,7 +1437,7 @@ export default function PendingPage() {
                           value={approveNotes}
                           onChange={(e) => setApproveNotes(e.target.value)}
                           placeholder="e.g. Documents verified manually..."
-                          className="border-emerald-200 bg-white"
+                          className="border-emerald-200 bg-white dark:bg-slate-900"
                         />
                         <Button
                           size="sm"
@@ -1447,6 +1464,8 @@ export default function PendingPage() {
           Showing {applications.length} of {data.total} applications
         </p>
       )}
+        </motion.div>
+      </AnimatePresence>
 
       {/* Document Lightbox */}
       <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>

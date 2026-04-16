@@ -6,9 +6,9 @@ import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import {
   Search, User, Mail, Phone, MapPin, GraduationCap, FileText,
-  ExternalLink, Pencil, Loader2, Shield, Users, ClipboardCheck,
+  ExternalLink, Pencil, Loader2, Users, ClipboardCheck,
   BarChart3, Clock, ArrowRight, Lightbulb, Hash, Command,
-  CreditCard, Award, Eye, SearchX, Sparkles, X,
+  CreditCard, Award, Eye, SearchX, X,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"

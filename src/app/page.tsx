@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { AnimatePresence, motion } from "framer-motion"
@@ -176,18 +176,18 @@ function buildActivityEvents(
 
 export default function DashboardPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   // Dev-only override so we can preview the pending-pulse state in non-prod.
-  // Use ?cb=pending5 (or any number) — stripped in production builds.
-  const pendingOverride =
-    process.env.NODE_ENV !== "production"
-      ? (() => {
-          const cb = searchParams.get("cb")
-          if (!cb?.startsWith("pending")) return undefined
-          const n = parseInt(cb.replace("pending", ""), 10)
-          return Number.isFinite(n) ? n : undefined
-        })()
-      : undefined
+  // Use ?cb=pending5 (or any number) — read from window after mount to avoid
+  // tripping Next's prerender Suspense requirement for useSearchParams().
+  const [pendingOverride, setPendingOverride] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return
+    if (typeof window === "undefined") return
+    const cb = new URLSearchParams(window.location.search).get("cb")
+    if (!cb?.startsWith("pending")) return
+    const n = parseInt(cb.replace("pending", ""), 10)
+    if (Number.isFinite(n)) setPendingOverride(n)
+  }, [])
   const [range, setRange] = useState<TimeRange>("30d")
 
   const { data, isLoading, isError, isFetching, refetch } = useQuery<{ status: boolean; data: DashboardData }>({

@@ -8,6 +8,7 @@ import {
   ShieldCheck, Send, AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
@@ -201,10 +202,16 @@ export default function TicketPermalinkPage() {
 
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [replies, setReplies] = useState<Reply[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Email verification gate — members must prove ownership
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null)
+  const [emailInput, setEmailInput] = useState("")
+  const [verifying, setVerifying] = useState(false)
+
   const [replyText, setReplyText] = useState("")
+  const [replyError, setReplyError] = useState<string | null>(null)
   const [sendingReply, setSendingReply] = useState(false)
   const [showTyping, setShowTyping] = useState(false)
 
@@ -217,23 +224,25 @@ export default function TicketPermalinkPage() {
     }
   }, [replies, showTyping])
 
-  // Fetch ticket data
+  // Fetch ticket after email is verified
   useEffect(() => {
+    if (!verifiedEmail || !ticketNumber) return
     async function fetchTicket() {
       setLoading(true)
       setError(null)
-
       try {
-        const res = await fetch(`/api/tickets/by-number/${encodeURIComponent(ticketNumber)}`)
+        const res = await fetch(
+          `/api/tickets/by-number/${encodeURIComponent(ticketNumber)}?email=${encodeURIComponent(verifiedEmail!)}`
+        )
         if (!res.ok) {
           if (res.status === 404) {
-            setError("Ticket not found. Please check the ticket number and try again.")
+            setError("Ticket not found. The email may not match the ticket owner.")
+            setVerifiedEmail(null)
           } else {
             setError("Failed to load ticket. Please try again later.")
           }
           return
         }
-
         const data = await res.json()
         setTicket(data.ticket)
         setReplies(data.replies || [])
@@ -243,11 +252,28 @@ export default function TicketPermalinkPage() {
         setLoading(false)
       }
     }
+    fetchTicket()
+  }, [ticketNumber, verifiedEmail])
 
-    if (ticketNumber) {
-      fetchTicket()
+  async function handleVerifyEmail() {
+    if (!emailInput.trim()) return
+    setVerifying(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        `/api/tickets/by-number/${encodeURIComponent(ticketNumber)}?email=${encodeURIComponent(emailInput.trim())}`
+      )
+      if (res.ok) {
+        setVerifiedEmail(emailInput.trim())
+      } else {
+        setError("No ticket found with this email. Please check and try again.")
+      }
+    } catch {
+      setError("Verification failed. Please try again.")
+    } finally {
+      setVerifying(false)
     }
-  }, [ticketNumber])
+  }
 
   // Send reply
   async function handleReply() {
@@ -261,7 +287,7 @@ export default function TicketPermalinkPage() {
         body: JSON.stringify({
           message: replyText.trim(),
           author_name: ticket.name,
-          is_admin: false,
+          as_member: true,
         }),
       })
 
@@ -270,15 +296,58 @@ export default function TicketPermalinkPage() {
 
       setReplies((prev) => [...prev, data.reply || data])
       setReplyText("")
+      setReplyError(null)
 
       // Show typing indicator for UX polish
       setShowTyping(true)
       setTimeout(() => setShowTyping(false), 3000)
-    } catch {
-      // silently fail -- user can retry
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : "Failed to send reply. Please try again.")
     } finally {
       setSendingReply(false)
     }
+  }
+
+  // Email verification gate — show before anything loads
+  if (!verifiedEmail && !loading && !ticket) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-md mx-auto px-4 py-16">
+          <Link
+            href="/support"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors mb-6"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Support
+          </Link>
+          <Card className="rounded-xl">
+            <CardContent className="p-8 space-y-4">
+              <div className="text-center space-y-1">
+                <h2 className="text-lg font-semibold">Verify your identity</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enter the email you used when creating ticket{" "}
+                  <span className="font-mono text-xs">{ticketNumber}</span>
+                </p>
+              </div>
+              {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleVerifyEmail() }}
+                  className="flex-1"
+                />
+                <Button onClick={handleVerifyEmail} disabled={verifying || !emailInput.trim()}>
+                  {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   // Loading state
@@ -447,8 +516,11 @@ export default function TicketPermalinkPage() {
             </div>
 
             {/* Reply form */}
-            {ticket.status !== "closed" ? (
+            {ticket.status !== "closed" && ticket.status !== "resolved" ? (
               <div className="px-4 py-3 border-t bg-muted/20">
+                {replyError && (
+                  <p className="text-xs text-red-500 mb-2">{replyError}</p>
+                )}
                 <div className="flex gap-2 items-end">
                   <Textarea
                     value={replyText}

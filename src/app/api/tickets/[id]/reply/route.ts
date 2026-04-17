@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
+import { escapeHtml } from "@/lib/html-escape"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -31,6 +32,13 @@ export async function POST(
 
       const file = formData.get("attachment") as File | null
       if (file && file.size > 0) {
+        if (file.size > 10 * 1024 * 1024) {
+          return Response.json({ error: "File exceeds 10 MB limit" }, { status: 400 })
+        }
+        const allowedTypes = ["image/png", "image/jpeg", "image/webp", "application/pdf"]
+        if (!allowedTypes.includes(file.type)) {
+          return Response.json({ error: "Only PNG, JPG, WebP, and PDF files are allowed" }, { status: 400 })
+        }
         const supabaseUpload = createAdminClient()
         const ext = file.name.split(".").pop() || "png"
         const path = `tickets/${id}/reply_${Date.now()}.${ext}`
@@ -84,15 +92,14 @@ export async function POST(
     if (isInternal && !is_admin) {
       isInternal = false
     }
-    const author_name = (is_admin && adminSession)
-      ? (adminSession.name as string) || "AMASI Admin"
-      : clientAuthorName
-
-    if (!author_name) {
-      return Response.json(
-        { error: "Missing required field: author_name" },
-        { status: 400 }
-      )
+    // Admin replies use the session name; member replies use the ticket's name
+    // to prevent impersonation (ignore client-supplied author_name for members).
+    let author_name: string
+    if (is_admin && adminSession) {
+      author_name = (adminSession.name as string) || "AMASI Admin"
+    } else {
+      // Defer to ticket.name after we fetch the ticket below — use a placeholder.
+      author_name = clientAuthorName || "Member"
     }
 
     // Append attachment link to message if uploaded
@@ -112,6 +119,18 @@ export async function POST(
 
     if (ticketError || !ticket) {
       return Response.json({ error: "Ticket not found" }, { status: 404 })
+    }
+
+    // Block replies on closed tickets
+    if (ticket.status === "closed" || ticket.status === "resolved") {
+      if (!is_admin) {
+        return Response.json({ error: "This ticket is closed and cannot receive replies" }, { status: 403 })
+      }
+    }
+
+    // For member replies, always use the ticket owner's name to prevent impersonation
+    if (!is_admin) {
+      author_name = ticket.name || author_name
     }
 
     // Insert the reply (include attachments from JSON body if any)
@@ -159,7 +178,7 @@ export async function POST(
               <p style="color: #999; font-size: 12px; margin: 0 0 20px;">Ticket ${ticket.ticket_number} — ${ticket.subject}</p>
               <p style="color: #555;">From: <strong>${ticket.name || author_name}</strong> (${ticket.email || "no email"})</p>
               <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 20px 0;">
-                <p style="color: #1e40af; margin: 0; white-space: pre-wrap;">${message.slice(0, 500)}${message.length > 500 ? "..." : ""}</p>
+                <p style="color: #1e40af; margin: 0; white-space: pre-wrap;">${escapeHtml(message.slice(0, 500))}${message.length > 500 ? "..." : ""}</p>
               </div>
               <p style="margin: 20px 0;"><a href="${adminUrl}" style="background: #0f766e; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px;">View Ticket in Admin</a></p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
@@ -189,7 +208,7 @@ export async function POST(
               <p style="color: #555;">We have replied to your support ticket: <strong>${ticket.subject}</strong></p>
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 20px 0;">
                 <p style="color: #166534; font-weight: bold; margin: 0 0 4px;">AMASI Admin</p>
-                <p style="color: #166534; margin: 0; white-space: pre-wrap;">${message}</p>
+                <p style="color: #166534; margin: 0; white-space: pre-wrap;">${escapeHtml(message)}</p>
               </div>
               <p style="color: #555; font-size: 14px;">You can reply to this ticket from your <a href="https://amasi-membership.vercel.app/support/${ticket.ticket_number}" style="color: #0f766e;">Ticket Portal</a>.</p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />

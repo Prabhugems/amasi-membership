@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
 import { Resend } from "resend"
+import { escapeHtml } from "@/lib/html-escape"
 
 function generateTicketNumber(): string {
   const now = new Date()
@@ -29,7 +31,6 @@ export async function POST(request: NextRequest) {
     const resolvedPriority = validPriorities.includes(priority) ? priority : "normal"
 
     const supabase = createAdminClient()
-    const ticket_number = generateTicketNumber()
 
     // Validate attachments if provided
     const validAttachments = Array.isArray(attachments)
@@ -42,26 +43,44 @@ export async function POST(request: NextRequest) {
         ).slice(0, 3)
       : []
 
-    const { data, error } = await supabase
-      .from("support_tickets")
-      .insert({
-        ticket_number,
-        name,
-        email,
-        phone,
-        amasi_number: amasi_number || null,
-        category,
-        subject,
-        description,
-        status: "open",
-        priority: resolvedPriority,
-        attachments: validAttachments,
-      })
-      .select()
-      .single()
+    // Retry on ticket_number collision (unique constraint)
+    let data = null
+    let error = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ticket_number = generateTicketNumber()
+      const result = await supabase
+        .from("support_tickets")
+        .insert({
+          ticket_number,
+          name,
+          email,
+          phone,
+          amasi_number: amasi_number || null,
+          category,
+          subject,
+          description,
+          status: "open",
+          priority: resolvedPriority,
+          attachments: validAttachments,
+        })
+        .select()
+        .single()
 
-    if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
+      if (!result.error) {
+        data = result.data
+        error = null
+        break
+      }
+      if (result.error.code === "23505") {
+        // Unique violation — retry with new number
+        continue
+      }
+      error = result.error
+      break
+    }
+
+    if (error || !data) {
+      return Response.json({ error: error?.message || "Failed to create ticket" }, { status: 500 })
     }
 
     // Send admin notification email
@@ -88,7 +107,7 @@ export async function POST(request: NextRequest) {
               <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Subject</td><td style="padding: 6px 0;">${subject}</td></tr>
             </table>
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
-              <p style="color: #334155; margin: 0; white-space: pre-wrap;">${description.slice(0, 500)}${description.length > 500 ? "..." : ""}</p>
+              <p style="color: #334155; margin: 0; white-space: pre-wrap;">${escapeHtml(description.slice(0, 500))}${description.length > 500 ? "..." : ""}</p>
             </div>
             <p style="margin: 20px 0;"><a href="${adminUrl}" style="background: #0f766e; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 14px;">View Ticket in Admin</a></p>
             <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
@@ -122,6 +141,14 @@ export async function GET(request: NextRequest) {
         { error: "Provide email, phone, or all=1 to list tickets" },
         { status: 400 }
       )
+    }
+
+    // all=1 requires admin auth — prevents unauthenticated full-table dump
+    if (all === "1") {
+      const session = await getAdminSession()
+      if (!session) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 })
+      }
     }
 
     const supabase = createAdminClient()

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
 
 export async function GET(
   request: NextRequest,
@@ -9,7 +10,6 @@ export async function GET(
     const { number } = await params
     const supabase = createAdminClient()
 
-    // Look up ticket by ticket_number (e.g. TKT-20260416-0042)
     const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
       .select("*")
@@ -20,28 +20,31 @@ export async function GET(
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
-    // Fetch replies, filtering out internal notes
-    // Note: is_internal filter is included — if the column does not exist yet, remove the .eq('is_internal', false) line
-    const { data: replies, error: repliesError } = await supabase
+    // Ownership check: admins can access any ticket; members must provide
+    // the matching email as a query param to prove they own it.
+    const adminSession = await getAdminSession()
+    if (!adminSession) {
+      const email = request.nextUrl.searchParams.get("email")
+      if (!email || email.toLowerCase() !== (ticket.email || "").toLowerCase()) {
+        return Response.json({ error: "Ticket not found" }, { status: 404 })
+      }
+    }
+
+    // Fetch replies, always filter out internal notes for non-admins
+    let replyQuery = supabase
       .from("ticket_replies")
       .select("*")
       .eq("ticket_id", ticket.id)
-      .eq("is_internal", false)
       .order("created_at", { ascending: true })
 
+    if (!adminSession) {
+      replyQuery = replyQuery.eq("is_internal", false)
+    }
+
+    const { data: replies, error: repliesError } = await replyQuery
+
     if (repliesError) {
-      // If is_internal column doesn't exist, retry without the filter
-      const { data: fallbackReplies, error: fallbackError } = await supabase
-        .from("ticket_replies")
-        .select("*")
-        .eq("ticket_id", ticket.id)
-        .order("created_at", { ascending: true })
-
-      if (fallbackError) {
-        return Response.json({ error: fallbackError.message }, { status: 500 })
-      }
-
-      return Response.json({ ticket, replies: fallbackReplies })
+      return Response.json({ error: repliesError.message }, { status: 500 })
     }
 
     return Response.json({ ticket, replies })

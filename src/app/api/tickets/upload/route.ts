@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_TYPES = [
@@ -11,6 +12,13 @@ const ALLOWED_TYPES = [
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 10 uploads per 15 min per IP to prevent storage abuse
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = checkRateLimit(`ticket-upload:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ error: "Too many uploads. Try again later." }, { status: 429 })
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const ticketPath = formData.get("path") as string | null // e.g. "tickets/TKT-xxx/filename.pdf"

@@ -340,8 +340,11 @@ function TicketListItem({
               onClick={(e) => {
                 e.stopPropagation()
                 const url = `${window.location.origin}/support/${ticket.ticket_number}`
-                navigator.clipboard.writeText(url)
-                toast.success("Permalink copied")
+                if (navigator.clipboard) {
+                  navigator.clipboard.writeText(url).then(() => toast.success("Permalink copied")).catch(() => toast.error("Copy failed"))
+                } else {
+                  toast.error("Copy not available (requires HTTPS)")
+                }
               }}
             >
               {ticket.ticket_number}

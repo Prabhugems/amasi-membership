@@ -28,6 +28,20 @@ export async function GET(
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
+    // Lazy SLA breach detection — mark breached if deadline passed without first response
+    if (
+      ticket.sla_due_at &&
+      !ticket.first_response_at &&
+      !ticket.sla_breached &&
+      new Date(ticket.sla_due_at).getTime() < Date.now()
+    ) {
+      ticket.sla_breached = true
+      await supabase
+        .from("support_tickets")
+        .update({ sla_breached: true })
+        .eq("id", ticket.id)
+    }
+
     // Check if caller is admin — non-admins must not see internal notes
     const adminSession = await getAdminSession()
     const isAdmin = !!adminSession

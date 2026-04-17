@@ -2,9 +2,11 @@
 
 import { Suspense, useState, useCallback, useRef, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import Link from "next/link"
 import {
   Ticket,
   Search,
+  BarChart3,
   Clock,
   XCircle,
   Send,
@@ -22,11 +24,23 @@ import {
   ExternalLink,
   RotateCcw,
   Save,
+  Settings,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -189,6 +203,9 @@ interface SupportTicket {
   attachments?: TicketAttachment[]
   created_at: string
   updated_at: string
+  first_response_at?: string | null
+  sla_due_at?: string | null
+  sla_breached?: boolean
   replies?: TicketReply[]
 }
 
@@ -256,6 +273,76 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + " B"
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
   return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+}
+
+/** Compute human-readable duration between two dates */
+function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(Math.abs(ms) / 60000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  const days = Math.floor(hours / 24)
+  if (days > 0) return `${days}d ${hours % 24}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+/** Return SLA status for a ticket */
+function getSlaStatus(ticket: SupportTicket): {
+  type: "breached" | "warning" | "responded" | "ok" | "none"
+  label: string
+} {
+  // No SLA data — gracefully handle missing columns
+  if (!ticket.sla_due_at) return { type: "none", label: "" }
+
+  // Already responded
+  if (ticket.first_response_at) return { type: "responded", label: "Responded" }
+
+  // Breached
+  if (ticket.sla_breached) return { type: "breached", label: "SLA Breached" }
+
+  // Check remaining time
+  const remaining = new Date(ticket.sla_due_at).getTime() - Date.now()
+  if (remaining <= 0) return { type: "breached", label: "SLA Breached" }
+  if (remaining <= 60 * 60 * 1000) {
+    // Within 1 hour
+    return { type: "warning", label: `SLA: ${formatDuration(remaining)} left` }
+  }
+  return { type: "ok", label: "" }
+}
+
+/** SLA badge component */
+function SlaBadge({ ticket }: { ticket: SupportTicket }) {
+  const sla = getSlaStatus(ticket)
+  if (sla.type === "none" || sla.type === "ok") return null
+  // Hide for closed/resolved tickets unless breached
+  if (
+    (ticket.status === "resolved" || ticket.status === "closed") &&
+    sla.type !== "breached"
+  )
+    return null
+
+  if (sla.type === "breached" && (ticket.status === "open" || ticket.status === "in_progress")) {
+    return (
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+        {sla.label}
+      </span>
+    )
+  }
+  if (sla.type === "warning") {
+    return (
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+        {sla.label}
+      </span>
+    )
+  }
+  if (sla.type === "responded") {
+    return (
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+        {sla.label}
+      </span>
+    )
+  }
+  return null
 }
 
 /* ---------- sub-components ---------- */
@@ -374,6 +461,7 @@ function TicketListItem({
             High
           </span>
         )}
+        <SlaBadge ticket={ticket} />
         {(ticket.status === "open" || ticket.status === "in_progress") && (
           <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5">
             <Clock className="h-2.5 w-2.5" />
@@ -591,6 +679,350 @@ function StatPill({
   )
 }
 
+/* ---------- Routing Rules types ---------- */
+
+interface RoutingRule {
+  id: string
+  category: string
+  assigned_to: string
+  priority_override: string | null
+  active: boolean
+  created_at: string
+}
+
+/* ---------- Routing Rules Dialog ---------- */
+
+function RoutingRulesDialog() {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Partial<RoutingRule>>({})
+  const [newRule, setNewRule] = useState({ category: "", assigned_to: "", priority_override: "" })
+
+  const { data: rules = [], isLoading } = useQuery<RoutingRule[]>({
+    queryKey: ["routing-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/routing-rules")
+      if (!res.ok) throw new Error("Failed to fetch rules")
+      return res.json()
+    },
+    enabled: open,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (rule: { category: string; assigned_to: string; priority_override: string }) => {
+      const res = await fetch("/api/routing-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: rule.category,
+          assigned_to: rule.assigned_to,
+          priority_override: rule.priority_override || null,
+        }),
+      })
+      if (!res.ok) throw new Error("Failed to create rule")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Routing rule created")
+      setNewRule({ category: "", assigned_to: "", priority_override: "" })
+      queryClient.invalidateQueries({ queryKey: ["routing-rules"] })
+    },
+    onError: () => toast.error("Failed to create rule"),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: async (rule: Partial<RoutingRule> & { id: string }) => {
+      const res = await fetch("/api/routing-rules", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rule),
+      })
+      if (!res.ok) throw new Error("Failed to update rule")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Rule updated")
+      setEditingId(null)
+      setEditForm({})
+      queryClient.invalidateQueries({ queryKey: ["routing-rules"] })
+    },
+    onError: () => toast.error("Failed to update rule"),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/routing-rules?id=${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Failed to delete rule")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Rule deleted")
+      queryClient.invalidateQueries({ queryKey: ["routing-rules"] })
+    },
+    onError: () => toast.error("Failed to delete rule"),
+  })
+
+  const toggleActive = (rule: RoutingRule) => {
+    updateMutation.mutate({ id: rule.id, active: !rule.active })
+  }
+
+  const startEdit = (rule: RoutingRule) => {
+    setEditingId(rule.id)
+    setEditForm({
+      category: rule.category,
+      assigned_to: rule.assigned_to,
+      priority_override: rule.priority_override || "",
+    })
+  }
+
+  const saveEdit = () => {
+    if (!editingId) return
+    updateMutation.mutate({
+      id: editingId,
+      category: editForm.category,
+      assigned_to: editForm.assigned_to,
+      priority_override: editForm.priority_override || null,
+    })
+  }
+
+  const handleCreate = () => {
+    if (!newRule.category || !newRule.assigned_to) {
+      toast.error("Category and Assigned To are required")
+      return
+    }
+    createMutation.mutate(newRule)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 shrink-0 hover:bg-gray-100 dark:hover:bg-slate-800"
+          title="Routing Rules"
+        >
+          <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Settings className="h-4 w-4 text-teal-600" />
+            Ticket Routing Rules
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Auto-assign tickets to teams based on category. Rules are applied when a ticket is created.
+          </p>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-4 mt-2">
+            {/* Rules table */}
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 dark:bg-slate-800/60 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Category</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Assigned To</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Priority Override</th>
+                    <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Active</th>
+                    <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules.map((rule) => (
+                    <tr key={rule.id} className="border-b last:border-b-0 hover:bg-gray-50/50 dark:hover:bg-slate-800/30">
+                      {editingId === rule.id ? (
+                        <>
+                          <td className="px-3 py-2">
+                            <select
+                              value={editForm.category || ""}
+                              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                            >
+                              <option value="">Select...</option>
+                              {CATEGORIES.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={editForm.assigned_to || ""}
+                              onChange={(e) => setEditForm({ ...editForm, assigned_to: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                            >
+                              {ADMIN_ASSIGNEES.filter((a) => a !== "Unassigned").map((a) => (
+                                <option key={a} value={a}>{a}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={(editForm.priority_override as string) || ""}
+                              onChange={(e) => setEditForm({ ...editForm, priority_override: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                            >
+                              <option value="">None</option>
+                              {PRIORITY_OPTIONS.map((p) => (
+                                <option key={p} value={p}>{PRIORITY_CONFIG[p]?.label || p}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className="text-muted-foreground/50">--</span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                onClick={saveEdit}
+                                disabled={updateMutation.isPending}
+                              >
+                                <Check className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => { setEditingId(null); setEditForm({}) }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2 font-medium">{rule.category}</td>
+                          <td className="px-3 py-2">{rule.assigned_to}</td>
+                          <td className="px-3 py-2">
+                            {rule.priority_override ? (
+                              <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PRIORITY_CONFIG[rule.priority_override]?.className || ""}`}>
+                                {PRIORITY_CONFIG[rule.priority_override]?.label || rule.priority_override}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground/40">--</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => toggleActive(rule)}
+                              disabled={updateMutation.isPending}
+                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                rule.active ? "bg-teal-500" : "bg-gray-300 dark:bg-slate-600"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                                  rule.active ? "translate-x-[18px]" : "translate-x-[3px]"
+                                }`}
+                              />
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => startEdit(rule)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                onClick={() => deleteMutation.mutate(rule.id)}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                  {rules.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-muted-foreground/60">
+                        No routing rules configured
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Add new rule form */}
+            <div className="border rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/30 space-y-2">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <Plus className="h-3 w-3" />
+                Add Rule
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <select
+                  value={newRule.category}
+                  onChange={(e) => setNewRule({ ...newRule, category: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                >
+                  <option value="">Category...</option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  value={newRule.assigned_to}
+                  onChange={(e) => setNewRule({ ...newRule, assigned_to: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                >
+                  <option value="">Assign to...</option>
+                  {ADMIN_ASSIGNEES.filter((a) => a !== "Unassigned").map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+                <select
+                  value={newRule.priority_override}
+                  onChange={(e) => setNewRule({ ...newRule, priority_override: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                >
+                  <option value="">Priority override (optional)</option>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <option key={p} value={p}>{PRIORITY_CONFIG[p]?.label || p}</option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                size="sm"
+                className="h-7 text-xs gap-1.5 bg-teal-600 hover:bg-teal-700"
+                onClick={handleCreate}
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                Add Rule
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ---------- main component ---------- */
 
 function TicketsContent() {
@@ -601,6 +1033,9 @@ function TicketsContent() {
   const [categoryFilter, setCategoryFilter] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedServerQuery, setDebouncedServerQuery] = useState("")
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [slaBreachedFilter, setSlaBreachedFilter] = useState(false)
 
   // detail view
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
@@ -632,11 +1067,32 @@ function TicketsContent() {
     },
   })
 
+  /* ---- server-side full-text search (3+ chars, debounced) ---- */
+  const { data: serverSearchResults, isFetching: isSearching } = useQuery<SupportTicket[]>({
+    queryKey: ["tickets-search", debouncedServerQuery, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ all: "1", q: debouncedServerQuery })
+      if (statusFilter) params.set("status", statusFilter)
+      const res = await fetch(`/api/tickets?${params.toString()}`)
+      if (!res.ok) throw new Error("Search failed")
+      const json = await res.json()
+      return Array.isArray(json) ? json : []
+    },
+    enabled: debouncedServerQuery.length >= 3,
+    placeholderData: (prev) => prev,
+  })
+  const useServerResults = debouncedServerQuery.length >= 3 && serverSearchResults !== undefined
+
   /* ---- filtered tickets ---- */
-  const filteredTickets = allTickets.filter((t) => {
+  const baseTickets = useServerResults ? (serverSearchResults ?? []) : allTickets
+  const filteredTickets = baseTickets.filter((t) => {
     if (statusFilter && t.status !== statusFilter) return false
     if (categoryFilter && t.category !== categoryFilter) return false
-    if (searchTerm) {
+    if (slaBreachedFilter) {
+      const sla = getSlaStatus(t)
+      if (sla.type !== "breached") return false
+    }
+    if (searchTerm && !useServerResults) {
       const q = searchTerm.toLowerCase()
       const haystack =
         `${t.ticket_number} ${t.name} ${t.email} ${t.subject}`.toLowerCase()
@@ -781,9 +1237,31 @@ function TicketsContent() {
     onError: () => toast.error(isInternalNote ? "Failed to add note" : "Failed to send reply"),
   })
 
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (!value) {
+      setSearchTerm("")
+      setDebouncedServerQuery("")
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      return
+    }
+    setSearchTerm(value)
+    if (value.length >= 3) {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      debounceTimerRef.current = setTimeout(() => setDebouncedServerQuery(value), 300)
+    } else {
+      setDebouncedServerQuery("")
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => { if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current) }
+  }, [])
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setSearchTerm(searchQuery)
+    if (searchQuery.length >= 3) setDebouncedServerQuery(searchQuery)
   }
 
   const handleSaveChanges = () => {
@@ -851,6 +1329,14 @@ function TicketsContent() {
           <span className="text-xs text-muted-foreground font-medium">
             {stats.total} total
           </span>
+          <div className="h-5 w-px bg-border mx-1" />
+          <Link
+            href="/tickets/analytics"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            Analytics
+          </Link>
         </div>
       </div>
 
@@ -867,14 +1353,14 @@ function TicketsContent() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
                 <Input
-                  placeholder="Search by name, email, ticket #..."
+                  placeholder="Search tickets, descriptions, messages..."
                   value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    if (!e.target.value) setSearchTerm("")
-                  }}
-                  className="pl-9 h-9 text-xs bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-colors"
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="pl-9 pr-8 h-9 text-xs bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-colors"
                 />
+                {isSearching && (
+                  <Loader2 className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-teal-500" />
+                )}
               </div>
             </form>
 
@@ -913,9 +1399,9 @@ function TicketsContent() {
               })}
             </div>
 
-            {/* Category filter */}
-            <div className="mt-2">
-              <div className="relative">
+            {/* Category filter + routing rules settings */}
+            <div className="mt-2 flex items-center gap-1.5">
+              <div className="relative flex-1">
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
@@ -930,7 +1416,21 @@ function TicketsContent() {
                 </select>
                 <ChevronDown className="absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/50 pointer-events-none" />
               </div>
+              <RoutingRulesDialog />
             </div>
+
+            {/* SLA breached filter */}
+            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={slaBreachedFilter}
+                onChange={(e) => setSlaBreachedFilter(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+              />
+              <span className="text-[11px] text-muted-foreground font-medium">
+                SLA Breached only
+              </span>
+            </label>
           </div>
 
           {/* Scrollable ticket list */}
@@ -1017,10 +1517,29 @@ function TicketsContent() {
                         {waitingTime(ticketDetail.created_at)}
                       </div>
                     )}
+                    <SlaBadge ticket={ticketDetail} />
                     <StatusBadge status={ticketDetail.status} />
                     <PriorityBadge priority={ticketDetail.priority} />
                   </div>
                 </div>
+                {/* SLA + first response stats */}
+                {(ticketDetail.first_response_at || ticketDetail.sla_due_at) && (
+                  <div className="flex items-center gap-3 mt-2 flex-wrap">
+                    {ticketDetail.first_response_at && ticketDetail.created_at && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
+                        First response: {formatDuration(
+                          new Date(ticketDetail.first_response_at).getTime() -
+                          new Date(ticketDetail.created_at).getTime()
+                        )}
+                      </span>
+                    )}
+                    {ticketDetail.sla_due_at && !ticketDetail.first_response_at && (
+                      <span className="text-[10px] text-muted-foreground/60 font-medium">
+                        SLA due: {new Date(ticketDetail.sla_due_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Admin action bar */}

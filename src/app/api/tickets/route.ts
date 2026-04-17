@@ -27,8 +27,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const validPriorities = ["low", "normal", "high"]
+    const validPriorities = ["low", "normal", "high", "urgent"]
     const resolvedPriority = validPriorities.includes(priority) ? priority : "normal"
+
+    // SLA deadline based on priority
+    const slaHours: Record<string, number> = { urgent: 2, high: 8, normal: 24, low: 72 }
+    const slaMs = (slaHours[resolvedPriority] ?? 24) * 60 * 60 * 1000
+    const sla_due_at = new Date(Date.now() + slaMs).toISOString()
 
     const supabase = createAdminClient()
 
@@ -42,6 +47,31 @@ export async function POST(request: NextRequest) {
             typeof (a as Record<string, unknown>).filename === "string"
         ).slice(0, 3)
       : []
+
+    // Auto-assign via routing rules
+    let autoAssignedTo: string | null = null
+    let finalPriority = resolvedPriority
+    try {
+      const { data: rule } = await supabase
+        .from("ticket_routing_rules")
+        .select("assigned_to, priority_override")
+        .eq("category", category)
+        .eq("active", true)
+        .limit(1)
+        .single()
+      if (rule) {
+        autoAssignedTo = rule.assigned_to
+        if (rule.priority_override) {
+          finalPriority = rule.priority_override
+        }
+      }
+    } catch {
+      // No matching rule — leave unassigned
+    }
+
+    // Recalculate SLA if priority was overridden
+    const finalSlaMs = (slaHours[finalPriority] ?? 24) * 60 * 60 * 1000
+    const finalSlaDueAt = new Date(Date.now() + finalSlaMs).toISOString()
 
     // Retry on ticket_number collision (unique constraint)
     let data = null
@@ -60,8 +90,10 @@ export async function POST(request: NextRequest) {
           subject,
           description,
           status: "open",
-          priority: resolvedPriority,
+          priority: finalPriority,
           attachments: validAttachments,
+          sla_due_at: finalSlaDueAt,
+          ...(autoAssignedTo ? { assigned_to: autoAssignedTo } : {}),
         })
         .select()
         .single()
@@ -135,6 +167,7 @@ export async function GET(request: NextRequest) {
     const phone = searchParams.get("phone")
     const all = searchParams.get("all")
     const status = searchParams.get("status")
+    const q = searchParams.get("q")?.trim() || ""
 
     if (!email && !phone && all !== "1") {
       return Response.json(
@@ -152,6 +185,40 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+
+    // Full-text search when q is provided with admin auth (all=1)
+    if (q && all === "1") {
+      let data: Record<string, unknown>[] | null = null
+      let searchError: { message: string } | null = null
+      try {
+        let tsQuery = supabase
+          .from("support_tickets")
+          .select("*")
+          .textSearch("search_vector", q, { type: "websearch" })
+          .order("created_at", { ascending: false })
+        if (status) tsQuery = tsQuery.eq("status", status)
+        const result = await tsQuery
+        data = result.data
+        searchError = result.error
+      } catch {
+        searchError = { message: "textSearch unavailable" }
+      }
+      if (searchError || !data) {
+        const pattern = `%${q}%`
+        let fallbackQuery = supabase
+          .from("support_tickets")
+          .select("*")
+          .or(`name.ilike.${pattern},email.ilike.${pattern},ticket_number.ilike.${pattern},subject.ilike.${pattern},description.ilike.${pattern}`)
+          .order("created_at", { ascending: false })
+        if (status) fallbackQuery = fallbackQuery.eq("status", status)
+        const fallbackResult = await fallbackQuery
+        if (fallbackResult.error) {
+          return Response.json({ error: fallbackResult.error.message }, { status: 500 })
+        }
+        return Response.json(fallbackResult.data)
+      }
+      return Response.json(data)
+    }
 
     let query = supabase
       .from("support_tickets")

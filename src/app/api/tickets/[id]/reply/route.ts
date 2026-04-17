@@ -106,7 +106,7 @@ export async function POST(
     // Resolve ticket to get the uuid + email for notifications
     const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
-      .select("id, status, email, name, ticket_number, subject")
+      .select("id, status, email, name, ticket_number, subject, first_response_at")
       .eq(isUuid ? "id" : "ticket_number", id)
       .single()
 
@@ -132,15 +132,12 @@ export async function POST(
       return Response.json({ error: replyError.message }, { status: 500 })
     }
 
-    // If admin reply on an open ticket, move to in_progress
-    if (is_admin && ticket.status === "open") {
-      await supabase
-        .from("support_tickets")
-        .update({
-          status: "in_progress",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", ticket.id)
+    // If admin reply on an open ticket, move to in_progress + record first response
+    if (is_admin && !isInternal) {
+      const updates: Record<string, string> = { updated_at: new Date().toISOString() }
+      if (ticket.status === "open") updates.status = "in_progress"
+      if (!ticket.first_response_at) updates.first_response_at = new Date().toISOString()
+      await supabase.from("support_tickets").update(updates).eq("id", ticket.id)
     }
 
     // Send admin notification when a member replies

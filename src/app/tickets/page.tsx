@@ -333,9 +333,19 @@ function TicketListItem({
               {ticket.name}
             </span>
             <span className="text-muted-foreground/40 text-[10px]">|</span>
-            <span className="font-mono text-[10px] text-muted-foreground/60">
+            <button
+              type="button"
+              className="font-mono text-[10px] text-muted-foreground/60 hover:text-primary transition-colors cursor-pointer"
+              title="Copy permalink"
+              onClick={(e) => {
+                e.stopPropagation()
+                const url = `${window.location.origin}/support/${ticket.ticket_number}`
+                navigator.clipboard.writeText(url)
+                toast.success("Permalink copied")
+              }}
+            >
               {ticket.ticket_number}
-            </span>
+            </button>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0 pt-0.5">
@@ -975,9 +985,18 @@ function TicketsContent() {
                       {ticketDetail.subject}
                     </h3>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className="font-mono text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+                      <button
+                        type="button"
+                        className="font-mono text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                        title="Copy permalink"
+                        onClick={() => {
+                          const url = `${window.location.origin}/support/${ticketDetail.ticket_number}`
+                          navigator.clipboard.writeText(url)
+                          toast.success("Permalink copied")
+                        }}
+                      >
                         {ticketDetail.ticket_number}
-                      </span>
+                      </button>
                       <span className="text-xs font-medium text-foreground/80">
                         {ticketDetail.name}
                       </span>

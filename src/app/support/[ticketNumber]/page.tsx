@@ -4,71 +4,23 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import {
-  ArrowLeft, Loader2, CheckCircle, MessageSquare, Clock, User,
-  ShieldCheck, Send, AlertCircle,
+  ArrowLeft, Loader2, MessageSquare, Clock, User,
+  ShieldCheck, Send, AlertCircle, Paperclip, X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/utils"
-
-/* ---------- types ---------- */
-interface Ticket {
-  id: string
-  ticket_number: string
-  name: string
-  email: string
-  phone: string | null
-  amasi_number: string | null
-  category: string
-  subject: string
-  description: string
-  status: string
-  priority?: string
-  created_at: string
-}
-
-interface Reply {
-  id: string
-  ticket_id: string
-  author_name: string
-  message: string
-  is_admin: boolean
-  created_at: string
-}
-
-/* ---------- helpers ---------- */
-function statusBadgeVariant(status: string) {
-  switch (status) {
-    case "open":
-      return "warning" as const
-    case "in_progress":
-      return "secondary" as const
-    case "resolved":
-      return "success" as const
-    case "closed":
-      return "outline" as const
-    default:
-      return "outline" as const
-  }
-}
-
-function statusLabel(status: string) {
-  switch (status) {
-    case "open":
-      return "Open"
-    case "in_progress":
-      return "In Progress"
-    case "resolved":
-      return "Resolved"
-    case "closed":
-      return "Closed"
-    default:
-      return status
-  }
-}
+import type { Ticket, Reply, TicketAttachment } from "../components/types"
+import { DESCRIPTION_MAX, MAX_ATTACHMENTS, MAX_FILE_SIZE, ALLOWED_FILE_TYPES } from "../components/types"
+import {
+  statusBadgeVariant, statusLabel, timeAgo, formatFileSize, uploadTicketFile,
+} from "../components/helpers"
+import { StatusTimeline } from "../components/StatusTimeline"
+import { ChatBubble } from "../components/ChatBubble"
 
 function priorityBadgeVariant(priority: string | undefined) {
   switch (priority) {
@@ -84,117 +36,6 @@ function priorityBadgeVariant(priority: string | undefined) {
   }
 }
 
-function timeAgo(dateStr: string) {
-  const now = new Date()
-  const date = new Date(dateStr)
-  const diffMs = now.getTime() - date.getTime()
-  const minutes = Math.floor(diffMs / 60000)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-
-  if (minutes < 1) return "just now"
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  if (days < 7) return `${days}d ago`
-  return formatDate(dateStr)
-}
-
-/* ---------- Status Timeline ---------- */
-function StatusTimeline({ ticket }: { ticket: Ticket }) {
-  const steps = [
-    { status: "open", label: "Ticket Created", description: "Your ticket has been received" },
-    { status: "in_progress", label: "In Progress", description: "Our team is working on it" },
-    { status: "resolved", label: "Resolved", description: "Issue has been resolved" },
-    { status: "closed", label: "Closed", description: "Ticket is closed" },
-  ]
-
-  const statusOrder = ["open", "in_progress", "resolved", "closed"]
-  const currentIdx = statusOrder.indexOf(ticket.status)
-
-  return (
-    <div className="py-3 px-1">
-      <div className="flex items-center justify-between relative">
-        <div className="absolute top-4 left-6 right-6 h-0.5 bg-muted" />
-        <div
-          className="absolute top-4 left-6 h-0.5 bg-primary transition-all duration-500"
-          style={{ width: `calc(${(currentIdx / (steps.length - 1)) * 100}% - 48px)` }}
-        />
-        {steps.map((step, idx) => {
-          const isActive = idx <= currentIdx
-          const isCurrent = idx === currentIdx
-          return (
-            <div key={step.status} className="flex flex-col items-center z-10 flex-1">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  isCurrent
-                    ? "bg-primary text-primary-foreground ring-4 ring-primary/20"
-                    : isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {isActive ? (
-                  <CheckCircle className="h-4 w-4" />
-                ) : (
-                  <span>{idx + 1}</span>
-                )}
-              </div>
-              <p className={`text-[10px] mt-1.5 font-medium text-center ${
-                isCurrent ? "text-primary" : isActive ? "text-foreground" : "text-muted-foreground"
-              }`}>
-                {step.label}
-              </p>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/* ---------- Chat Bubble ---------- */
-function ChatBubble({ reply }: { reply: Reply }) {
-  const isAdmin = reply.is_admin
-  return (
-    <div className={`flex ${isAdmin ? "justify-start" : "justify-end"} mb-3`}>
-      <div className={`flex gap-2 max-w-[85%] ${isAdmin ? "flex-row" : "flex-row-reverse"}`}>
-        <div
-          className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 ${
-            isAdmin
-              ? "bg-blue-100 text-blue-700"
-              : "bg-primary/10 text-primary"
-          }`}
-        >
-          {isAdmin ? (
-            <ShieldCheck className="h-3.5 w-3.5" />
-          ) : (
-            <User className="h-3.5 w-3.5" />
-          )}
-        </div>
-        <div>
-          <div
-            className={`px-3.5 py-2.5 text-sm leading-relaxed ${
-              isAdmin
-                ? "bg-white border border-gray-200 rounded-2xl rounded-tl-sm shadow-sm"
-                : "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm shadow-sm"
-            }`}
-          >
-            <p className="whitespace-pre-wrap">{reply.message}</p>
-          </div>
-          <div className={`flex items-center gap-1.5 mt-1 px-1 ${isAdmin ? "" : "justify-end"}`}>
-            <span className="text-[10px] text-muted-foreground font-medium">
-              {reply.author_name}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              {timeAgo(reply.created_at)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ---------- main page ---------- */
 export default function TicketPermalinkPage() {
   const params = useParams<{ ticketNumber: string }>()
@@ -205,7 +46,7 @@ export default function TicketPermalinkPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Email verification gate — members must prove ownership
+  // Email verification gate
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null)
   const [emailInput, setEmailInput] = useState("")
   const [verifying, setVerifying] = useState(false)
@@ -213,7 +54,10 @@ export default function TicketPermalinkPage() {
   const [replyText, setReplyText] = useState("")
   const [replyError, setReplyError] = useState<string | null>(null)
   const [sendingReply, setSendingReply] = useState(false)
-  const [showTyping, setShowTyping] = useState(false)
+
+  // Reply attachments
+  const [replyAttachments, setReplyAttachments] = useState<File[]>([])
+  const replyFileInputRef = useRef<HTMLInputElement>(null)
 
   const repliesEndRef = useRef<HTMLDivElement>(null)
 
@@ -222,7 +66,7 @@ export default function TicketPermalinkPage() {
     if (repliesEndRef.current) {
       repliesEndRef.current.scrollIntoView({ behavior: "smooth" })
     }
-  }, [replies, showTyping])
+  }, [replies])
 
   // Fetch ticket after email is verified
   useEffect(() => {
@@ -275,12 +119,46 @@ export default function TicketPermalinkPage() {
     }
   }
 
+  /* --- handle reply file attachment --- */
+  function handleReplyFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    const newFiles: File[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (replyAttachments.length + newFiles.length >= MAX_ATTACHMENTS) break
+      if (file.size > MAX_FILE_SIZE) continue
+      if (!ALLOWED_FILE_TYPES.includes(file.type)) continue
+      newFiles.push(file)
+    }
+    if (newFiles.length > 0) {
+      setReplyAttachments((prev) => [...prev, ...newFiles].slice(0, MAX_ATTACHMENTS))
+    }
+    e.target.value = ""
+  }
+
   // Send reply
   async function handleReply() {
-    if (!replyText.trim() || !ticket) return
+    if (!replyText.trim() && replyAttachments.length === 0) return
+    if (!ticket) return
     setSendingReply(true)
+    setReplyError(null)
 
     try {
+      // Upload reply attachments first
+      let uploadedAttachments: TicketAttachment[] = []
+      if (replyAttachments.length > 0) {
+        const uploads = await Promise.all(
+          replyAttachments.map((file) =>
+            uploadTicketFile(
+              file,
+              `tickets/${ticket.id}/replies/${Date.now()}_${file.name}`
+            )
+          )
+        )
+        uploadedAttachments = uploads.filter((a): a is TicketAttachment => a !== null)
+      }
+
       const res = await fetch(`/api/tickets/${ticket.id}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -288,6 +166,7 @@ export default function TicketPermalinkPage() {
           message: replyText.trim(),
           author_name: ticket.name,
           as_member: true,
+          attachments: uploadedAttachments,
         }),
       })
 
@@ -296,11 +175,7 @@ export default function TicketPermalinkPage() {
 
       setReplies((prev) => [...prev, data.reply || data])
       setReplyText("")
-      setReplyError(null)
-
-      // Show typing indicator for UX polish
-      setShowTyping(true)
-      setTimeout(() => setShowTyping(false), 3000)
+      setReplyAttachments([])
     } catch (err) {
       setReplyError(err instanceof Error ? err.message : "Failed to send reply. Please try again.")
     } finally {
@@ -308,7 +183,7 @@ export default function TicketPermalinkPage() {
     }
   }
 
-  // Email verification gate — show before anything loads
+  // Email verification gate
   if (!verifiedEmail && !loading && !ticket) {
     return (
       <div className="min-h-screen bg-background">
@@ -322,26 +197,36 @@ export default function TicketPermalinkPage() {
           </Link>
           <Card className="rounded-xl">
             <CardContent className="p-8 space-y-4">
-              <div className="text-center space-y-1">
+              <div className="text-center space-y-2">
+                <div className="inline-block bg-muted/60 border rounded-xl px-4 py-2 mb-2">
+                  <span className="text-lg font-mono font-bold tracking-wider">{ticketNumber}</span>
+                </div>
                 <h2 className="text-lg font-semibold">Verify your identity</h2>
                 <p className="text-sm text-muted-foreground">
-                  Enter the email you used when creating ticket{" "}
-                  <span className="font-mono text-xs">{ticketNumber}</span>
+                  We use this to verify you are the ticket owner. Enter the email you used when creating this ticket.
                 </p>
               </div>
-              {error && <p className="text-xs text-red-500 text-center">{error}</p>}
-              <div className="flex gap-2">
-                <Input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleVerifyEmail() }}
-                  className="flex-1"
-                />
-                <Button onClick={handleVerifyEmail} disabled={verifying || !emailInput.trim()}>
-                  {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
-                </Button>
+              {error && (
+                <p className="text-xs text-red-500 text-center" role="alert">{error}</p>
+              )}
+              <div>
+                <Label htmlFor="verify-email" className="text-xs mb-1 block">
+                  Email address
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="verify-email"
+                    type="email"
+                    placeholder="your@email.com"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleVerifyEmail() }}
+                    className="flex-1"
+                  />
+                  <Button onClick={handleVerifyEmail} disabled={verifying || !emailInput.trim()}>
+                    {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -457,7 +342,12 @@ export default function TicketPermalinkPage() {
         <Card className="rounded-xl">
           <CardContent className="p-0">
             {/* Chat area */}
-            <div className="px-4 py-4 min-h-[200px] max-h-[60vh] overflow-y-auto">
+            <div
+              className="px-4 py-4 min-h-[200px] max-h-[60vh] overflow-y-auto"
+              role="log"
+              aria-live="polite"
+              aria-label="Conversation"
+            >
               {/* Original description as first message */}
               <div className="flex justify-end mb-3">
                 <div className="flex gap-2 max-w-[85%] flex-row-reverse">
@@ -467,6 +357,24 @@ export default function TicketPermalinkPage() {
                   <div>
                     <div className="px-3.5 py-2.5 text-sm leading-relaxed bg-primary text-primary-foreground rounded-2xl rounded-tr-sm shadow-sm">
                       <p className="whitespace-pre-wrap">{ticket.description}</p>
+                      {/* Ticket-level attachments */}
+                      {ticket.attachments && ticket.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2 pt-1.5 border-t border-primary-foreground/20">
+                          {ticket.attachments.map((att, i) => (
+                            <a
+                              key={i}
+                              href={att.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground rounded-full px-2.5 py-1 transition-colors"
+                            >
+                              <Paperclip className="h-3 w-3 shrink-0" />
+                              <span className="truncate max-w-[120px]">{att.filename}</span>
+                              <span className="opacity-70">({formatFileSize(att.size)})</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 px-1 justify-end">
                       <span className="text-[10px] text-muted-foreground font-medium">
@@ -494,50 +402,82 @@ export default function TicketPermalinkPage() {
                 <ChatBubble key={reply.id} reply={reply} />
               ))}
 
-              {/* Typing indicator */}
-              {showTyping && (
-                <div className="flex justify-start mb-3">
-                  <div className="flex gap-2 items-end">
-                    <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <div ref={repliesEndRef} />
             </div>
 
-            {/* Reply form */}
+            {/* Reply form - hide for closed AND resolved */}
             {ticket.status !== "closed" && ticket.status !== "resolved" ? (
               <div className="px-4 py-3 border-t bg-muted/20">
                 {replyError && (
-                  <p className="text-xs text-red-500 mb-2">{replyError}</p>
+                  <p className="text-xs text-red-500 mb-2" role="alert">{replyError}</p>
+                )}
+                {/* Reply attachment previews */}
+                {replyAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {replyAttachments.map((file, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-1.5 bg-muted/60 border rounded-full px-2.5 py-1 text-xs"
+                      >
+                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate max-w-[100px]">{file.name}</span>
+                        <span className="text-muted-foreground">({formatFileSize(file.size)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setReplyAttachments((prev) => prev.filter((_, j) => j !== i))}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
                 <div className="flex gap-2 items-end">
-                  <Textarea
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Type your message..."
-                    rows={1}
-                    className="flex-1 resize-none min-h-[40px] max-h-[120px] bg-white"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault()
-                        handleReply()
-                      }
-                    }}
+                  {/* Attach file button */}
+                  {replyAttachments.length < MAX_ATTACHMENTS && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-10 w-10 p-0 shrink-0 hover:bg-muted"
+                      onClick={() => replyFileInputRef.current?.click()}
+                      title="Attach file"
+                    >
+                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  )}
+                  <input
+                    ref={replyFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,application/pdf"
+                    className="hidden"
+                    onChange={handleReplyFileChange}
                   />
+                  <div className="flex-1">
+                    <Textarea
+                      value={replyText}
+                      onChange={(e) => {
+                        if (e.target.value.length <= DESCRIPTION_MAX) {
+                          setReplyText(e.target.value)
+                        }
+                      }}
+                      placeholder="Type your message..."
+                      rows={1}
+                      className="resize-none min-h-[40px] max-h-[120px] bg-white"
+                      aria-label="Reply message"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault()
+                          handleReply()
+                        }
+                      }}
+                    />
+                  </div>
                   <Button
                     onClick={handleReply}
-                    disabled={sendingReply || !replyText.trim()}
+                    disabled={sendingReply || (!replyText.trim() && replyAttachments.length === 0)}
                     size="sm"
                     className="h-10 w-10 p-0 rounded-full shrink-0"
                   >
@@ -548,14 +488,25 @@ export default function TicketPermalinkPage() {
                     )}
                   </Button>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5">
-                  Press Enter to send, Shift+Enter for new line
-                </p>
+                <div className="flex items-center justify-between mt-1.5">
+                  <p className="text-[10px] text-muted-foreground">
+                    Press Enter to send, Shift+Enter for new line
+                    {replyAttachments.length > 0 && ` | ${replyAttachments.length} file${replyAttachments.length > 1 ? "s" : ""} attached`}
+                  </p>
+                  <span className={`text-[10px] tabular-nums ${
+                    replyText.length > DESCRIPTION_MAX * 0.9
+                      ? "text-amber-600"
+                      : "text-muted-foreground"
+                  }`}>
+                    {replyText.length} / {DESCRIPTION_MAX}
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="px-4 py-3 border-t bg-muted/30 text-center">
                 <p className="text-xs text-muted-foreground">
-                  This ticket has been closed. If you need further help, please submit a new ticket.
+                  This ticket has been {statusLabel(ticket.status).toLowerCase()}. If you need further help, please{" "}
+                  <Link href="/support" className="text-primary hover:underline">create a new ticket</Link>.
                 </p>
               </div>
             )}

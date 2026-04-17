@@ -92,10 +92,12 @@ function buildBuckets(
 
 export async function GET(request: Request) {
   try {
+    const session = await getAdminSession()
+    if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
+
     const { searchParams } = new URL(request.url)
     const range = (searchParams.get("range") || "30d") as Range
 
-    const session = await getAdminSession()
     const adminName = (session?.name as string | undefined) || (session?.email as string | undefined)?.split("@")[0] || "Admin"
 
     const supabase = createAdminClient()

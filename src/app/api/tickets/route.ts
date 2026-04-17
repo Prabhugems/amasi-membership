@@ -220,9 +220,14 @@ export async function GET(request: NextRequest) {
       return Response.json(data)
     }
 
+    // Members see only safe columns; admins see everything
+    const selectCols = all === "1"
+      ? "*"
+      : "id, ticket_number, subject, status, priority, category, created_at, updated_at"
+
     let query = supabase
       .from("support_tickets")
-      .select("*")
+      .select(selectCols)
       .order("created_at", { ascending: false })
 
     if (all !== "1") {

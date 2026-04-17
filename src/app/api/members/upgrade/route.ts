@@ -341,19 +341,28 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    let query = supabase
-      .from("membership_upgrades")
-      .select("*")
-      .order("created_at", { ascending: false })
+    const isAdmin = all === "1"
 
-    if (all === "1") {
+    if (isAdmin) {
       const adminSession = await getAdminSession()
       if (!adminSession) {
         return Response.json({ status: false, message: "Unauthorized" }, { status: 401 })
       }
-    } else if (email) {
+    }
+
+    // Members see only safe columns; admins see everything
+    const selectCols = isAdmin
+      ? "*"
+      : "id, upgrade_number, member_id, amasi_number, member_name, member_email, from_type, to_type, asi_membership_no, asi_state, ai_verified, ai_confidence, status, created_at, updated_at"
+
+    let query = supabase
+      .from("membership_upgrades")
+      .select(selectCols)
+      .order("created_at", { ascending: false })
+
+    if (!isAdmin && email) {
       query = query.eq("member_email", email)
-    } else {
+    } else if (!isAdmin) {
       return Response.json({ status: false, message: "Email or all=1 parameter required" }, { status: 400 })
     }
 

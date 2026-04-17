@@ -15,7 +15,7 @@ const VALID_DOC_TYPES = new Set([
 export async function POST(request: NextRequest) {
   try {
     const adminSession = await getAdminSession()
-    const memberSession = await getMemberSession()
+    const memberSession = adminSession ? null : await getMemberSession()
     if (!adminSession && !memberSession) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -30,6 +30,23 @@ export async function POST(request: NextRequest) {
         { status: false, message: "Missing file, memberId, or docType" },
         { status: 400 }
       )
+    }
+
+    // IDOR protection: if caller is a member (not admin), verify ownership
+    if (!adminSession && memberSession) {
+      const memberEmail = typeof memberSession.email === "string" ? memberSession.email : null
+      if (!memberEmail) {
+        return Response.json({ error: "Forbidden" }, { status: 403 })
+      }
+      const supabaseCheck = createAdminClient()
+      const { data: memberRow } = await supabaseCheck
+        .from("members")
+        .select("id")
+        .eq("email", memberEmail)
+        .maybeSingle()
+      if (!memberRow || memberRow.id !== memberId) {
+        return Response.json({ error: "Forbidden" }, { status: 403 })
+      }
     }
 
     if (!VALID_DOC_TYPES.has(docType)) {

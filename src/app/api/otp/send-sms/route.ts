@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
-const MSG91_AUTH_KEY = "317546ABGGJ4VpF69cd0452P1"
-const MSG91_TEMPLATE_ID = "69cd04c84d72ae65ac0ce0a3"
+const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
+const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID
 
 function generateOTP(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
@@ -10,6 +11,14 @@ function generateOTP(): string {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!MSG91_AUTH_KEY || !MSG91_TEMPLATE_ID) {
+      return Response.json({ status: false, message: "SMS service not configured" }, { status: 500 })
+    }
+
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
+    if (!rl.allowed) return Response.json({ error: "Too many attempts" }, { status: 429 })
+
     const { mobile, email } = await request.json()
 
     if (!mobile || !/^\d{10}$/.test(mobile)) {

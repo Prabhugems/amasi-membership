@@ -13,6 +13,9 @@ function getResend() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getAdminSession()
+    if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
+
     const { applicationId, reason } = await request.json()
 
     if (!applicationId || !reason) {
@@ -74,7 +77,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit log
-    const session = await getAdminSession()
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
     await logAdminAction({
       adminEmail: (session?.email as string) || "unknown",

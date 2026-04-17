@@ -22,6 +22,12 @@ import { HelpButton } from "@/components/ui/help-button"
 import { formatDate } from "@/lib/utils"
 
 /* ---------- types ---------- */
+interface TicketAttachment {
+  url: string
+  filename: string
+  size: number
+}
+
 interface Ticket {
   id: string
   ticket_number: string
@@ -34,6 +40,7 @@ interface Ticket {
   description: string
   status: string
   priority?: string
+  attachments?: TicketAttachment[]
   created_at: string
 }
 
@@ -43,6 +50,8 @@ interface Reply {
   author_name: string
   message: string
   is_admin: boolean
+  is_internal?: boolean
+  attachments?: TicketAttachment[]
   created_at: string
 }
 
@@ -116,6 +125,63 @@ const FAQ_ITEMS = [
 ]
 
 const DESCRIPTION_MAX = 2000
+const MAX_ATTACHMENTS = 3
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_FILE_TYPES = ["image/png", "image/jpeg", "image/webp", "application/pdf"]
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + " B"
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB"
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB"
+}
+
+/** Extract legacy inline attachment URL from message text */
+function extractAttachment(message: string): { text: string; url: string | null; isImage: boolean } {
+  const attachmentMatch = message.match(/\u{1F4CE} Attachment: (https?:\/\/\S+)/u)
+  if (attachmentMatch) {
+    const url = attachmentMatch[1]
+    const text = message.replace(/\n?\n?\u{1F4CE} Attachment: https?:\/\/\S+/u, "").trim()
+    const isImage = /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(url)
+    return { text, url, isImage }
+  }
+  return { text: message, url: null, isImage: false }
+}
+
+/** Render attachment chips for a list of attachments */
+function AttachmentChips({ attachments }: { attachments: TicketAttachment[] }) {
+  if (!attachments || attachments.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {attachments.map((att, i) => (
+        <a
+          key={i}
+          href={att.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs bg-muted/60 hover:bg-muted border rounded-full px-2.5 py-1 transition-colors"
+        >
+          <Paperclip className="h-3 w-3 shrink-0" />
+          <span className="truncate max-w-[140px]">{att.filename}</span>
+          <span className="text-muted-foreground">({formatFileSize(att.size)})</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+async function uploadTicketFile(file: File, storagePath: string): Promise<TicketAttachment | null> {
+  try {
+    const fd = new FormData()
+    fd.append("file", file)
+    fd.append("path", storagePath)
+    const res = await fetch("/api/tickets/upload", { method: "POST", body: fd })
+    if (!res.ok) return null
+    const data = await res.json()
+    return { url: data.url, filename: data.filename, size: data.size }
+  } catch {
+    return null
+  }
+}
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -297,6 +363,9 @@ function StatusTimeline({ ticket, replies }: { ticket: Ticket; replies: Reply[] 
 /* ---------- Chat Bubble ---------- */
 function ChatBubble({ reply }: { reply: Reply }) {
   const isAdmin = reply.is_admin
+  const { text, url: legacyUrl, isImage: legacyIsImage } = extractAttachment(reply.message)
+  const structuredAttachments = reply.attachments || []
+
   return (
     <div className={`flex ${isAdmin ? "justify-start" : "justify-end"} mb-3`}>
       <div className={`flex gap-2 max-w-[85%] ${isAdmin ? "flex-row" : "flex-row-reverse"}`}>
@@ -323,7 +392,49 @@ function ChatBubble({ reply }: { reply: Reply }) {
                 : "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm shadow-sm"
             }`}
           >
-            <p className="whitespace-pre-wrap">{reply.message}</p>
+            {text && <p className="whitespace-pre-wrap">{text}</p>}
+            {/* Legacy inline attachment from admin uploads */}
+            {legacyUrl && (
+              <div className="mt-2">
+                {legacyIsImage ? (
+                  <a href={legacyUrl} target="_blank" rel="noopener noreferrer">
+                    <img src={legacyUrl} alt="Attachment" className="rounded-lg max-h-40 object-cover" />
+                  </a>
+                ) : (
+                  <a
+                    href={legacyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs underline"
+                  >
+                    <Paperclip className="h-3 w-3" />
+                    View attachment
+                  </a>
+                )}
+              </div>
+            )}
+            {/* Structured attachments */}
+            {structuredAttachments.length > 0 && (
+              <div className={`flex flex-wrap gap-1.5 mt-2 ${text ? "pt-1.5 border-t border-current/10" : ""}`}>
+                {structuredAttachments.map((att, i) => (
+                  <a
+                    key={i}
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1.5 text-xs rounded-full px-2.5 py-1 transition-colors ${
+                      isAdmin
+                        ? "bg-muted/60 hover:bg-muted text-foreground"
+                        : "bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground"
+                    }`}
+                  >
+                    <Paperclip className="h-3 w-3 shrink-0" />
+                    <span className="truncate max-w-[120px]">{att.filename}</span>
+                    <span className="opacity-70">({formatFileSize(att.size)})</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div className={`flex items-center gap-1.5 mt-1 px-1 ${isAdmin ? "" : "justify-end"}`}>
             <span className="text-[10px] text-muted-foreground font-medium">
@@ -350,7 +461,8 @@ function SupportContent() {
   const [subject, setSubject] = useState("")
   const [description, setDescription] = useState("")
   const [priority, setPriority] = useState("normal")
-  const [attachment, setAttachment] = useState<File | null>(null)
+  const [attachments, setAttachments] = useState<File[]>([])
+  const [uploadingFiles, setUploadingFiles] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submittedTicket, setSubmittedTicket] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -367,8 +479,10 @@ function SupportContent() {
   const [replies, setReplies] = useState<Reply[]>([])
   const [loadingReplies, setLoadingReplies] = useState(false)
   const [replyText, setReplyText] = useState("")
+  const [replyAttachments, setReplyAttachments] = useState<File[]>([])
   const [sendingReply, setSendingReply] = useState(false)
   const [showTyping, setShowTyping] = useState(false)
+  const replyFileInputRef = useRef<HTMLInputElement>(null)
 
   const repliesEndRef = useRef<HTMLDivElement>(null)
   const repliesContainerRef = useRef<HTMLDivElement>(null)
@@ -380,26 +494,55 @@ function SupportContent() {
     }
   }, [replies, showTyping])
 
-  /* --- handle file attachment --- */
+  /* --- handle file attachment for ticket creation --- */
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    // Max 5MB
-    if (file.size > 5 * 1024 * 1024) {
-      setFormErrors((prev) => ({ ...prev, attachment: "File must be under 5MB" }))
-      return
+    const files = e.target.files
+    if (!files) return
+    const newFiles: File[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (attachments.length + newFiles.length >= MAX_ATTACHMENTS) {
+        setFormErrors((prev) => ({ ...prev, attachment: `Maximum ${MAX_ATTACHMENTS} files allowed` }))
+        break
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        setFormErrors((prev) => ({ ...prev, attachment: `${file.name} exceeds 10 MB limit` }))
+        continue
+      }
+      if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+        setFormErrors((prev) => ({ ...prev, attachment: "Only PNG, JPG, WebP, or PDF files allowed" }))
+        continue
+      }
+      newFiles.push(file)
     }
-    const allowed = ["image/png", "image/jpeg", "image/webp", "application/pdf"]
-    if (!allowed.includes(file.type)) {
-      setFormErrors((prev) => ({ ...prev, attachment: "Only PNG, JPG, WebP, or PDF files allowed" }))
-      return
+    if (newFiles.length > 0) {
+      setFormErrors((prev) => {
+        const next = { ...prev }
+        delete next.attachment
+        return next
+      })
+      setAttachments((prev) => [...prev, ...newFiles].slice(0, MAX_ATTACHMENTS))
     }
-    setFormErrors((prev) => {
-      const next = { ...prev }
-      delete next.attachment
-      return next
-    })
-    setAttachment(file)
+    // Reset input so re-selecting the same file works
+    e.target.value = ""
+  }
+
+  /* --- handle file attachment for reply --- */
+  function handleReplyFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files
+    if (!files) return
+    const newFiles: File[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (replyAttachments.length + newFiles.length >= MAX_ATTACHMENTS) break
+      if (file.size > MAX_FILE_SIZE) continue
+      if (!ALLOWED_FILE_TYPES.includes(file.type)) continue
+      newFiles.push(file)
+    }
+    if (newFiles.length > 0) {
+      setReplyAttachments((prev) => [...prev, ...newFiles].slice(0, MAX_ATTACHMENTS))
+    }
+    e.target.value = ""
   }
 
   /* --- submit ticket --- */
@@ -421,6 +564,20 @@ function SupportContent() {
     setSubmitting(true)
 
     try {
+      // Upload attachments first if any
+      let uploadedAttachments: TicketAttachment[] = []
+      if (attachments.length > 0) {
+        setUploadingFiles(true)
+        const tempId = `new_${Date.now()}`
+        const uploads = await Promise.all(
+          attachments.map((file) =>
+            uploadTicketFile(file, `tickets/${tempId}/${file.name}`)
+          )
+        )
+        uploadedAttachments = uploads.filter((a): a is TicketAttachment => a !== null)
+        setUploadingFiles(false)
+      }
+
       const res = await fetch("/api/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -433,6 +590,7 @@ function SupportContent() {
           subject: subject.trim(),
           description: description.trim(),
           priority,
+          attachments: uploadedAttachments,
         }),
       })
 
@@ -449,10 +607,11 @@ function SupportContent() {
       setSubject("")
       setDescription("")
       setPriority("normal")
-      setAttachment(null)
+      setAttachments([])
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong"
       setFormErrors({ _form: message })
+      setUploadingFiles(false)
     } finally {
       setSubmitting(false)
     }
@@ -492,7 +651,9 @@ function SupportContent() {
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`)
       const data = await res.json()
-      setReplies(data.replies || [])
+      // Filter out internal notes as a safety measure (server also filters)
+      const allReplies: Reply[] = data.replies || []
+      setReplies(allReplies.filter((r) => !r.is_internal))
     } catch {
       setReplies([])
     } finally {
@@ -502,17 +663,33 @@ function SupportContent() {
 
   /* --- send reply --- */
   async function handleReply() {
-    if (!replyText.trim() || !selectedTicket) return
+    if (!replyText.trim() && replyAttachments.length === 0) return
+    if (!selectedTicket) return
     setSendingReply(true)
 
     try {
+      // Upload reply attachments first
+      let uploadedAttachments: TicketAttachment[] = []
+      if (replyAttachments.length > 0) {
+        const uploads = await Promise.all(
+          replyAttachments.map((file) =>
+            uploadTicketFile(
+              file,
+              `tickets/${selectedTicket.id}/replies/${Date.now()}_${file.name}`
+            )
+          )
+        )
+        uploadedAttachments = uploads.filter((a): a is TicketAttachment => a !== null)
+      }
+
       const res = await fetch(`/api/tickets/${selectedTicket.id}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: replyText.trim(),
           author_name: selectedTicket.name,
-          is_admin: false,
+          as_member: true,
+          attachments: uploadedAttachments,
         }),
       })
 
@@ -521,6 +698,7 @@ function SupportContent() {
 
       setReplies((prev) => [...prev, data.reply || data])
       setReplyText("")
+      setReplyAttachments([])
 
       // Show fake typing indicator for UX polish
       setShowTyping(true)
@@ -751,36 +929,67 @@ function SupportContent() {
                   )}
                 </div>
 
-                {/* File Attachment — Coming soon */}
+                {/* File Attachment */}
                 <div>
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs">Attachment (optional)</Label>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Coming soon</Badge>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-1.5 gap-1.5 opacity-50 cursor-not-allowed"
-                    disabled
-                  >
-                    <Paperclip className="h-3.5 w-3.5" />
-                    Attach Screenshot or Document
-                  </Button>
+                  <Label className="text-xs">Attachments (optional)</Label>
+                  {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-1.5 mb-2">
+                      {attachments.map((file, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-2 bg-muted/60 border rounded-lg px-3 py-1.5 text-xs"
+                        >
+                          <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate max-w-[160px]">{file.name}</span>
+                          <span className="text-muted-foreground">({formatFileSize(file.size)})</span>
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                            className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label={`Remove ${file.name}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {attachments.length < MAX_ATTACHMENTS && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-1.5 gap-1.5"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      {attachments.length === 0 ? "Attach Screenshot or Document" : "Add Another File"}
+                    </Button>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,application/pdf"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    File attachments will be supported in a future update.
+                    PNG, JPG, WebP, or PDF. Max 10 MB per file, up to {MAX_ATTACHMENTS} files.
                   </p>
+                  {formErrors.attachment && (
+                    <p className="text-xs text-destructive mt-0.5">{formErrors.attachment}</p>
+                  )}
                 </div>
 
                 <Button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || uploadingFiles}
                   className="w-full"
                 >
-                  {submitting ? (
+                  {submitting || uploadingFiles ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Submitting...
+                      {uploadingFiles ? "Uploading files..." : "Submitting..."}
                     </>
                   ) : (
                     <>
@@ -849,9 +1058,13 @@ function SupportContent() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-mono text-muted-foreground">
+                          <Link
+                            href={`/support/${ticket.ticket_number}`}
+                            className="text-xs font-mono text-muted-foreground hover:text-primary hover:underline transition-colors"
+                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                          >
                             {ticket.ticket_number}
-                          </span>
+                          </Link>
                           <Badge variant="outline" className="text-[10px]">
                             {ticket.category}
                           </Badge>
@@ -859,7 +1072,13 @@ function SupportContent() {
                             {statusLabel(ticket.status)}
                           </Badge>
                         </div>
-                        <h3 className="font-medium mt-1 truncate">{ticket.subject}</h3>
+                        <Link
+                          href={`/support/${ticket.ticket_number}`}
+                          className="font-medium mt-1 truncate block hover:text-primary transition-colors"
+                          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        >
+                          {ticket.subject}
+                        </Link>
                         <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
                           {formatDate(ticket.created_at)}
@@ -921,6 +1140,24 @@ function SupportContent() {
                     <div>
                       <div className="px-3.5 py-2.5 text-sm leading-relaxed bg-primary text-primary-foreground rounded-2xl rounded-tr-sm shadow-sm">
                         <p className="whitespace-pre-wrap">{selectedTicket.description}</p>
+                        {/* Ticket-level attachments */}
+                        {selectedTicket.attachments && selectedTicket.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2 pt-1.5 border-t border-primary-foreground/20">
+                            {selectedTicket.attachments.map((att, i) => (
+                              <a
+                                key={i}
+                                href={att.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground rounded-full px-2.5 py-1 transition-colors"
+                              >
+                                <Paperclip className="h-3 w-3 shrink-0" />
+                                <span className="truncate max-w-[120px]">{att.filename}</span>
+                                <span className="opacity-70">({formatFileSize(att.size)})</span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 mt-1 px-1 justify-end">
                         <span className="text-[10px] text-muted-foreground font-medium">
@@ -979,7 +1216,50 @@ function SupportContent() {
             {/* Reply form */}
             {selectedTicket && selectedTicket.status !== "closed" && (
               <div className="px-4 py-3 border-t bg-muted/20">
+                {/* Reply attachment previews */}
+                {replyAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {replyAttachments.map((file, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-1.5 bg-muted/60 border rounded-full px-2.5 py-1 text-xs"
+                      >
+                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate max-w-[100px]">{file.name}</span>
+                        <span className="text-muted-foreground">({formatFileSize(file.size)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setReplyAttachments((prev) => prev.filter((_, j) => j !== i))}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex gap-2 items-end">
+                  {/* Attach file button */}
+                  {replyAttachments.length < MAX_ATTACHMENTS && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-10 w-10 p-0 shrink-0 hover:bg-muted"
+                      onClick={() => replyFileInputRef.current?.click()}
+                      title="Attach file"
+                    >
+                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  )}
+                  <input
+                    ref={replyFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,application/pdf"
+                    className="hidden"
+                    onChange={handleReplyFileChange}
+                  />
                   <Textarea
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
@@ -995,7 +1275,7 @@ function SupportContent() {
                   />
                   <Button
                     onClick={handleReply}
-                    disabled={sendingReply || !replyText.trim()}
+                    disabled={sendingReply || (!replyText.trim() && replyAttachments.length === 0)}
                     size="sm"
                     className="h-10 w-10 p-0 rounded-full shrink-0"
                   >
@@ -1008,6 +1288,7 @@ function SupportContent() {
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5">
                   Press Enter to send, Shift+Enter for new line
+                  {replyAttachments.length > 0 && ` | ${replyAttachments.length} file${replyAttachments.length > 1 ? "s" : ""} attached`}
                 </p>
               </div>
             )}

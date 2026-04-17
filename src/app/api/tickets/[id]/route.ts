@@ -28,10 +28,20 @@ export async function GET(
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
-    const { data: replies, error: repliesError } = await supabase
+    // Check if caller is admin — non-admins must not see internal notes
+    const adminSession = await getAdminSession()
+    const isAdmin = !!adminSession
+
+    let repliesQuery = supabase
       .from("ticket_replies")
       .select("*")
       .eq("ticket_id", ticket.id)
+
+    if (!isAdmin) {
+      repliesQuery = repliesQuery.eq("is_internal", false)
+    }
+
+    const { data: replies, error: repliesError } = await repliesQuery
       .order("created_at", { ascending: true })
 
     if (repliesError) {

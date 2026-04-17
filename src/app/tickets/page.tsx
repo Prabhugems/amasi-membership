@@ -158,12 +158,20 @@ const ADMIN_ASSIGNEES = [
 
 /* ---------- types ---------- */
 
+interface TicketAttachment {
+  url: string
+  filename: string
+  size: number
+}
+
 interface TicketReply {
   id: string
   ticket_id: string
   message: string
   is_admin: boolean
+  is_internal?: boolean
   author_name: string
+  attachments?: TicketAttachment[]
   created_at: string
 }
 
@@ -178,6 +186,7 @@ interface SupportTicket {
   status: string
   priority: string
   assigned_to?: string
+  attachments?: TicketAttachment[]
   created_at: string
   updated_at: string
   replies?: TicketReply[]
@@ -372,7 +381,64 @@ function TicketListItem({
 /* ---------- Chat Bubble ---------- */
 function ChatBubble({ reply }: { reply: TicketReply }) {
   const isAdmin = reply.is_admin
+  const isInternal = reply.is_internal === true
   const { text, url, isImage } = extractAttachment(reply.message)
+  const structuredAttachments = reply.attachments || []
+
+  // Internal notes get a distinct amber style
+  if (isInternal) {
+    return (
+      <div className="flex justify-end mb-4">
+        <div className="flex gap-2.5 max-w-[75%] flex-row-reverse">
+          {/* Avatar */}
+          <div className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 shadow-sm bg-amber-100 text-amber-700">
+            <ShieldCheck className="h-4 w-4" />
+          </div>
+          {/* Bubble */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 px-1 text-right">
+              Internal note
+            </div>
+            <div className="px-4 py-3 text-sm leading-relaxed bg-amber-50 dark:bg-amber-500/10 border-l-2 border-amber-400 text-amber-900 dark:text-amber-200 rounded-2xl rounded-tr-md shadow-sm">
+              {text && <p className="whitespace-pre-wrap">{text}</p>}
+              {url && (
+                <div className={`mt-2 ${text ? "pt-2 border-t border-amber-200 dark:border-amber-500/20" : ""}`}>
+                  {isImage ? (
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+                      <img
+                        src={url}
+                        alt="Attachment"
+                        className="rounded-lg max-h-52 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      />
+                    </a>
+                  ) : (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg transition-colors bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/30"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      View attachment
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 px-1 justify-end">
+              <span className="text-[10px] text-amber-600/70 dark:text-amber-400/70 font-medium">
+                {reply.author_name}
+              </span>
+              <span className="text-[10px] text-amber-600/50 dark:text-amber-400/50">
+                {timeAgo(reply.created_at)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex ${isAdmin ? "justify-end" : "justify-start"} mb-4`}>
@@ -430,6 +496,28 @@ function ChatBubble({ reply }: { reply: TicketReply }) {
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
+              </div>
+            )}
+            {/* Structured attachments (member uploads) */}
+            {structuredAttachments.length > 0 && (
+              <div className={`flex flex-wrap gap-1.5 mt-2 ${text || url ? "pt-2 border-t" : ""} ${isAdmin ? "border-teal-500/30" : "border-gray-100 dark:border-slate-800"}`}>
+                {structuredAttachments.map((att, i) => (
+                  <a
+                    key={i}
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors ${
+                      isAdmin
+                        ? "bg-teal-500/30 text-teal-50 hover:bg-teal-500/40"
+                        : "bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700"
+                    }`}
+                  >
+                    <Paperclip className="h-3 w-3 shrink-0" />
+                    <span className="truncate max-w-[120px]">{att.filename}</span>
+                    <span className="opacity-70">({formatFileSize(att.size)})</span>
+                  </a>
+                ))}
               </div>
             )}
           </div>
@@ -505,6 +593,9 @@ function TicketsContent() {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const [showQuickReplies, setShowQuickReplies] = useState(false)
+
+  // internal note toggle
+  const [isInternalNote, setIsInternalNote] = useState(false)
 
   // attachment
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
@@ -596,6 +687,7 @@ function TicketsContent() {
     setReplyText("")
     setShowQuickReplies(false)
     setAttachedFile(null)
+    setIsInternalNote(false)
   }, [])
 
   /* ---- update ticket mutation ---- */
@@ -630,15 +722,18 @@ function TicketsContent() {
     mutationFn: async ({
       message,
       file,
+      internal,
     }: {
       message: string
       file: File | null
+      internal: boolean
     }) => {
       if (file) {
         const fd = new FormData()
         fd.append("message", message)
         fd.append("author_name", "AMASI Admin")
         fd.append("attachment", file)
+        if (internal) fd.append("is_internal", "true")
         const res = await fetch(`/api/tickets/${selectedTicketId}/reply`, {
           method: "POST",
           body: fd,
@@ -652,6 +747,7 @@ function TicketsContent() {
         body: JSON.stringify({
           message,
           is_admin: true,
+          is_internal: internal,
           author_name: "AMASI Admin",
         }),
       })
@@ -659,16 +755,17 @@ function TicketsContent() {
       return res.json()
     },
     onSuccess: () => {
-      toast.success("Reply sent")
+      toast.success(isInternalNote ? "Internal note added" : "Reply sent")
       setReplyText("")
       setShowQuickReplies(false)
       setAttachedFile(null)
+      setIsInternalNote(false)
       queryClient.invalidateQueries({
         queryKey: ["ticket-detail", selectedTicketId],
       })
       queryClient.invalidateQueries({ queryKey: ["tickets-all"] })
     },
-    onError: () => toast.error("Failed to send reply"),
+    onError: () => toast.error(isInternalNote ? "Failed to add note" : "Failed to send reply"),
   })
 
   const handleSearch = (e: React.FormEvent) => {
@@ -682,7 +779,7 @@ function TicketsContent() {
 
   const handleSendReply = () => {
     if (!replyText.trim() && !attachedFile) return
-    replyMutation.mutate({ message: replyText.trim(), file: attachedFile })
+    replyMutation.mutate({ message: replyText.trim(), file: attachedFile, internal: isInternalNote })
   }
 
   const handleToggleClose = () => {
@@ -1035,6 +1132,24 @@ function TicketsContent() {
                         <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-700 dark:text-slate-300">
                           {ticketDetail.description}
                         </p>
+                        {/* Ticket-level attachments */}
+                        {ticketDetail.attachments && ticketDetail.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-gray-100 dark:border-slate-800">
+                            {ticketDetail.attachments.map((att, i) => (
+                              <a
+                                key={i}
+                                href={att.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700"
+                              >
+                                <Paperclip className="h-3 w-3 shrink-0" />
+                                <span className="truncate max-w-[120px]">{att.filename}</span>
+                                <span className="opacity-70">({formatFileSize(att.size)})</span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <p className="text-[10px] text-muted-foreground/60 mt-1.5 px-1">
                         {formatDate(ticketDetail.created_at)}
@@ -1119,6 +1234,18 @@ function TicketsContent() {
                   </div>
                 )}
 
+                {/* Internal note banner */}
+                {isInternalNote && (
+                  <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
+                      Internal note
+                    </span>
+                    <span className="text-[11px] text-amber-600/70 dark:text-amber-400/70">
+                      Only visible to admins. The member will not be notified.
+                    </span>
+                  </div>
+                )}
+
                 {/* Reply input row */}
                 <div className="flex gap-2 items-end">
                   {/* Quick replies button */}
@@ -1150,13 +1277,31 @@ function TicketsContent() {
                     onChange={handleFileSelect}
                   />
 
+                  {/* Internal note toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsInternalNote(!isInternalNote)}
+                    title={isInternalNote ? "Switch to public reply" : "Switch to internal note"}
+                    className={`shrink-0 h-10 px-3 rounded-lg text-xs font-semibold border transition-all duration-150 ${
+                      isInternalNote
+                        ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/30"
+                        : "bg-white dark:bg-slate-900 text-muted-foreground border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/60 hover:text-foreground"
+                    }`}
+                  >
+                    Internal note
+                  </button>
+
                   {/* Textarea */}
                   <Textarea
-                    placeholder="Write your reply..."
+                    placeholder={isInternalNote ? "Write an internal note..." : "Write your reply..."}
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     rows={2}
-                    className="flex-1 resize-none min-h-[42px] max-h-[120px] bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-colors"
+                    className={`flex-1 resize-none min-h-[42px] max-h-[120px] transition-colors ${
+                      isInternalNote
+                        ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/20 focus:bg-amber-50 dark:focus:bg-amber-500/10"
+                        : "bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900"
+                    }`}
                     onKeyDown={(e) => {
                       if (
                         e.key === "Enter" &&
@@ -1175,19 +1320,24 @@ function TicketsContent() {
                       (!replyText.trim() && !attachedFile) ||
                       replyMutation.isPending
                     }
-                    className="h-10 gap-1.5 shrink-0 bg-teal-600 hover:bg-teal-700 shadow-sm"
+                    className={`h-10 gap-1.5 shrink-0 shadow-sm ${
+                      isInternalNote
+                        ? "bg-amber-500 hover:bg-amber-600 text-white"
+                        : "bg-teal-600 hover:bg-teal-700"
+                    }`}
                   >
                     {replyMutation.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Send
+                    {isInternalNote ? "Add note" : "Send"}
                   </Button>
                 </div>
                 <p className="text-[10px] text-muted-foreground/50 pl-[88px]">
                   Cmd+Enter to send
                   {attachedFile ? " | 1 file attached" : ""}
+                  {isInternalNote ? " | Internal note mode" : ""}
                 </p>
               </div>
             </>

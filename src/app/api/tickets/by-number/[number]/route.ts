@@ -1,13 +1,27 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, getMemberSession } from "@/lib/auth"
+
+// Note: previously this route accepted email as an unauthenticated
+// lookup parameter. Removed 2026-04-18 — email-based access must go
+// through the permalink verification flow, not query params.
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ number: string }> }
 ) {
   try {
     const { number } = await params
+
+    // Auth check FIRST — admin session (cookie) or member session (cookie, post-OTP)
+    const adminSession = await getAdminSession()
+    const memberSession = await getMemberSession()
+    const isAdmin = !!adminSession
+
+    if (!isAdmin && !memberSession) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const supabase = createAdminClient()
 
     const { data: ticket, error: ticketError } = await supabase
@@ -20,24 +34,22 @@ export async function GET(
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
-    // Ownership check: admins can access any ticket; members must provide
-    // the matching email as a query param to prove they own it.
-    const adminSession = await getAdminSession()
-    if (!adminSession) {
-      const email = request.nextUrl.searchParams.get("email")
-      if (!email || email.toLowerCase() !== (ticket.email || "").toLowerCase()) {
+    // Non-admin: verify ownership via member session email
+    if (!isAdmin) {
+      const memberEmail = (memberSession!.email as string) || ""
+      if (memberEmail.toLowerCase() !== (ticket.email || "").toLowerCase()) {
         return Response.json({ error: "Ticket not found" }, { status: 404 })
       }
     }
 
-    // Fetch replies, always filter out internal notes for non-admins
+    // Fetch replies, filter out internal notes for non-admins
     let replyQuery = supabase
       .from("ticket_replies")
       .select("*")
       .eq("ticket_id", ticket.id)
       .order("created_at", { ascending: true })
 
-    if (!adminSession) {
+    if (!isAdmin) {
       replyQuery = replyQuery.eq("is_internal", false)
     }
 

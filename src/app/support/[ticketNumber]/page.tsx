@@ -68,7 +68,9 @@ export default function TicketPermalinkPage() {
     }
   }, [replies])
 
-  // Fetch ticket after email is verified
+  // TODO(auth): This page uses email-based ticket lookup which now requires
+  // a member session. Must route through permalink verification flow (OTP)
+  // instead of raw email param. Tracked for next session.
   useEffect(() => {
     if (!verifiedEmail || !ticketNumber) return
     async function fetchTicket() {

@@ -194,6 +194,7 @@ export async function GET(request: NextRequest) {
         let tsQuery = supabase
           .from("support_tickets")
           .select("*")
+          .is("merged_into", null)
           .textSearch("search_vector", q, { type: "websearch" })
           .order("created_at", { ascending: false })
         if (status) tsQuery = tsQuery.eq("status", status)
@@ -208,6 +209,7 @@ export async function GET(request: NextRequest) {
         let fallbackQuery = supabase
           .from("support_tickets")
           .select("*")
+          .is("merged_into", null)
           .or(`name.ilike.${pattern},email.ilike.${pattern},ticket_number.ilike.${pattern},subject.ilike.${pattern},description.ilike.${pattern}`)
           .order("created_at", { ascending: false })
         if (status) fallbackQuery = fallbackQuery.eq("status", status)

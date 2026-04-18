@@ -6,6 +6,20 @@ import { getAdminSession, getMemberSession } from "@/lib/auth"
 // lookup parameter. Removed 2026-04-18 — email-based access must go
 // through the permalink verification flow, not query params.
 
+const MEMBER_SAFE_KEYS = new Set([
+  "id", "ticket_number", "subject", "description", "category", "status",
+  "priority", "name", "email", "created_at", "updated_at", "closed_at",
+  "sla_due_at", "sla_breached", "first_response_at", "merged_into", "merged_at",
+])
+
+function stripToMemberFields(ticket: Record<string, unknown>) {
+  const safe: Record<string, unknown> = {}
+  for (const key of MEMBER_SAFE_KEYS) {
+    if (key in ticket) safe[key] = ticket[key]
+  }
+  return safe
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ number: string }> }
@@ -59,7 +73,8 @@ export async function GET(
       return Response.json({ error: repliesError.message }, { status: 500 })
     }
 
-    return Response.json({ ticket, replies })
+    const safeTicket = isAdmin ? ticket : stripToMemberFields(ticket)
+    return Response.json({ ticket: safeTicket, replies })
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Internal server error" },

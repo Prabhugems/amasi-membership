@@ -114,7 +114,7 @@ export async function PATCH(
 
     const { id } = await params
     const body = await request.json()
-    const { status, priority } = body
+    const { status, priority, assigned_to } = body
 
     if (!status) {
       return Response.json({ error: "status is required" }, { status: 400 })
@@ -145,6 +145,10 @@ export async function PATCH(
         )
       }
       updates.priority = priority
+    }
+
+    if (assigned_to !== undefined) {
+      updates.assigned_to = assigned_to === "Unassigned" ? null : assigned_to
     }
 
     // Set or clear closed_at based on status

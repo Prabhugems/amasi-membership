@@ -81,14 +81,16 @@ export function useTicketDetail() {
     mutationFn: async ({
       status,
       priority,
+      assigned_to,
     }: {
       status: string
       priority: string
+      assigned_to?: string
     }) => {
       const res = await fetch(`/api/tickets/${selectedTicketId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, priority }),
+        body: JSON.stringify({ status, priority, assigned_to }),
       })
       if (!res.ok) throw new Error("Update failed")
       return res.json()
@@ -155,7 +157,7 @@ export function useTicketDetail() {
   })
 
   const handleSaveChanges = () => {
-    updateMutation.mutate({ status: editStatus, priority: editPriority })
+    updateMutation.mutate({ status: editStatus, priority: editPriority, assigned_to: editAssignee })
   }
 
   const handleSendReply = () => {

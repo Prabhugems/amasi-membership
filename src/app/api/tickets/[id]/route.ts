@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 
 // UUID v4 pattern check
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const MEMBER_TICKET_FIELDS =
+  "id, ticket_number, subject, description, category, status, priority, name, email, created_at, updated_at, closed_at, sla_due_at, sla_breached, first_response_at, merged_into, merged_at"
 
 export async function GET(
   request: NextRequest,
@@ -12,24 +15,47 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const supabase = createAdminClient()
 
-    // Look up by uuid or ticket_number
+    // Auth check FIRST — before any DB query
+    const adminSession = await getAdminSession()
+    const memberSession = await getMemberSession()
+    const isAdmin = !!adminSession
+
+    // Must be either admin or authenticated member (or provide email for unauthenticated member lookup)
+    const callerEmail =
+      (memberSession?.email as string) ||
+      request.nextUrl.searchParams.get("email")
+
+    if (!isAdmin && !callerEmail) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const supabase = createAdminClient()
     const isUuid = UUID_REGEX.test(id)
-    const ticketQuery = supabase
+
+    // Admins get all fields; members get a restricted set
+    const selectFields = isAdmin ? "*" : MEMBER_TICKET_FIELDS
+
+    const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
-      .select("*")
+      .select(selectFields)
       .eq(isUuid ? "id" : "ticket_number", id)
       .single()
-
-    const { data: ticket, error: ticketError } = await ticketQuery
 
     if (ticketError || !ticket) {
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
-    // Lazy SLA breach detection — mark breached if deadline passed without first response
+    // Non-admin: verify ownership via email match
+    if (!isAdmin) {
+      if (callerEmail!.toLowerCase() !== (ticket.email || "").toLowerCase()) {
+        return Response.json({ error: "Ticket not found" }, { status: 404 })
+      }
+    }
+
+    // Lazy SLA breach detection — only for admins (they act on it)
     if (
+      isAdmin &&
       ticket.sla_due_at &&
       !ticket.first_response_at &&
       !ticket.sla_breached &&
@@ -42,10 +68,7 @@ export async function GET(
         .eq("id", ticket.id)
     }
 
-    // Check if caller is admin — non-admins must not see internal notes
-    const adminSession = await getAdminSession()
-    const isAdmin = !!adminSession
-
+    // Fetch replies — filter internal notes for non-admins
     let repliesQuery = supabase
       .from("ticket_replies")
       .select("*")

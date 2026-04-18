@@ -120,7 +120,8 @@ export function TicketTracker() {
     setLoadingReplies(true)
 
     try {
-      const res = await fetch(`/api/tickets/${ticket.id}`)
+      const emailParam = ticket.email ? `?email=${encodeURIComponent(ticket.email)}` : ""
+      const res = await fetch(`/api/tickets/${ticket.id}${emailParam}`)
       const data = await res.json()
       const allReplies: Reply[] = data.replies || []
       setReplies(allReplies.filter((r) => !r.is_internal))

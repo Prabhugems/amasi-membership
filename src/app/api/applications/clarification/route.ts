@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
             <h2 style="color: #1a1a1a;">${heading}</h2>
-            <p style="color: #555;">Dear ${app.salutation || "Dr."} ${app.first_name || app.name},</p>
+            <p style="color: #555;">Dear ${escapeHtml(app.salutation || "Dr.")} ${escapeHtml(app.first_name || app.name)},</p>
             <p style="color: #555;">${intro}</p>
             <div style="background: ${boxBg}; border: 1px solid ${boxBorder}; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: ${boxTextColor}; font-weight: bold; margin: 0;">Message from reviewer</p>

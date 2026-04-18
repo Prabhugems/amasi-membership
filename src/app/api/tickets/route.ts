@@ -132,11 +132,11 @@ export async function POST(request: NextRequest) {
             <h2 style="color: #0f766e; margin: 0 0 16px;">New Support Ticket</h2>
             <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #555;">
               <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Ticket #</td><td style="padding: 6px 0;">${data.ticket_number}</td></tr>
-              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Name</td><td style="padding: 6px 0;">${name}</td></tr>
-              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Email</td><td style="padding: 6px 0;">${email}</td></tr>
-              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Category</td><td style="padding: 6px 0;">${category}</td></tr>
-              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Priority</td><td style="padding: 6px 0;">${resolvedPriority}</td></tr>
-              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Subject</td><td style="padding: 6px 0;">${subject}</td></tr>
+              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Name</td><td style="padding: 6px 0;">${escapeHtml(name)}</td></tr>
+              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Email</td><td style="padding: 6px 0;">${escapeHtml(email)}</td></tr>
+              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Category</td><td style="padding: 6px 0;">${escapeHtml(category)}</td></tr>
+              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Priority</td><td style="padding: 6px 0;">${escapeHtml(resolvedPriority)}</td></tr>
+              <tr><td style="padding: 6px 12px 6px 0; font-weight: bold;">Subject</td><td style="padding: 6px 0;">${escapeHtml(subject)}</td></tr>
             </table>
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: #334155; margin: 0; white-space: pre-wrap;">${escapeHtml(description.slice(0, 500))}${description.length > 500 ? "..." : ""}</p>

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { verifyMemberOwnership } from "@/lib/member-ownership"
 import { extractTextFromImage } from "@/lib/ocr"
+import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
 function getResend() {
@@ -287,12 +288,12 @@ export async function POST(request: NextRequest) {
                   <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
                 </div>
                 <h2 style="color: #1a1a1a;">Membership Upgraded!</h2>
-                <p style="color: #555;">Dear ${memberName || member.name},</p>
+                <p style="color: #555;">Dear ${escapeHtml(memberName || member.name)},</p>
                 <p style="color: #555;">Your AMASI membership has been upgraded from <strong>Associate Life Member (ALM)</strong> to <strong>Life Member (LM)</strong>.</p>
                 <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                   <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Membership Status</p>
                   <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">Life Member (LM)</p>
-                  <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${amasiNumber}</p>
+                  <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${escapeHtml(String(amasiNumber))}</p>
                 </div>
                 <p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>
                 <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />

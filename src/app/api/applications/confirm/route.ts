@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { Resend } from "resend"
+import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
           </div>
 
           <h2 style="color: #1a1a1a;">Application Received</h2>
-          <p style="color: #555;">Dear ${name || "Doctor"},</p>
+          <p style="color: #555;">Dear ${escapeHtml(name || "Doctor")},</p>
           <p style="color: #555;">Your AMASI membership application has been submitted successfully.</p>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 20px 0;">
@@ -40,11 +41,11 @@ export async function POST(request: NextRequest) {
               </tr>
               <tr>
                 <td style="padding: 6px 0; color: #666; font-size: 14px;">Membership Type</td>
-                <td style="padding: 6px 0; text-align: right;">${membershipType}</td>
+                <td style="padding: 6px 0; text-align: right;">${escapeHtml(membershipType || "")}</td>
               </tr>
               ${fee ? `<tr>
                 <td style="padding: 6px 0; color: #666; font-size: 14px;">Fee</td>
-                <td style="padding: 6px 0; font-weight: bold; text-align: right;">${fee}</td>
+                <td style="padding: 6px 0; font-weight: bold; text-align: right;">${escapeHtml(String(fee))}</td>
               </tr>` : ""}
               <tr>
                 <td style="padding: 6px 0; color: #666; font-size: 14px;">Status</td>

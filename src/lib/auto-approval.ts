@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { escapeHtml } from "@/lib/html-escape"
 
 /**
  * Normalized shape used by the auto-approval helper.
@@ -208,7 +209,7 @@ export async function autoApproveApplication(
                 <h1 style="color: #0f766e; margin: 0;">AMASI</h1>
                 <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
               </div>
-              <h2 style="color: #1a1a1a;">Welcome, ${displayName}!</h2>
+              <h2 style="color: #1a1a1a;">Welcome, ${escapeHtml(displayName)}!</h2>
               <p style="color: #555;">Your AMASI membership has been <strong style="color: #16a34a;">approved</strong>.</p>
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                 <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Your Membership Number</p>

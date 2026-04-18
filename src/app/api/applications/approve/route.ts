@@ -4,6 +4,7 @@ import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
               <h1 style="color: #0f766e; margin: 0;">AMASI</h1>
               <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
             </div>
-            <h2 style="color: #1a1a1a;">Welcome, ${app.salutation || "Dr."} ${app.first_name || app.name}!</h2>
+            <h2 style="color: #1a1a1a;">Welcome, ${escapeHtml(app.salutation || "Dr.")} ${escapeHtml(app.first_name || app.name)}!</h2>
             <p style="color: #555;">Your AMASI membership has been <strong style="color: #16a34a;">approved</strong>.</p>
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
               <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Your Membership Number</p>

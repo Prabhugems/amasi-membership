@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { Resend } from "resend"
+import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -134,7 +135,7 @@ export async function POST(request: NextRequest) {
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
             <h2 style="color: #1a1a1a;">Application Resubmitted</h2>
-            <p style="color: #555;">Dear ${app.salutation || "Dr."} ${updates.firstName || app.first_name || app.name},</p>
+            <p style="color: #555;">Dear ${escapeHtml(app.salutation || "Dr.")} ${escapeHtml(updates.firstName || app.first_name || app.name)},</p>
             <p style="color: #555;">Your AMASI membership application has been successfully resubmitted and is now under review.</p>
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: #166534; font-weight: bold; margin: 0;">Reference: ${app.reference_number}</p>

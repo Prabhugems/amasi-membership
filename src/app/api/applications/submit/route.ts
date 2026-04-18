@@ -4,6 +4,7 @@ import { Resend } from "resend"
 import { scoreApplication } from "@/lib/ai-approval"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
+import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -262,7 +263,7 @@ export async function POST(request: NextRequest) {
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
             <h2 style="color: #1a1a1a;">Application Under Review</h2>
-            <p style="color: #555;">Dear ${formData.salutation} ${formData.firstName},</p>
+            <p style="color: #555;">Dear ${escapeHtml(formData.salutation)} ${escapeHtml(formData.firstName)},</p>
             <p style="color: #555;">Your application (${referenceNumber}) has been received and payment confirmed. Our admin team will review your documents and approve your membership shortly.</p>
             <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 20px 0;">
               <p style="color: #92400e; font-weight: bold; margin: 0;">Status: Under Manual Review</p>

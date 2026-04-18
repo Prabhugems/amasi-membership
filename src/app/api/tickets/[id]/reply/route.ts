@@ -181,8 +181,8 @@ export async function POST(
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
               <h2 style="color: #0f766e; margin: 0 0 4px;">Member Reply</h2>
-              <p style="color: #999; font-size: 12px; margin: 0 0 20px;">Ticket ${ticket.ticket_number} — ${ticket.subject}</p>
-              <p style="color: #555;">From: <strong>${ticket.name || author_name}</strong> (${ticket.email || "no email"})</p>
+              <p style="color: #999; font-size: 12px; margin: 0 0 20px;">Ticket ${ticket.ticket_number} — ${escapeHtml(ticket.subject)}</p>
+              <p style="color: #555;">From: <strong>${escapeHtml(ticket.name || author_name)}</strong> (${escapeHtml(ticket.email || "no email")})</p>
               <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 20px 0;">
                 <p style="color: #1e40af; margin: 0; white-space: pre-wrap;">${escapeHtml(message.slice(0, 500))}${message.length > 500 ? "..." : ""}</p>
               </div>
@@ -209,8 +209,8 @@ export async function POST(
             <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
               <h2 style="color: #0f766e; margin: 0 0 4px;">AMASI Support</h2>
               <p style="color: #999; font-size: 12px; margin: 0 0 20px;">Ticket ${ticket.ticket_number}</p>
-              <p style="color: #555;">Dear ${ticket.name || "Member"},</p>
-              <p style="color: #555;">We have replied to your support ticket: <strong>${ticket.subject}</strong></p>
+              <p style="color: #555;">Dear ${escapeHtml(ticket.name || "Member")},</p>
+              <p style="color: #555;">We have replied to your support ticket: <strong>${escapeHtml(ticket.subject)}</strong></p>
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 20px 0;">
                 <p style="color: #166534; font-weight: bold; margin: 0 0 4px;">AMASI Admin</p>
                 <p style="color: #166534; margin: 0; white-space: pre-wrap;">${escapeHtml(message)}</p>

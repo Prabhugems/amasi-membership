@@ -97,12 +97,12 @@ export async function PATCH(
                 <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
               </div>
               <h2 style="color: #1a1a1a;">Membership Upgraded!</h2>
-              <p style="color: #555;">Dear ${upgrade.member_name},</p>
+              <p style="color: #555;">Dear ${escapeHtml(upgrade.member_name)},</p>
               <p style="color: #555;">Your AMASI membership has been upgraded from <strong>Associate Life Member (ALM)</strong> to <strong>Life Member (LM)</strong>.</p>
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                 <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Membership Status</p>
                 <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">Life Member (LM)</p>
-                <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${upgrade.amasi_number}</p>
+                <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${escapeHtml(String(upgrade.amasi_number))}</p>
               </div>
               ${notes ? `<p style="color: #555; font-size: 14px;"><strong>Note:</strong> ${escapeHtml(notes)}</p>` : ""}
               <p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>
@@ -170,7 +170,7 @@ export async function PATCH(
                 <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
               </div>
               <h2 style="color: #1a1a1a;">Upgrade Request Update</h2>
-              <p style="color: #555;">Dear ${upgrade.member_name},</p>
+              <p style="color: #555;">Dear ${escapeHtml(upgrade.member_name)},</p>
               <p style="color: #555;">Your request to upgrade from Associate Life Member (ALM) to Life Member (LM) could not be approved at this time.</p>
               ${notes ? `
               <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; margin: 24px 0;">

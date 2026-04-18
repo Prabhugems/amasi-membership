@@ -107,7 +107,7 @@ export async function POST(
       console.error("Failed to insert system merge reply:", systemReplyError.message)
     }
 
-    // 3. Update source ticket: mark as merged and closed
+    // 3. Update source ticket: mark as merged and closed, invalidate pending CSAT
     const { error: updateSourceError } = await supabase
       .from("support_tickets")
       .update({
@@ -115,6 +115,8 @@ export async function POST(
         merged_at: new Date().toISOString(),
         status: "closed",
         updated_at: new Date().toISOString(),
+        csat_token: null,
+        csat_sent_at: null,
       })
       .eq("id", sourceId)
 

@@ -111,7 +111,8 @@ export function TicketTracker() {
     }
   }
 
-  /* --- open ticket detail --- */
+  // TODO(auth): TicketTracker must route through permalink verification
+  // flow instead of ?email= param. Tracked for next session.
   async function openTicket(ticket: Ticket) {
     setSelectedTicket(ticket)
     setReplies([])
@@ -120,8 +121,7 @@ export function TicketTracker() {
     setLoadingReplies(true)
 
     try {
-      const emailParam = ticket.email ? `?email=${encodeURIComponent(ticket.email)}` : ""
-      const res = await fetch(`/api/tickets/${ticket.id}${emailParam}`)
+      const res = await fetch(`/api/tickets/${ticket.id}`)
       const data = await res.json()
       const allReplies: Reply[] = data.replies || []
       setReplies(allReplies.filter((r) => !r.is_internal))

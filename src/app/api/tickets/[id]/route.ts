@@ -27,17 +27,12 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Auth check FIRST — before any DB query
+    // Auth check FIRST — admin session (cookie) or member session (cookie, post-OTP)
     const adminSession = await getAdminSession()
     const memberSession = await getMemberSession()
     const isAdmin = !!adminSession
 
-    // Must be either admin or authenticated member (or provide email for unauthenticated member lookup)
-    const callerEmail =
-      (memberSession?.email as string) ||
-      request.nextUrl.searchParams.get("email")
-
-    if (!isAdmin && !callerEmail) {
+    if (!isAdmin && !memberSession) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -54,9 +49,10 @@ export async function GET(
       return Response.json({ error: "Ticket not found" }, { status: 404 })
     }
 
-    // Non-admin: verify ownership via email match
+    // Non-admin: verify ownership via member session email
     if (!isAdmin) {
-      if (callerEmail!.toLowerCase() !== (ticket.email || "").toLowerCase()) {
+      const memberEmail = (memberSession!.email as string) || ""
+      if (memberEmail.toLowerCase() !== (ticket.email || "").toLowerCase()) {
         return Response.json({ error: "Ticket not found" }, { status: 404 })
       }
     }

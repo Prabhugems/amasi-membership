@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     // Rate limit per IP + email to mitigate brute-force attacks
     const ip = getRequestIp(request) || "unknown"
     const rateLimitKey = `login:${ip}:${(email || "").trim().toLowerCase()}`
-    const rl = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)
+    const rl = await checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)
     if (!rl.allowed) {
       const retryAfter = Math.ceil((rl.resetAt - Date.now()) / 1000)
       return Response.json(

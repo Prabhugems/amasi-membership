@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { randomInt } from "node:crypto"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -10,13 +11,13 @@ function getResend() {
 }
 
 function generateOTP(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
+  return String(randomInt(100000, 999999))
 }
 
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
     if (!rl.allowed) return Response.json({ error: "Too many attempts" }, { status: 429 })
 
     const { email } = await request.json()

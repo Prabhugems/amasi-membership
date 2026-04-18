@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     // Rate limit: 10 uploads per 15 min per IP to prevent storage abuse
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = checkRateLimit(`ticket-upload:${ip}`, 10, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`ticket-upload:${ip}`, 10, 15 * 60 * 1000)
     if (!rl.allowed) {
       return Response.json({ error: "Too many uploads. Try again later." }, { status: 429 })
     }

@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { randomInt } from "node:crypto"
 
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
 const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID
 
 function generateOTP(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
+  return String(randomInt(100000, 999999))
 }
 
 export async function POST(request: NextRequest) {
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
     if (!rl.allowed) return Response.json({ error: "Too many attempts" }, { status: 429 })
 
     const { mobile, email } = await request.json()

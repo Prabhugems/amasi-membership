@@ -6,8 +6,19 @@ import { logAdminAction } from "@/lib/audit-log"
 // UUID v4 pattern check
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const MEMBER_TICKET_FIELDS =
-  "id, ticket_number, subject, description, category, status, priority, name, email, created_at, updated_at, closed_at, sla_due_at, sla_breached, first_response_at, merged_into, merged_at"
+const MEMBER_SAFE_KEYS = new Set([
+  "id", "ticket_number", "subject", "description", "category", "status",
+  "priority", "name", "email", "created_at", "updated_at", "closed_at",
+  "sla_due_at", "sla_breached", "first_response_at", "merged_into", "merged_at",
+])
+
+function stripToMemberFields(ticket: Record<string, unknown>) {
+  const safe: Record<string, unknown> = {}
+  for (const key of MEMBER_SAFE_KEYS) {
+    if (key in ticket) safe[key] = ticket[key]
+  }
+  return safe
+}
 
 export async function GET(
   request: NextRequest,
@@ -33,12 +44,9 @@ export async function GET(
     const supabase = createAdminClient()
     const isUuid = UUID_REGEX.test(id)
 
-    // Admins get all fields; members get a restricted set
-    const selectFields = isAdmin ? "*" : MEMBER_TICKET_FIELDS
-
     const { data: ticket, error: ticketError } = await supabase
       .from("support_tickets")
-      .select(selectFields)
+      .select("*")
       .eq(isUuid ? "id" : "ticket_number", id)
       .single()
 
@@ -85,7 +93,8 @@ export async function GET(
       return Response.json({ error: repliesError.message }, { status: 500 })
     }
 
-    return Response.json({ ticket, replies })
+    const safeTicket = isAdmin ? ticket : stripToMemberFields(ticket)
+    return Response.json({ ticket: safeTicket, replies })
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Internal server error" },

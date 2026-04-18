@@ -46,10 +46,14 @@ export default function TicketPermalinkPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Email verification gate
+  // OTP verification gate
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null)
   const [emailInput, setEmailInput] = useState("")
   const [verifying, setVerifying] = useState(false)
+  const [otpPhase, setOtpPhase] = useState<"email" | "otp">("email")
+  const [otpDigits, setOtpDigits] = useState("")
+  const [otpSending, setOtpSending] = useState(false)
+  const [otpCooldown, setOtpCooldown] = useState(0)
 
   const [replyText, setReplyText] = useState("")
   const [replyError, setReplyError] = useState<string | null>(null)
@@ -68,9 +72,14 @@ export default function TicketPermalinkPage() {
     }
   }, [replies])
 
-  // TODO(auth): This page uses email-based ticket lookup which now requires
-  // a member session. Must route through permalink verification flow (OTP)
-  // instead of raw email param. Tracked for next session.
+  // OTP cooldown timer
+  useEffect(() => {
+    if (otpCooldown <= 0) return
+    const t = setTimeout(() => setOtpCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [otpCooldown])
+
+  // Fetch ticket after OTP verification sets the member session cookie
   useEffect(() => {
     if (!verifiedEmail || !ticketNumber) return
     async function fetchTicket() {
@@ -78,12 +87,17 @@ export default function TicketPermalinkPage() {
       setError(null)
       try {
         const res = await fetch(
-          `/api/tickets/by-number/${encodeURIComponent(ticketNumber)}?email=${encodeURIComponent(verifiedEmail!)}`
+          `/api/tickets/by-number/${encodeURIComponent(ticketNumber)}`
         )
         if (!res.ok) {
-          if (res.status === 404) {
+          if (res.status === 401) {
+            setError("Session expired. Please verify your email again.")
+            setVerifiedEmail(null)
+            setOtpPhase("email")
+          } else if (res.status === 404) {
             setError("Ticket not found. The email may not match the ticket owner.")
             setVerifiedEmail(null)
+            setOtpPhase("email")
           } else {
             setError("Failed to load ticket. Please try again later.")
           }
@@ -101,18 +115,46 @@ export default function TicketPermalinkPage() {
     fetchTicket()
   }, [ticketNumber, verifiedEmail])
 
-  async function handleVerifyEmail() {
+  async function handleSendOtp() {
     if (!emailInput.trim()) return
+    setOtpSending(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim() }),
+      })
+      const data = await res.json()
+      if (data.status) {
+        setOtpPhase("otp")
+        setOtpCooldown(60)
+      } else {
+        setError(data.message || "Failed to send verification code.")
+      }
+    } catch {
+      setError("Failed to send verification code. Please try again.")
+    } finally {
+      setOtpSending(false)
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (otpDigits.length !== 6) return
     setVerifying(true)
     setError(null)
     try {
-      const res = await fetch(
-        `/api/tickets/by-number/${encodeURIComponent(ticketNumber)}?email=${encodeURIComponent(emailInput.trim())}`
-      )
-      if (res.ok) {
+      const res = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim(), code: otpDigits }),
+      })
+      const data = await res.json()
+      if (data.status) {
         setVerifiedEmail(emailInput.trim())
       } else {
-        setError("No ticket found with this email. Please check and try again.")
+        setError(data.message || "Invalid code. Please try again.")
+        setOtpDigits("")
       }
     } catch {
       setError("Verification failed. Please try again.")
@@ -185,7 +227,7 @@ export default function TicketPermalinkPage() {
     }
   }
 
-  // Email verification gate
+  // OTP verification gate
   if (!verifiedEmail && !loading && !ticket) {
     return (
       <div className="min-h-screen bg-background">
@@ -203,33 +245,79 @@ export default function TicketPermalinkPage() {
                 <div className="inline-block bg-muted/60 border rounded-xl px-4 py-2 mb-2">
                   <span className="text-lg font-mono font-bold tracking-wider">{ticketNumber}</span>
                 </div>
-                <h2 className="text-lg font-semibold">Verify your identity</h2>
+                <h1 className="text-lg font-semibold">Verify your identity</h1>
                 <p className="text-sm text-muted-foreground">
-                  We use this to verify you are the ticket owner. Enter the email you used when creating this ticket.
+                  {otpPhase === "email"
+                    ? "Enter the email you used when creating this ticket. We'll send a verification code."
+                    : `Enter the 6-digit code sent to ${emailInput}`}
                 </p>
               </div>
               {error && (
                 <p className="text-xs text-red-500 text-center" role="alert">{error}</p>
               )}
-              <div>
-                <Label htmlFor="verify-email" className="text-xs mb-1 block">
-                  Email address
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="verify-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleVerifyEmail() }}
-                    className="flex-1"
-                  />
-                  <Button onClick={handleVerifyEmail} disabled={verifying || !emailInput.trim()}>
-                    {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
-                  </Button>
+
+              {otpPhase === "email" ? (
+                <div>
+                  <Label htmlFor="verify-email" className="text-xs mb-1 block">
+                    Email address
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="verify-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleSendOtp() }}
+                      className="flex-1"
+                    />
+                    <Button onClick={handleSendOtp} disabled={otpSending || !emailInput.trim()}>
+                      {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send Code"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="otp-code" className="text-xs mb-1 block">
+                      Verification code
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="otp-code"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="000000"
+                        value={otpDigits}
+                        onChange={(e) => setOtpDigits(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleVerifyOtp() }}
+                        className="flex-1 text-center font-mono text-lg tracking-[0.3em]"
+                      />
+                      <Button onClick={handleVerifyOtp} disabled={verifying || otpDigits.length !== 6}>
+                        {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => { setOtpPhase("email"); setOtpDigits(""); setError(null) }}
+                      className="hover:text-primary transition-colors"
+                    >
+                      Change email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={otpCooldown > 0 || otpSending}
+                      className="hover:text-primary transition-colors disabled:opacity-50"
+                    >
+                      {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend code"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

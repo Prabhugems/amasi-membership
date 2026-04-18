@@ -50,6 +50,13 @@ export function TicketTracker() {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [searchDone, setSearchDone] = useState(false)
 
+  // OTP verification state
+  const [otpPhase, setOtpPhase] = useState<"none" | "sending" | "verifying">("none")
+  const [otpDigits, setOtpDigits] = useState("")
+  const [otpError, setOtpError] = useState<string | null>(null)
+  const [otpCooldown, setOtpCooldown] = useState(0)
+  const [isVerified, setIsVerified] = useState(false)
+
   // dialog state
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [replies, setReplies] = useState<Reply[]>([])
@@ -88,6 +95,13 @@ export function TicketTracker() {
     e.target.value = ""
   }
 
+  // OTP cooldown timer
+  useEffect(() => {
+    if (otpCooldown <= 0) return
+    const t = setTimeout(() => setOtpCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [otpCooldown])
+
   /* --- search tickets --- */
   async function handleSearch() {
     if (!searchQuery.trim()) return
@@ -102,7 +116,35 @@ export function TicketTracker() {
 
       const res = await fetch(`/api/tickets?${param}`)
       const data = await res.json()
-      setTickets(Array.isArray(data) ? data : [])
+      const found = Array.isArray(data) ? data : []
+      setTickets(found)
+
+      // If tickets found and not yet verified, start OTP flow
+      if (found.length > 0 && !isVerified) {
+        const emailForOtp = isPhone ? (found[0]?.email || "") : searchQuery.trim()
+        if (emailForOtp) {
+          setOtpPhase("sending")
+          setOtpError(null)
+          try {
+            const otpRes = await fetch("/api/otp/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: emailForOtp }),
+            })
+            const otpData = await otpRes.json()
+            if (otpData.status) {
+              setOtpPhase("verifying")
+              setOtpCooldown(60)
+            } else {
+              setOtpPhase("none")
+              setOtpError(otpData.message || "Failed to send verification code.")
+            }
+          } catch {
+            setOtpPhase("none")
+            setOtpError("Failed to send verification code.")
+          }
+        }
+      }
     } catch {
       setTickets([])
     } finally {
@@ -111,8 +153,48 @@ export function TicketTracker() {
     }
   }
 
-  // TODO(auth): TicketTracker must route through permalink verification
-  // flow instead of ?email= param. Tracked for next session.
+  async function handleVerifyOtp() {
+    if (otpDigits.length !== 6) return
+    setOtpError(null)
+    const emailForOtp = tickets[0]?.email || searchQuery.trim()
+    try {
+      const res = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailForOtp, code: otpDigits }),
+      })
+      const data = await res.json()
+      if (data.status) {
+        setIsVerified(true)
+        setOtpPhase("none")
+        setOtpDigits("")
+      } else {
+        setOtpError(data.message || "Invalid code.")
+        setOtpDigits("")
+      }
+    } catch {
+      setOtpError("Verification failed.")
+    }
+  }
+
+  async function handleResendOtp() {
+    if (otpCooldown > 0) return
+    const emailForOtp = tickets[0]?.email || searchQuery.trim()
+    setOtpError(null)
+    try {
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailForOtp }),
+      })
+      const data = await res.json()
+      if (data.status) setOtpCooldown(60)
+      else setOtpError(data.message || "Failed to resend code.")
+    } catch {
+      setOtpError("Failed to resend code.")
+    }
+  }
+
   async function openTicket(ticket: Ticket) {
     setSelectedTicket(ticket)
     setReplies([])
@@ -122,6 +204,12 @@ export function TicketTracker() {
 
     try {
       const res = await fetch(`/api/tickets/${ticket.id}`)
+      if (res.status === 401) {
+        setReplyError("Session expired. Please search again to re-verify.")
+        setIsVerified(false)
+        setSelectedTicket(null)
+        return
+      }
       const data = await res.json()
       const allReplies: Reply[] = data.replies || []
       setReplies(allReplies.filter((r) => !r.is_internal))
@@ -255,14 +343,56 @@ export function TicketTracker() {
         </div>
       )}
 
-      {/* Ticket list */}
-      {tickets.length > 0 && (
+      {/* OTP verification prompt — shown after search finds tickets but before verification */}
+      {tickets.length > 0 && !isVerified && otpPhase === "verifying" && (
+        <Card className="rounded-xl border-primary/30 bg-primary/5">
+          <CardContent className="p-4 space-y-3">
+            <div className="text-center space-y-1">
+              <p className="text-sm font-medium">Verify your identity</p>
+              <p className="text-xs text-muted-foreground">
+                We sent a 6-digit code to your email. Enter it below to view your tickets.
+              </p>
+            </div>
+            {otpError && (
+              <p className="text-xs text-red-500 text-center">{otpError}</p>
+            )}
+            <div className="flex gap-2 max-w-xs mx-auto">
+              <Input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
+                value={otpDigits}
+                onChange={(e) => setOtpDigits(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onKeyDown={(e) => { if (e.key === "Enter") handleVerifyOtp() }}
+                className="text-center font-mono text-lg tracking-[0.3em]"
+              />
+              <Button onClick={handleVerifyOtp} disabled={otpDigits.length !== 6}>
+                Verify
+              </Button>
+            </div>
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={otpCooldown > 0}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+              >
+                {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend code"}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ticket list — only clickable after OTP verification */}
+      {tickets.length > 0 && (isVerified || otpPhase === "none") && (
         <div className="space-y-3">
           {tickets.map((ticket) => (
             <Card
               key={ticket.id}
-              className="rounded-xl cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
-              onClick={() => openTicket(ticket)}
+              className={`rounded-xl transition-all ${isVerified ? "cursor-pointer hover:border-primary/40 hover:shadow-md" : "opacity-60"}`}
+              onClick={() => isVerified && openTicket(ticket)}
               tabIndex={0}
               role="button"
               aria-label={`View ticket ${ticket.ticket_number}: ${ticket.subject}`}

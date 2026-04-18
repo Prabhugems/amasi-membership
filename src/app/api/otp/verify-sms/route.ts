@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     await supabase.from("otp_codes").update({ attempts: otpRecord.attempts + 1 }).eq("id", otpRecord.id)
 
     if (otpRecord.code !== code.trim()) {
-      const remaining = 4 - otpRecord.attempts
+      const remaining = 4 - (otpRecord.attempts + 1)
       return Response.json({ status: false, message: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` }, { status: 400 })
     }
 

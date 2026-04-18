@@ -72,8 +72,19 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Allow ticket detail view and member replies (GET/POST to /api/tickets/[id] and /api/tickets/[id]/reply)
-  if (pathname.match(/^\/api\/tickets\/[^/]+(\/reply)?$/)) {
+  // Allow CSAT rating from email links (token-based auth in handler)
+  if (pathname === "/api/tickets/csat") {
+    return NextResponse.next()
+  }
+
+  // Allow ticket detail view and member replies — only for UUID or ticket-number patterns,
+  // NOT for named sub-routes like /upload, /analytics, /merge
+  if (pathname.match(/^\/api\/tickets\/(TKT-[\w-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\/reply)?$/i)) {
+    return NextResponse.next()
+  }
+
+  // Allow ticket lookup by ticket number (ownership-checked in handler)
+  if (pathname.match(/^\/api\/tickets\/by-number\/TKT-[\w-]+$/)) {
     return NextResponse.next()
   }
 

@@ -1,5 +1,7 @@
+import { NextRequest } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
 import sharp from "sharp"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 /** Preprocess images for better OCR — deskew, denoise, contrast enhance */
 async function preprocessImage(buffer: Buffer, mimeType: string): Promise<{ buffer: Buffer; mimeType: string }> {
@@ -388,8 +390,14 @@ function detectSuspiciousExtraction(docType: string, extracted: Record<string, a
   return null
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`ocr:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ success: false, error: "Too many requests. Try again later." }, { status: 429 })
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const docType = formData.get("docType") as string

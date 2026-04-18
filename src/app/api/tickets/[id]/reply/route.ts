@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
@@ -14,7 +14,43 @@ export async function POST(
   try {
     const { id } = await params
 
-    // Support both JSON and FormData (for file attachments)
+    // === AUTH CHECK FIRST — before parsing body or uploading files ===
+    const adminSession = await getAdminSession()
+    const memberSession = await getMemberSession()
+    const isAdmin = !!adminSession
+
+    if (!isAdmin && !memberSession) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // === VERIFY TICKET EXISTS and caller has access ===
+    const supabase = createAdminClient()
+    const isUuid = UUID_REGEX.test(id)
+
+    const { data: ticket, error: ticketError } = await supabase
+      .from("support_tickets")
+      .select("id, status, email, name, ticket_number, subject, first_response_at")
+      .eq(isUuid ? "id" : "ticket_number", id)
+      .single()
+
+    if (ticketError || !ticket) {
+      return Response.json({ error: "Ticket not found" }, { status: 404 })
+    }
+
+    // Non-admin: verify ownership via member session email
+    if (!isAdmin) {
+      const memberEmail = memberSession?.email as string
+      if (!memberEmail || memberEmail.toLowerCase() !== (ticket.email || "").toLowerCase()) {
+        return Response.json({ error: "Ticket not found" }, { status: 404 })
+      }
+    }
+
+    // Block replies on closed tickets for non-admins
+    if ((ticket.status === "closed" || ticket.status === "resolved") && !isAdmin) {
+      return Response.json({ error: "This ticket is closed and cannot receive replies" }, { status: 403 })
+    }
+
+    // === NOW parse the request body — auth and ownership verified ===
     let message = ""
     let clientAuthorName = ""
     let asMember = false
@@ -39,16 +75,15 @@ export async function POST(
         if (!allowedTypes.includes(file.type)) {
           return Response.json({ error: "Only PNG, JPG, WebP, and PDF files are allowed" }, { status: 400 })
         }
-        const supabaseUpload = createAdminClient()
         const ext = file.name.split(".").pop() || "png"
         const path = `tickets/${id}/reply_${Date.now()}.${ext}`
         const fileBuffer = Buffer.from(await file.arrayBuffer())
-        const { error: uploadErr } = await supabaseUpload.storage.from("uploads").upload(path, fileBuffer, {
+        const { error: uploadErr } = await supabase.storage.from("uploads").upload(path, fileBuffer, {
           contentType: file.type,
           upsert: true,
         })
         if (!uploadErr) {
-          const { data: signedData } = await supabaseUpload.storage.from("uploads").createSignedUrl(path, 86400 * 30) // 30 days
+          const { data: signedData } = await supabase.storage.from("uploads").createSignedUrl(path, 86400 * 30)
           attachmentUrl = signedData?.signedUrl || null
           if (!attachmentUrl) {
             console.error("Ticket attachment: signed URL creation failed for", path)
@@ -63,7 +98,6 @@ export async function POST(
       clientAuthorName = body.author_name || ""
       asMember = body.as_member === true
       isInternal = body.is_internal === true
-      // Accept pre-uploaded attachments as JSON array (used by member portal)
       if (Array.isArray(body.attachments)) {
         replyAttachments = body.attachments
           .filter(
@@ -84,22 +118,20 @@ export async function POST(
       )
     }
 
-    // Determine admin status — respect as_member flag from member portal
-    const adminSession = await getAdminSession()
-    const is_admin = asMember ? false : !!adminSession
+    // Determine reply role — respect as_member flag from member portal
+    const is_admin = asMember ? false : isAdmin
 
     // Only admins can create internal notes
     if (isInternal && !is_admin) {
       isInternal = false
     }
+
     // Admin replies use the session name; member replies use the ticket's name
-    // to prevent impersonation (ignore client-supplied author_name for members).
     let author_name: string
     if (is_admin && adminSession) {
       author_name = (adminSession.name as string) || "AMASI Admin"
     } else {
-      // Defer to ticket.name after we fetch the ticket below — use a placeholder.
-      author_name = clientAuthorName || "Member"
+      author_name = ticket.name || clientAuthorName || "Member"
     }
 
     // Append attachment link to message if uploaded
@@ -107,33 +139,7 @@ export async function POST(
       message = message ? `${message}\n\n📎 Attachment: ${attachmentUrl}` : `📎 Attachment: ${attachmentUrl}`
     }
 
-    const supabase = createAdminClient()
-    const isUuid = UUID_REGEX.test(id)
-
-    // Resolve ticket to get the uuid + email for notifications
-    const { data: ticket, error: ticketError } = await supabase
-      .from("support_tickets")
-      .select("id, status, email, name, ticket_number, subject, first_response_at")
-      .eq(isUuid ? "id" : "ticket_number", id)
-      .single()
-
-    if (ticketError || !ticket) {
-      return Response.json({ error: "Ticket not found" }, { status: 404 })
-    }
-
-    // Block replies on closed tickets
-    if (ticket.status === "closed" || ticket.status === "resolved") {
-      if (!is_admin) {
-        return Response.json({ error: "This ticket is closed and cannot receive replies" }, { status: 403 })
-      }
-    }
-
-    // For member replies, always use the ticket owner's name to prevent impersonation
-    if (!is_admin) {
-      author_name = ticket.name || author_name
-    }
-
-    // Insert the reply (include attachments from JSON body if any)
+    // Insert the reply
     const { data: reply, error: replyError } = await supabase
       .from("ticket_replies")
       .insert({
@@ -191,9 +197,8 @@ export async function POST(
       }
     }
 
-    // Send email notification (skip for internal notes — members should not see them)
+    // Send email notification (skip for internal notes)
     if (is_admin && ticket.email && !isInternal) {
-      // Admin replied → notify member
       try {
         const resend = new Resend(process.env.RESEND_API_KEY?.trim())
         await resend.emails.send({

@@ -9,7 +9,7 @@ import {
   User, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
   Activity, Lock, ArrowUpCircle, Sparkles, Paperclip, Send, MessageCircle,
-  Inbox, Plus, X, Image, FileIcon, ChevronDown,
+  Inbox, Plus, X, Image, FileIcon, ChevronDown, Info,
 } from "lucide-react"
 import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Card, CardContent } from "@/components/ui/card"
@@ -48,6 +48,12 @@ function MemberPortalContent() {
   const [member, setMember] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [showSessionWarning, setShowSessionWarning] = useState(false)
+  const [showSecurityNotice, setShowSecurityNotice] = useState(() => {
+    if (typeof window === "undefined") return true
+    const dismissed = localStorage.getItem("amasi_security_notice_dismissed")
+    if (!dismissed) return true
+    return Date.now() - parseInt(dismissed) > 30 * 24 * 60 * 60 * 1000
+  })
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const reduced = useReducedMotion()
 
@@ -554,6 +560,31 @@ function MemberPortalContent() {
                     </div>
                   </div>
                 </div>
+
+                {/* Security notice banner — dismissible, 30-day persistence */}
+                {showSecurityNotice && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/80 dark:bg-blue-950/30 dark:border-blue-900/50 p-4 relative">
+                    <button
+                      onClick={() => {
+                        setShowSecurityNotice(false)
+                        localStorage.setItem("amasi_security_notice_dismissed", String(Date.now()))
+                      }}
+                      className="absolute top-3 right-3 text-blue-400 hover:text-blue-600 dark:text-blue-500 dark:hover:text-blue-300 transition-colors"
+                      aria-label="Dismiss notice"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <div className="flex gap-3 pr-6">
+                      <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                      <div className="text-sm">
+                        <p className="font-semibold text-blue-900 dark:text-blue-200 mb-1">Support Ticket Access Updated</p>
+                        <p className="text-blue-800/80 dark:text-blue-300/80 leading-relaxed">
+                          As part of our commitment to data security, access to support tickets now requires signing in to your member account. Direct links from older support emails will no longer open tickets automatically. To view your tickets, navigate to the Support section from this dashboard.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Membership status + Profile completeness */}
                 <div className="grid gap-4 lg:grid-cols-3">

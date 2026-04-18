@@ -245,10 +245,10 @@ export default function TicketPermalinkPage() {
                 <div className="inline-block bg-muted/60 border rounded-xl px-4 py-2 mb-2">
                   <span className="text-lg font-mono font-bold tracking-wider">{ticketNumber}</span>
                 </div>
-                <h1 className="text-lg font-semibold">Verify your identity</h1>
+                <h1 className="text-lg font-semibold">Please Sign In to View This Ticket</h1>
                 <p className="text-sm text-muted-foreground">
                   {otpPhase === "email"
-                    ? "Enter the email you used when creating this ticket. We'll send a verification code."
+                    ? "For the security of your account, support tickets require verification. Enter the email you used when creating this ticket and we'll send a one-time code."
                     : `Enter the 6-digit code sent to ${emailInput}`}
                 </p>
               </div>
@@ -320,6 +320,18 @@ export default function TicketPermalinkPage() {
               )}
             </CardContent>
           </Card>
+          <div className="text-center mt-4 space-y-2">
+            <Link
+              href="/member"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-medium"
+            >
+              Sign in to member portal
+              <ArrowLeft className="h-3.5 w-3.5 rotate-180" />
+            </Link>
+            <p className="text-xs text-muted-foreground">
+              Having trouble? Contact the AMASI Secretariat at admin@amasi.org
+            </p>
+          </div>
         </div>
       </div>
     )

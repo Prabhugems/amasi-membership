@@ -97,6 +97,16 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
   const [pinLookupStatus, setPinLookupStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [pinLookupArea, setPinLookupArea] = useState("")
   const pinAbortRef = useRef<AbortController | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Warn on unsaved changes when in edit phase
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [])
 
   // --- Work Experience state ---
   interface ExperienceEntry {
@@ -192,25 +202,30 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
 
   // Wrap the original onSave to also POST experience & clinic data
   const handleSaveWithExtras = async () => {
-    if (data.id) {
-      // Save experience
-      if (experiences.length > 0) {
-        fetch(`/api/members/${data.id}/experience`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: experiences }),
-        }).catch(() => {})
+    setSaving(true)
+    try {
+      if (data.id) {
+        // Save experience
+        if (experiences.length > 0) {
+          fetch(`/api/members/${data.id}/experience`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: experiences }),
+          }).catch(() => {})
+        }
+        // Save clinic
+        if (clinicEntries.length > 0) {
+          fetch(`/api/members/${data.id}/clinic`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ data: clinicEntries }),
+          }).catch(() => {})
+        }
       }
-      // Save clinic
-      if (clinicEntries.length > 0) {
-        fetch(`/api/members/${data.id}/clinic`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: clinicEntries }),
-        }).catch(() => {})
-      }
+      onSave()
+    } finally {
+      setSaving(false)
     }
-    onSave()
   }
 
   const handlePinLookup = useCallback(async (pin: string) => {
@@ -389,7 +404,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onCancel} className="bg-white/10 border-white/30 text-white hover:bg-white/20 hover:text-white">Cancel</Button>
-            <Button onClick={handleSaveWithExtras} className="bg-white text-teal-700 hover:bg-white/90 hover:scale-105 transition-all duration-200 font-semibold shadow-md">Review Changes</Button>
+            <Button onClick={handleSaveWithExtras} disabled={saving} className="bg-white text-teal-700 hover:bg-white/90 hover:scale-105 transition-all duration-200 font-semibold shadow-md">Review Changes</Button>
           </div>
         </div>
       </div>
@@ -1362,7 +1377,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
         </p>
         <div className="flex gap-3 ml-auto">
           <Button variant="outline" onClick={onCancel} className="hover:bg-muted transition-colors duration-200">Cancel</Button>
-          <Button onClick={handleSaveWithExtras} size="lg" className="font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg text-white">
+          <Button onClick={handleSaveWithExtras} disabled={saving} size="lg" className="font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg text-white">
             Review Changes
           </Button>
         </div>

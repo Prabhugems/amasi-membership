@@ -151,6 +151,7 @@ export function ProfileOtp({ email, onVerified, onBack }: ProfileOtpProps) {
                 onKeyDown={(e) => handleKeyDown(i, e)}
                 className={`w-12 h-14 text-center text-xl font-bold rounded-lg transition-all ${digit ? "border-primary ring-1 ring-primary/20" : ""} ${error ? "border-destructive" : ""}`}
                 disabled={isVerifying}
+                {...(i === 0 ? { autoComplete: "one-time-code" } : {})}
               />
             ))}
           </div>

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 // Public-safe field list for non-admin callers. Excludes PII such as email,
 // phone, DOB, address, MCI number/state, and all document URLs except photo.
@@ -22,6 +23,15 @@ export async function GET(request: NextRequest) {
   const isAdmin = !!adminSession
   // memberSession referenced for future member-self redaction; kept intentionally.
   void memberSession
+
+  // Rate limit non-admin callers
+  if (!isAdmin) {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`members-search:${ip}`, 30, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests", data: [] }, { status: 429 })
+    }
+  }
 
   try {
     const supabase = createAdminClient()

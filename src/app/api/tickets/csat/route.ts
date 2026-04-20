@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: "Failed to save rating" }, { status: 500 })
     }
 
-    return Response.redirect(`${baseUrl}/support/feedback?rating=${rating}&token=${token}`)
+    return Response.redirect(`${baseUrl}/support/feedback?rating=${rating}`)
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "Internal server error" },

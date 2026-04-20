@@ -596,8 +596,6 @@ function StatusContent() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [expandedIndex, setExpandedIndex] = useState(0)
-  const [notifyEmail, setNotifyEmail] = useState("")
-  const [notifySubmitted, setNotifySubmitted] = useState(false)
 
   useEffect(() => {
     if (!searchRef) return
@@ -644,14 +642,6 @@ function StatusContent() {
     [query, router]
   )
 
-  const handleNotify = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault()
-      // In a real implementation, this would call an API endpoint
-      setNotifySubmitted(true)
-    },
-    []
-  )
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -738,58 +728,11 @@ function StatusContent() {
             />
           ))}
 
-          {/* Notification signup */}
-          {!notifySubmitted ? (
-            <Card className="border-dashed bg-muted/20">
-              <CardContent className="pt-5 pb-5">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Bell className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold mb-1">
-                      Get Status Updates
-                    </p>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Enter your email to receive notifications when your
-                      application status changes.
-                    </p>
-                    <form
-                      onSubmit={handleNotify}
-                      className="flex gap-2"
-                    >
-                      <Input
-                        type="email"
-                        placeholder="your@email.com"
-                        value={notifyEmail}
-                        onChange={(e) => setNotifyEmail(e.target.value)}
-                        className="h-9 text-sm max-w-xs"
-                        required
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        variant="outline"
-                        className="h-9 shrink-0"
-                      >
-                        <Bell className="h-3.5 w-3.5 mr-1.5" />
-                        Notify Me
-                      </Button>
-                    </form>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-4 py-3 border border-green-200">
-              <CheckCircle className="h-4 w-4" />
-              <span>
-                You&apos;ll be notified at{" "}
-                <span className="font-medium">{notifyEmail}</span> when your
-                status changes.
-              </span>
-            </div>
-          )}
+          {/* Bookmark hint */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3 border border-border">
+            <Bell className="h-4 w-4 shrink-0" />
+            <span>Bookmark this page to check your status anytime.</span>
+          </div>
         </div>
       )}
 

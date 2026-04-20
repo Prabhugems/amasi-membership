@@ -189,11 +189,11 @@ export default function AuditPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b text-xs text-muted-foreground">
-                      <th className="pb-3 text-left font-medium">Date</th>
-                      <th className="pb-3 text-left font-medium">Admin</th>
-                      <th className="pb-3 text-left font-medium">Action</th>
-                      <th className="pb-3 text-left font-medium hidden md:table-cell">Entity</th>
-                      <th className="pb-3 text-left font-medium hidden lg:table-cell">Details</th>
+                      <th scope="col" className="pb-3 text-left font-medium">Date</th>
+                      <th scope="col" className="pb-3 text-left font-medium">Admin</th>
+                      <th scope="col" className="pb-3 text-left font-medium">Action</th>
+                      <th scope="col" className="pb-3 text-left font-medium hidden md:table-cell">Entity</th>
+                      <th scope="col" className="pb-3 text-left font-medium hidden lg:table-cell">Details</th>
                     </tr>
                   </thead>
                   <tbody>

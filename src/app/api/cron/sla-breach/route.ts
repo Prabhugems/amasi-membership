@@ -2,6 +2,11 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
+  if (!process.env.CRON_SECRET) {
+    console.error("CRON_SECRET not configured")
+    return Response.json({ error: "Server misconfiguration" }, { status: 500 })
+  }
+
   const authHeader = request.headers.get("authorization")
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })

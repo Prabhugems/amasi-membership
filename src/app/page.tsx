@@ -200,7 +200,7 @@ export default function DashboardPage() {
     refetchInterval: 30000,
   })
 
-  const { data: heatmapData } = useQuery<{ counts: Record<string, number> }>({
+  const { data: heatmapData, isError: heatmapError } = useQuery<{ counts: Record<string, number> }>({
     queryKey: ["dashboard-heatmap"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/heatmap")
@@ -539,7 +539,7 @@ export default function DashboardPage() {
           data={{ counts: heatmapData?.counts ?? {} }}
           title=""
           subtitle=""
-          loading={!heatmapData}
+          loading={!heatmapData && !heatmapError}
         />
       </div>
     </div>

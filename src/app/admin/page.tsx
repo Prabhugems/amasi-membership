@@ -89,8 +89,8 @@ export default function AdminUsersPage() {
       toast.error("All fields are required")
       return
     }
-    if (formPassword.length < 6) {
-      toast.error("Password must be at least 6 characters")
+    if (formPassword.length < 8 || !/[A-Z]/.test(formPassword) || !/[0-9]/.test(formPassword)) {
+      toast.error("Password must be at least 8 characters with one uppercase letter and one number")
       return
     }
 
@@ -245,8 +245,9 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Email</label>
+                <label htmlFor="admin-email" className="text-sm font-medium mb-1 block">Email</label>
                 <Input
+                  id="admin-email"
                   type="email"
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
@@ -255,19 +256,21 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Password</label>
+                <label htmlFor="admin-password" className="text-sm font-medium mb-1 block">Password</label>
                 <Input
+                  id="admin-password"
                   type="password"
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
+                  placeholder="Min 8 chars, 1 uppercase, 1 number"
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1 block">Role</label>
+                <label htmlFor="admin-role" className="text-sm font-medium mb-1 block">Role</label>
                 <select
+                  id="admin-role"
                   value={formRole}
                   onChange={(e) => setFormRole(e.target.value)}
                   className="w-full h-10 border rounded-lg px-3 text-sm bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
@@ -331,19 +334,19 @@ export default function AdminUsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/60 border-b">
-                  <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  <th scope="col" className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Admin User
                   </th>
-                  <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  <th scope="col" className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Role
                   </th>
-                  <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">
+                  <th scope="col" className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">
                     Status
                   </th>
-                  <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden lg:table-cell">
+                  <th scope="col" className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden lg:table-cell">
                     Last Login
                   </th>
-                  <th className="text-right px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                  <th scope="col" className="text-right px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Actions
                   </th>
                 </tr>

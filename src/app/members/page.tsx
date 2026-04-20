@@ -7,6 +7,7 @@ import {
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
   MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -266,6 +267,35 @@ function GridSkeleton() {
   )
 }
 
+function SortableHeader({
+  col,
+  label,
+  className,
+  sortCol,
+  sortDir,
+  handleSort,
+}: {
+  col: SortCol
+  label: string
+  className?: string
+  sortCol: SortCol
+  sortDir: SortDir
+  handleSort: (col: SortCol) => void
+}) {
+  return (
+    <th
+      scope="col"
+      className={`text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none transition-colors ${className || ""}`}
+      onClick={() => handleSort(col)}
+    >
+      <span className="inline-flex items-center">
+        {label}
+        <SortIcon col={col!} activeCol={sortCol} activeDir={sortDir} />
+      </span>
+    </th>
+  )
+}
+
 export default function MembersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
@@ -374,22 +404,11 @@ export default function MembersPage() {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error("Export error:", err)
+      toast.error("Failed to export CSV")
     } finally {
       setExporting(false)
     }
   }, [searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter])
-
-  const SortableHeader = ({ col, label, className }: { col: SortCol; label: string; className?: string }) => (
-    <th
-      className={`text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none transition-colors ${className || ""}`}
-      onClick={() => handleSort(col)}
-    >
-      <span className="inline-flex items-center">
-        {label}
-        <SortIcon col={col!} activeCol={sortCol} activeDir={sortDir} />
-      </span>
-    </th>
-  )
 
   return (
     <div className="space-y-6">
@@ -536,14 +555,14 @@ export default function MembersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/60 border-b">
-                  <th className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-8">#</th>
-                  <SortableHeader col="name" label="Member" />
-                  <SortableHeader col="membership_type" label="Type" />
-                  <SortableHeader col="state" label="State" className="hidden lg:table-cell" />
-                  <SortableHeader col="zone" label="Zone" className="hidden lg:table-cell" />
-                  <SortableHeader col="status" label="Status" className="hidden xl:table-cell" />
-                  <th className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">PG Degree</th>
-                  <th className="text-right px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
+                  <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground w-8">#</th>
+                  <SortableHeader col="name" label="Member" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <SortableHeader col="membership_type" label="Type" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <SortableHeader col="state" label="State" className="hidden lg:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <SortableHeader col="zone" label="Zone" className="hidden lg:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <SortableHeader col="status" label="Status" className="hidden xl:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">PG Degree</th>
+                  <th scope="col" className="text-right px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

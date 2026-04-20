@@ -21,6 +21,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,7 @@ function VerifyContent() {
   const idParam = searchParams.get("id") || ""
   const [query, setQuery] = useState(idParam)
   const [searchId, setSearchId] = useState(idParam)
+  const [showScanHelp, setShowScanHelp] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
   const { data, isLoading, isError } = useQuery({
@@ -72,7 +74,7 @@ function VerifyContent() {
       }
     } else {
       await navigator.clipboard.writeText(url)
-      alert("Verification link copied to clipboard")
+      toast.success("Verification link copied to clipboard")
     }
   }, [searchId, card?.name])
 
@@ -137,11 +139,7 @@ function VerifyContent() {
           <div className="flex items-center justify-center gap-4 mt-3">
             <button
               type="button"
-              onClick={() => {
-                alert(
-                  "To scan a QR code:\n\n1. Open your phone camera\n2. Point it at the AMASI membership card QR code\n3. Tap the link that appears to verify automatically"
-                )
-              }}
+              onClick={() => setShowScanHelp((v) => !v)}
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer"
             >
               <QrCode className="h-3.5 w-3.5" />
@@ -157,6 +155,16 @@ function VerifyContent() {
               Contact Support
             </a>
           </div>
+          {showScanHelp && (
+            <div className="mt-3 p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+              <p className="font-medium text-foreground mb-1">How to scan:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Open your phone camera</li>
+                <li>Point it at the AMASI membership card QR code</li>
+                <li>Tap the link that appears</li>
+              </ol>
+            </div>
+          )}
         </form>
       </div>
 

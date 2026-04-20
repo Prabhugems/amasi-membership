@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,7 +15,7 @@ import {
   CheckCircle, XCircle, Eye, Clock, Sparkles, AlertCircle,
   Search, FileText, Shield, Loader2, Inbox, MessageSquare, RotateCcw, ChevronDown,
   User, GraduationCap, Stethoscope, Camera, ExternalLink,
-  Calendar, ArrowRight, StickyNote, Filter, ChevronUp,
+  Calendar, StickyNote, Filter, ChevronUp,
   Keyboard, CheckSquare, Square, MinusSquare, X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -358,7 +358,7 @@ export default function PendingPage() {
   })
 
   // Filter applications
-  const applications = (data?.data || []).filter((app: any) => {
+  const applications = useMemo(() => (data?.data || []).filter((app: any) => {
     // Text search
     if (search) {
       const q = search.toLowerCase()
@@ -383,7 +383,7 @@ export default function PendingPage() {
       if (confidenceFilter === "low" && !conf.includes("low")) return false
     }
     return true
-  })
+  }), [data, search, dateFrom, dateTo, membershipTypeFilter, confidenceFilter])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -468,6 +468,18 @@ export default function PendingPage() {
 
   const activeFilterCount = [dateFrom, dateTo, membershipTypeFilter, confidenceFilter].filter(Boolean).length
 
+  // Memoized tab counts to avoid re-filtering on every render
+  const tabCounts = useMemo(() => {
+    const allApps = data?.data || []
+    return {
+      pending: allApps.filter((a: any) => ["submitted", "pending_review"].includes(a.status)).length,
+      ai_approved: allApps.filter((a: any) => a.status === "ai_approved").length,
+      approved: allApps.filter((a: any) => a.status === "approved").length,
+      rejected: allApps.filter((a: any) => a.status === "rejected").length,
+      clarification: allApps.filter((a: any) => ["need_clarification", "resubmit_requested"].includes(a.status)).length,
+    } as Record<string, number>
+  }, [data])
+
   // Extract AI score as number from ai_confidence string like "high (85%)" or the ai_score field
   function getAiScoreNum(app: any): number {
     if (typeof app.ai_score === "number") return app.ai_score
@@ -516,11 +528,7 @@ export default function PendingPage() {
                 <span className={`inline-flex items-center justify-center h-5 min-w-5 px-1.5 text-xs font-bold rounded-full ${
                   isActive ? "bg-white/20 text-inherit" : "bg-muted text-muted-foreground"
                 }`}>
-                  {(data.data || []).filter((a: any) => {
-                    if (t.key === "pending") return ["submitted", "pending_review"].includes(a.status)
-                    if (t.key === "clarification") return ["need_clarification", "resubmit_requested"].includes(a.status)
-                    return a.status === t.key
-                  }).length}
+                  {tabCounts[t.key] ?? 0}
                 </span>
               )}
             </button>

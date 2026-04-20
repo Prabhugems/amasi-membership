@@ -12,6 +12,7 @@ import {
   Loader2, FileEdit, AlertCircle, CheckCircle, Upload, Info, ExternalLink,
 } from "lucide-react"
 import { formatDate } from "@/lib/utils"
+import { toast } from "sonner"
 import { INDIAN_STATES } from "@/lib/membership-types"
 
 /* ------------------------------------------------------------------ */
@@ -309,6 +310,12 @@ function ResubmitContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!application) return
+
+    // Client-side validation for required fields
+    if (!form.firstName.trim() || !form.salutation.trim() || !form.mciCouncilNumber.trim()) {
+      toast.error("Please fill in all required fields")
+      return
+    }
 
     setPhase("submitting")
 

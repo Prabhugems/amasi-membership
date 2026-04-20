@@ -195,18 +195,23 @@ export default function ReportsPage() {
   const reportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
     const params = new URLSearchParams()
     if (dateRange !== "all") params.set("range", dateRange)
-    fetch(`/api/reports${params.toString() ? `?${params}` : ""}`)
+    fetch(`/api/reports${params.toString() ? `?${params}` : ""}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch reports")
         return res.json()
       })
       .then((json) => setData(json))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err) => {
+        if (err.name === "AbortError") return
+        setError(err.message)
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
   }, [dateRange])
 
   // Filter monthly data by date range
@@ -305,34 +310,44 @@ export default function ReportsPage() {
   }
 
   const { zoneData, stateData, typeData, pipeline, growth, revenue, tickets } = data
-  const zoneTotal = zoneData.reduce((s, r) => s + r.count, 0) || 1
-  const typeTotal = typeData.reduce((s, r) => s + r.count, 0) || 1
 
-  // Prepare recharts data
-  const zonePieData = zoneData.map((z) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
-  const typePieData = typeData.map((t) => ({ name: t.membership_type, value: t.count, percent: t.count / typeTotal }))
-  const stateBarData = stateData.slice(0, 10).map((s) => ({ name: s.state, count: s.count }))
+  // Memoize all derived chart data
+  const { zonePieData, typePieData, stateBarData, statusPieData, nmcPieData, nmcTotal } = useMemo(() => {
+    const zoneTotal = zoneData.reduce((s, r) => s + r.count, 0) || 1
+    const typeTotal = typeData.reduce((s, r) => s + r.count, 0) || 1
 
-  // Application status pie data
-  const statusPieData = pipeline
-    ? pipeline.statusBreakdown.map((s) => ({
-        name: STATUS_LABELS[s.status] || s.status,
-        value: s.count,
-        color: STATUS_COLORS[s.status] || "#94a3b8",
-      }))
-    : []
+    const _zonePieData = zoneData.map((z) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
+    const _typePieData = typeData.map((t) => ({ name: t.membership_type, value: t.count, percent: t.count / typeTotal }))
+    const _stateBarData = stateData.slice(0, 10).map((s) => ({ name: s.state, count: s.count }))
 
-  // NMC pie data
-  const nmcPieData = pipeline
-    ? [
-        { name: "Verified", value: pipeline.nmc.verified, color: "#10b981" },
-        { name: "Mismatch", value: pipeline.nmc.mismatch, color: "#f59e0b" },
-        { name: "Not Found", value: pipeline.nmc.notFound, color: "#ef4444" },
-        { name: "Skipped", value: pipeline.nmc.skipped, color: "#94a3b8" },
-      ].filter((d) => d.value > 0)
-    : []
+    const _statusPieData = pipeline
+      ? pipeline.statusBreakdown.map((s) => ({
+          name: STATUS_LABELS[s.status] || s.status,
+          value: s.count,
+          color: STATUS_COLORS[s.status] || "#94a3b8",
+        }))
+      : []
 
-  const nmcTotal = nmcPieData.reduce((s, d) => s + d.value, 0) || 1
+    const _nmcPieData = pipeline
+      ? [
+          { name: "Verified", value: pipeline.nmc.verified, color: "#10b981" },
+          { name: "Mismatch", value: pipeline.nmc.mismatch, color: "#f59e0b" },
+          { name: "Not Found", value: pipeline.nmc.notFound, color: "#ef4444" },
+          { name: "Skipped", value: pipeline.nmc.skipped, color: "#94a3b8" },
+        ].filter((d) => d.value > 0)
+      : []
+
+    const _nmcTotal = _nmcPieData.reduce((s, d) => s + d.value, 0) || 1
+
+    return {
+      zonePieData: _zonePieData,
+      typePieData: _typePieData,
+      stateBarData: _stateBarData,
+      statusPieData: _statusPieData,
+      nmcPieData: _nmcPieData,
+      nmcTotal: _nmcTotal,
+    }
+  }, [data])
 
   return (
     <div className="space-y-6 print:space-y-4" ref={reportRef}>

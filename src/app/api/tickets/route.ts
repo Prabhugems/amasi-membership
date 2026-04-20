@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -183,6 +184,11 @@ export async function GET(request: NextRequest) {
       if (!session) {
         return Response.json({ error: "Unauthorized" }, { status: 401 })
       }
+    } else {
+      // Rate limit non-admin ticket lookups
+      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+      const rl = await checkRateLimit(`tickets-lookup:${ip}`, 10, 15 * 60 * 1000)
+      if (!rl.allowed) return Response.json({ error: "Too many requests" }, { status: 429 })
     }
 
     const supabase = createAdminClient()

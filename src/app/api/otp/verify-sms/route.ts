@@ -1,8 +1,16 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 10 verify attempts per 15 minutes per IP
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`otp-sms-verify:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many attempts. Please try again later." }, { status: 429 })
+    }
+
     const { mobile, code } = await request.json()
 
     if (!mobile || !code) {

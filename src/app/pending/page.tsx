@@ -210,7 +210,7 @@ export default function PendingPage() {
   const queryClient = useQueryClient()
   const listRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["applications", tab],
     queryFn: async () => {
       const res = await fetch(`/api/applications/list?status=${tab}&limit=100`)
@@ -689,8 +689,17 @@ export default function PendingPage() {
         </div>
       )}
 
+      {/* Error state */}
+      {isError && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+          <p className="text-lg font-medium">Failed to load applications</p>
+          <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
+        </div>
+      )}
+
       {/* Empty state */}
-      {!isLoading && applications.length === 0 && (
+      {!isLoading && !isError && applications.length === 0 && (
         <Card className="border-dashed">
           <CardContent className="py-16 text-center">
             <Inbox className="h-14 w-14 text-muted-foreground/30 mx-auto mb-4" />

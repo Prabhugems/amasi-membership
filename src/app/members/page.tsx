@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
-  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil,
+  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -282,7 +282,7 @@ export default function MembersPage() {
 
   const activeFilterCount = [typeFilter, stateFilter, zoneFilter, statusFilter].filter(Boolean).length
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["members-list", searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter, page, sortCol, sortDir],
     queryFn: async () => {
       const params = new URLSearchParams()
@@ -520,8 +520,17 @@ export default function MembersPage() {
         )}
       </div>
 
+      {/* Error state */}
+      {isError && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+          <p className="text-lg font-medium">Failed to load members</p>
+          <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
+        </div>
+      )}
+
       {/* Table View */}
-      {viewMode === "table" && (
+      {!isError && viewMode === "table" && (
         <div className="border rounded-xl overflow-hidden shadow-sm bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -629,7 +638,7 @@ export default function MembersPage() {
       )}
 
       {/* Grid View */}
-      {viewMode === "grid" && (
+      {!isError && viewMode === "grid" && (
         <>
           {isLoading ? (
             <GridSkeleton />

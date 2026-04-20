@@ -122,7 +122,8 @@ export async function POST(request: NextRequest) {
         process.env.ADMIN_EMAIL ||
         "admin@amasi.org"
       const resend = new Resend(process.env.RESEND_API_KEY?.trim())
-      const adminUrl = `https://amasi-membership.vercel.app/admin/tickets/${data.ticket_number}`
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
+      const adminUrl = `${baseUrl}/admin/tickets/${data.ticket_number}`
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
         to: adminEmail,

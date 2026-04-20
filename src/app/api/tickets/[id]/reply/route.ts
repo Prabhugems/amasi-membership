@@ -165,6 +165,8 @@ export async function POST(
       await supabase.from("support_tickets").update(updates).eq("id", ticket.id)
     }
 
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
+
     // Send admin notification when a member replies
     if (!is_admin) {
       try {
@@ -173,7 +175,7 @@ export async function POST(
           process.env.ADMIN_EMAIL ||
           "admin@amasi.org"
         const resend = new Resend(process.env.RESEND_API_KEY?.trim())
-        const adminUrl = `https://amasi-membership.vercel.app/admin/tickets/${ticket.ticket_number}`
+        const adminUrl = `${baseUrl}/admin/tickets/${ticket.ticket_number}`
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
           to: adminEmail,
@@ -215,7 +217,7 @@ export async function POST(
                 <p style="color: #166534; font-weight: bold; margin: 0 0 4px;">AMASI Admin</p>
                 <p style="color: #166534; margin: 0; white-space: pre-wrap;">${escapeHtml(message)}</p>
               </div>
-              <p style="color: #555; font-size: 14px;">You can reply to this ticket from your <a href="https://amasi-membership.vercel.app/support/${ticket.ticket_number}" style="color: #0f766e;">Ticket Portal</a>.</p>
+              <p style="color: #555; font-size: 14px;">You can reply to this ticket from your <a href="${baseUrl}/support/${ticket.ticket_number}" style="color: #0f766e;">Ticket Portal</a>.</p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
               <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
             </div>

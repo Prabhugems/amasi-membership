@@ -21,7 +21,7 @@ export async function GET() {
 
     if (error) {
       console.error("Heatmap query error:", error)
-      return Response.json({ counts: {} })
+      return Response.json({ error: error.message }, { status: 500 })
     }
 
     const counts: Record<string, number> = {}
@@ -34,6 +34,6 @@ export async function GET() {
     return Response.json({ counts })
   } catch (err) {
     console.error("Heatmap endpoint error:", err)
-    return Response.json({ counts: {} })
+    return Response.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 })
   }
 }

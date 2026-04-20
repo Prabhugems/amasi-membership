@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: "Invalid or expired token" }, { status: 404 })
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://amasi-membership.vercel.app"
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
 
     // Already rated
     if (ticket.csat_rating !== null) {

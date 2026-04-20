@@ -19,6 +19,7 @@ import {
   Calendar,
   Users,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +35,7 @@ function VerifyContent() {
   const [searchId, setSearchId] = useState(idParam)
   const printRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["verify", searchId],
     queryFn: async () => {
       if (!searchId) return null
@@ -171,8 +172,17 @@ function VerifyContent() {
         </div>
       )}
 
+      {/* Error state */}
+      {isError && searchId && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+          <p className="text-lg font-medium">Failed to verify member</p>
+          <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
+        </div>
+      )}
+
       {/* Not found state */}
-      {!isLoading && searchId && data && !card && (
+      {!isLoading && !isError && searchId && data && !card && (
         <div className="max-w-md mx-auto py-12 text-center space-y-4">
           <div className="mx-auto w-20 h-20 rounded-full bg-red-50 border-2 border-red-100 flex items-center justify-center">
             <XCircle className="h-10 w-10 text-red-400" />
@@ -198,7 +208,7 @@ function VerifyContent() {
       )}
 
       {/* Verified member result */}
-      {!isLoading && card && (
+      {!isLoading && !isError && card && (
         <div ref={printRef} className="max-w-lg mx-auto w-full py-8 space-y-5 px-2">
           {/* Verified badge with animation */}
           <div className="text-center space-y-3">

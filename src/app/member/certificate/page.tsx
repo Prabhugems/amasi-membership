@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import {
   Download, Printer, Loader2, FileImage, FileText,
-  Share2, ShieldCheck, Copy, Mail, Award, CheckCircle2, ExternalLink,
+  Share2, ShieldCheck, Copy, Mail, Award, CheckCircle2, ExternalLink, AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -45,7 +45,7 @@ function CertificateContent() {
   const certRef = useRef<HTMLDivElement>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["certificate", id],
     queryFn: async () => {
       if (!id) return null
@@ -180,6 +180,14 @@ function CertificateContent() {
     <div className="text-center py-16">
       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
       <p className="text-muted-foreground mt-3">Generating your certificate...</p>
+    </div>
+  )
+
+  if (isError) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+      <p className="text-lg font-medium">Failed to load certificate</p>
+      <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
     </div>
   )
 

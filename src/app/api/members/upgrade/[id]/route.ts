@@ -74,7 +74,7 @@ export async function PATCH(
       }
 
       // Update upgrade record
-      await supabase
+      const { error: approveUpdateError } = await supabase
         .from("membership_upgrades")
         .update({
           status: "approved",
@@ -82,6 +82,11 @@ export async function PATCH(
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", id)
+
+      if (approveUpdateError) {
+        console.error("Upgrade record approve update error:", approveUpdateError)
+        return Response.json({ status: false, message: "Failed to update upgrade record" }, { status: 500 })
+      }
 
       // Send approval email
       try {
@@ -147,7 +152,7 @@ export async function PATCH(
 
     if (action === "reject") {
       // Update upgrade record
-      await supabase
+      const { error: rejectUpdateError } = await supabase
         .from("membership_upgrades")
         .update({
           status: "rejected",
@@ -155,6 +160,11 @@ export async function PATCH(
           reviewed_at: new Date().toISOString(),
         })
         .eq("id", id)
+
+      if (rejectUpdateError) {
+        console.error("Upgrade record reject update error:", rejectUpdateError)
+        return Response.json({ status: false, message: "Failed to update upgrade record" }, { status: 500 })
+      }
 
       // Send rejection email
       try {

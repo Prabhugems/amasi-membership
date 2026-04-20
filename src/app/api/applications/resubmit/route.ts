@@ -63,6 +63,18 @@ export async function POST(request: NextRequest) {
     for (const fieldName of fileFields) {
       const file = formData.get(fieldName) as File | null
       if (file && file.size > 0) {
+        // Validate file size (5 MB max)
+        if (file.size > 5 * 1024 * 1024) {
+          return Response.json({ status: false, message: `${fieldName} exceeds 5 MB limit` }, { status: 400 })
+        }
+        // Validate file type by magic bytes
+        const headerBytes = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+        const isJPEG = headerBytes[0] === 0xFF && headerBytes[1] === 0xD8
+        const isPNG = headerBytes[0] === 0x89 && headerBytes[1] === 0x50 && headerBytes[2] === 0x4E && headerBytes[3] === 0x47
+        const isPDF = headerBytes[0] === 0x25 && headerBytes[1] === 0x50 && headerBytes[2] === 0x44 && headerBytes[3] === 0x46
+        if (!isJPEG && !isPNG && !isPDF) {
+          return Response.json({ status: false, message: `${fieldName}: only JPG, PNG, and PDF files are accepted` }, { status: 400 })
+        }
         const ext = file.name.split(".").pop() || "jpg"
         const path = `applications/${applicationId}/${fieldName}_${Date.now()}.${ext}`
 

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 async function callNmcOnce(regNo: string, timeoutMs: number) {
   const res = await fetch(
@@ -15,6 +16,13 @@ async function callNmcOnce(regNo: string, timeoutMs: number) {
 }
 
 export async function GET(request: NextRequest) {
+  // Rate limit: 10 NMC lookups per 15 minutes per IP (protect upstream NMC API)
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  const rl = await checkRateLimit(`nmc:${ip}`, 10, 15 * 60 * 1000)
+  if (!rl.allowed) {
+    return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+  }
+
   const regNo = request.nextUrl.searchParams.get("regNo")
   const state = request.nextUrl.searchParams.get("state")
 

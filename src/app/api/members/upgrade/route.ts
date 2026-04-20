@@ -96,29 +96,45 @@ export async function POST(request: NextRequest) {
     let asiCertificateUrl: string | null = null
     let asiEmailProofUrl: string | null = null
 
+    // Helper: validate file (5 MB max, magic bytes for JPG/PNG/PDF)
+    const validateFile = async (file: File, label: string) => {
+      if (file.size > 5 * 1024 * 1024) {
+        return `${label} exceeds 5 MB limit`
+      }
+      const hdr = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+      const ok = (hdr[0] === 0xFF && hdr[1] === 0xD8) || // JPEG
+        (hdr[0] === 0x89 && hdr[1] === 0x50 && hdr[2] === 0x4E && hdr[3] === 0x47) || // PNG
+        (hdr[0] === 0x25 && hdr[1] === 0x50 && hdr[2] === 0x44 && hdr[3] === 0x46) // PDF
+      return ok ? null : `${label}: only JPG, PNG, and PDF files are accepted`
+    }
+
     const asiCertFile = formData.get("asi_certificate") as File | null
     if (asiCertFile && asiCertFile.size > 0) {
+      const err = await validateFile(asiCertFile, "ASI certificate")
+      if (err) return Response.json({ status: false, message: err }, { status: 400 })
       const ext = asiCertFile.name.split(".").pop() || "pdf"
       const path = `upgrades/${memberId}/asi_certificate_${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from("uploads")
         .upload(path, asiCertFile, { upsert: true })
       if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(path)
-        asiCertificateUrl = urlData.publicUrl
+        const { data: urlData } = await supabase.storage.from("uploads").createSignedUrl(path, 60 * 60 * 24 * 365)
+        asiCertificateUrl = urlData?.signedUrl || null
       }
     }
 
     const asiEmailFile = formData.get("asi_email_proof") as File | null
     if (asiEmailFile && asiEmailFile.size > 0) {
+      const err = await validateFile(asiEmailFile, "ASI email proof")
+      if (err) return Response.json({ status: false, message: err }, { status: 400 })
       const ext = asiEmailFile.name.split(".").pop() || "pdf"
       const path = `upgrades/${memberId}/asi_email_proof_${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from("uploads")
         .upload(path, asiEmailFile, { upsert: true })
       if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(path)
-        asiEmailProofUrl = urlData.publicUrl
+        const { data: urlData } = await supabase.storage.from("uploads").createSignedUrl(path, 60 * 60 * 24 * 365)
+        asiEmailProofUrl = urlData?.signedUrl || null
       }
     }
 
@@ -263,7 +279,7 @@ export async function POST(request: NextRequest) {
 
       if (!memberUpdateError) {
         // Update upgrade record to approved
-        await supabase
+        const { error: autoApproveError } = await supabase
           .from("membership_upgrades")
           .update({
             status: "approved",
@@ -271,6 +287,11 @@ export async function POST(request: NextRequest) {
             review_notes: "Auto-approved by AI verification (high confidence)",
           })
           .eq("id", upgrade.id)
+
+        if (autoApproveError) {
+          console.error("Failed to mark upgrade as auto-approved:", autoApproveError)
+          return Response.json({ status: false, message: "Failed to update upgrade status" }, { status: 500 })
+        }
 
         autoApproved = true
 
@@ -307,17 +328,25 @@ export async function POST(request: NextRequest) {
       } else {
         console.error("Failed to update member for auto-approve:", memberUpdateError)
         // Still mark as pending_review if member update failed
-        await supabase
+        const { error: fallbackError } = await supabase
           .from("membership_upgrades")
           .update({ status: "pending_review" })
           .eq("id", upgrade.id)
+        if (fallbackError) {
+          console.error("Failed to reset upgrade status to pending_review:", fallbackError)
+          return Response.json({ status: false, message: "Failed to update upgrade status" }, { status: 500 })
+        }
       }
     } else {
       // Set to pending_review for admin
-      await supabase
+      const { error: pendingError } = await supabase
         .from("membership_upgrades")
         .update({ status: "pending_review" })
         .eq("id", upgrade.id)
+      if (pendingError) {
+        console.error("Failed to set upgrade status to pending_review:", pendingError)
+        return Response.json({ status: false, message: "Failed to update upgrade status" }, { status: 500 })
+      }
     }
 
     return Response.json({

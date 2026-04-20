@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Payment verification failed" }, { status: 400 })
     }
 
-    // Transfer ₹100 processing fee to Events 360 via Razorpay Route
-    const EVENTS360_ACCOUNT_ID = "acc_SYV3ZpQvinGqOW"
-    const PROCESSING_FEE = 100 // INR, incl GST
+    // Transfer processing fee to Events 360 via Razorpay Route
+    const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
+    const PROCESSING_FEE = Number(process.env.PROCESSING_FEE_INR) || 100 // INR, incl GST
 
     try {
       const Razorpay = (await import("razorpay")).default

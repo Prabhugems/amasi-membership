@@ -103,8 +103,10 @@ export async function POST(
         author_name: "System",
       })
 
+    let mergeNoteWarning: string | undefined
     if (systemReplyError) {
       console.error("Failed to insert system merge reply:", systemReplyError.message)
+      mergeNoteWarning = "Merge note was not saved: " + systemReplyError.message
     }
 
     // 3. Update source ticket: mark as merged and closed, invalidate pending CSAT
@@ -158,6 +160,7 @@ export async function POST(
     return Response.json({
       message: "Tickets merged successfully",
       target: updatedTarget,
+      ...(mergeNoteWarning && { warning: mergeNoteWarning }),
     })
   } catch (err) {
     return Response.json(

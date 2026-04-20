@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   ShieldQuestion,
   AlertTriangle,
+  AlertCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -113,7 +114,7 @@ function UpgradesContent() {
   const [rejectNotes, setRejectNotes] = useState("")
 
   /* --- data fetching --- */
-  const { data: upgrades = [], isLoading } = useQuery<UpgradeRecord[]>({
+  const { data: upgrades = [], isLoading, isError } = useQuery<UpgradeRecord[]>({
     queryKey: ["upgrades"],
     queryFn: async () => {
       const res = await fetch("/api/members/upgrade?all=1")
@@ -255,7 +256,15 @@ function UpgradesContent() {
           </div>
         )}
 
-        {!isLoading && filtered.length === 0 && (
+        {isError && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+            <p className="text-lg font-medium">Failed to load upgrade requests</p>
+            <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
+          </div>
+        )}
+
+        {!isLoading && !isError && filtered.length === 0 && (
           <div className="rounded-xl border bg-card py-16 text-center shadow-sm">
             <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">No upgrade requests found</p>

@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, Share2, CreditCard, UserPen, Award, ShieldCheck,
   Printer, FileImage, FileText, MessageCircle, Wallet, RotateCcw,
-  Loader2, Phone, Mail, Globe, MapPin,
+  Loader2, Phone, Mail, Globe, MapPin, AlertCircle,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -351,7 +351,7 @@ function CardContent() {
 
   const { data: suggestions } = useSearchSuggestions(query)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["card", searchId],
     queryFn: async () => {
       if (!searchId) return null
@@ -567,6 +567,14 @@ function CardContent() {
         <div className="text-center py-8">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
           <p className="text-muted-foreground mt-2 text-sm">Loading membership card...</p>
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+          <p className="text-lg font-medium">Failed to load card</p>
+          <p className="text-sm text-muted-foreground mt-1">Please try refreshing the page</p>
         </div>
       )}
 

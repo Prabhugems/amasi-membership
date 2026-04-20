@@ -31,6 +31,7 @@ const PUBLIC_ROUTES = [
   "/verify",
   "/support",
   "/card",
+  "/profile",
 ]
 
 const PUBLIC_API_ROUTES = [

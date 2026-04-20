@@ -144,8 +144,8 @@ function SuggestionDropdown({
   if (!visible || suggestions.length === 0) return null
 
   return (
-    <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-xl z-50 overflow-hidden max-h-[360px] overflow-y-auto animate-in fade-in-0 slide-in-from-top-2 duration-150">
-      <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted/40 border-b">
+    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border rounded-xl shadow-xl z-50 overflow-hidden max-h-[360px] overflow-y-auto animate-in fade-in-0 slide-in-from-top-2 duration-150">
+      <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-teal-600 dark:text-teal-400 bg-muted/40 border-b">
         {suggestions.length} suggestion{suggestions.length !== 1 ? "s" : ""}
       </div>
       {suggestions.map((m, i) => (
@@ -161,10 +161,10 @@ function SuggestionDropdown({
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">
+            <p className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">
               {m.salutation} {m.first_name} {m.last_name}
             </p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               {m.membership_no && <span className="font-mono">#{m.membership_no}</span>}
               {m.application_name && (
                 <span className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0 rounded-full border ${TYPE_COLORS[getTypeCode(m.application_name)] || "bg-muted"}`}>

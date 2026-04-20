@@ -98,28 +98,21 @@ function useBadgeCounts() {
 
     async function fetchCounts() {
       try {
-        const [dashRes, ticketsRes, upgradesRes] = await Promise.all([
-          fetch("/api/dashboard").then((r) => r.json()).catch(() => null),
-          fetch("/api/tickets?all=1").then((r) => r.json()).catch(() => null),
-          fetch("/api/members/upgrade?all=1").then((r) => r.json()).catch(() => null),
-        ])
-
+        const res = await fetch("/api/badges")
+        if (!res.ok) return
+        const data = await res.json()
         if (cancelled) return
-
-        const pending = dashRes?.data?.pendingApplicationsCount ?? 0
-        const openTickets =
-          (Array.isArray(ticketsRes) ? ticketsRes.filter((t: { status: string }) => t.status === "open").length : 0)
-        const pendingUpgrades =
-          (Array.isArray(upgradesRes) ? upgradesRes.filter((u: { status: string }) => u.status === "pending_review" || u.status === "pending").length : 0)
-
-        setCounts({ pending, tickets: openTickets, upgrades: pendingUpgrades })
+        setCounts({
+          pending: data.pending ?? 0,
+          tickets: data.tickets ?? 0,
+          upgrades: data.upgrades ?? 0,
+        })
       } catch {
         // silently fail — badges just show 0
       }
     }
 
     fetchCounts()
-    // Refresh every 60 seconds
     const interval = setInterval(fetchCounts, 60_000)
     return () => {
       cancelled = true

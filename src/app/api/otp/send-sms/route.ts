@@ -44,11 +44,16 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
 
     // Store OTP in DB
-    await supabase.from("otp_codes").insert({
+    const { error: insertError } = await supabase.from("otp_codes").insert({
       email: `sms:${mobile}`,
       code,
       expires_at: expiresAt.toISOString(),
     })
+
+    if (insertError) {
+      console.error("OTP insert error:", insertError)
+      return Response.json({ status: false, message: "Failed to generate OTP. Please try again." }, { status: 500 })
+    }
 
     // Try MSG91 SMS first
     try {

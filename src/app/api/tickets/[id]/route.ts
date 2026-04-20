@@ -198,7 +198,7 @@ export async function PATCH(
           .update({ csat_token: csatToken, csat_sent_at: new Date().toISOString() })
           .eq("id", data.id)
 
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://amasi-membership.vercel.app"
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
         const ratingUrl = (r: number) => `${baseUrl}/api/tickets/csat?token=${csatToken}&rating=${r}`
         const ticketName = escapeHtml(data.name || "Member")
         const ticketSubject = escapeHtml(data.subject || "your support ticket")

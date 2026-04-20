@@ -252,77 +252,14 @@ html {
 .transition-sidebar {
   transition: width 0.2s ease, padding 0.2s ease;
 }
-.transition-opacity-fast {
-  transition: opacity 0.15s ease;
-}
-.transition-colors-fast {
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
 
 /* ===== PREMIUM MICRO-INTERACTIONS ===== */
 
-/* Card hover lift */
-.card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
-}
-
-/* Gradient text for headings */
-.gradient-text {
-  background: linear-gradient(135deg, var(--primary), #0d9488);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Pulse animation for badges/indicators */
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-.pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
-
-/* Slide up animation for sections appearing */
+/* Slide up animation — used by stagger motion component */
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-slide-up { animation: slideUp 0.3s ease-out; }
-
-/* Gradient border effect */
-.gradient-border {
-  position: relative;
-  border: none;
-}
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  border-radius: 4px 0 0 4px;
-  background: linear-gradient(to bottom, var(--primary), #0d9488);
-}
-
-/* Better card shadows */
-.shadow-card {
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
-}
-.shadow-card:hover {
-  box-shadow: 0 10px 25px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.04);
-}
-
-/* Staggered animation for list items */
-.stagger-item { animation: slideUp 0.3s ease-out both; }
-.stagger-item:nth-child(1) { animation-delay: 0ms; }
-.stagger-item:nth-child(2) { animation-delay: 50ms; }
-.stagger-item:nth-child(3) { animation-delay: 100ms; }
-.stagger-item:nth-child(4) { animation-delay: 150ms; }
-.stagger-item:nth-child(5) { animation-delay: 200ms; }
 
 /* ===== PLACEHOLDER CONTRAST ===== */
 input::placeholder, textarea::placeholder {
@@ -369,13 +306,6 @@ input::placeholder, textarea::placeholder {
   background-attachment: fixed;
 }
 
-/* KPI value count-up — subtle scale pulse on mount */
-@keyframes value-pop {
-  from { opacity: 0; transform: scale(0.92); }
-  60% { opacity: 1; transform: scale(1.04); }
-  to { transform: scale(1); }
-}
-.value-pop { animation: value-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both; }
 
 /* Soft shimmer over hero cards (very subtle) */
 @keyframes hero-shimmer {
@@ -406,20 +336,6 @@ input::placeholder, textarea::placeholder {
 }
 .draw-line { animation: draw-line 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
 
-/* Card hover lift for dashboard cards */
-.dash-card-hover {
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
-              box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.dash-card-hover:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.12),
-              0 4px 12px -4px rgba(15, 23, 42, 0.06);
-}
-.dark .dash-card-hover:hover {
-  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.5),
-              0 4px 12px -4px rgba(16, 185, 129, 0.08);
-}
 
 /* ===== HOVER + INTERACTION UTILITIES (used everywhere) ===== */
 
@@ -451,14 +367,6 @@ input::placeholder, textarea::placeholder {
   border-left-color: rgb(129 140 248);
 }
 
-/* Icon pulse on hover — for action icon buttons */
-.icon-pulse {
-  transition: transform 150ms ease, color 150ms ease;
-}
-.icon-pulse:hover {
-  transform: scale(1.10);
-  color: rgb(99 102 241); /* indigo-500 */
-}
 
 /* Soft pulse for "in-progress" status badges */
 @keyframes soft-pulse {
@@ -530,41 +438,6 @@ input::placeholder, textarea::placeholder {
 .glow-breathe-3 { animation-delay: 3s; }
 .glow-breathe-4 { animation-delay: 4.5s; }
 
-/* Subtle continuous gradient shift on hero card bg */
-@keyframes hero-gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-.hero-gradient-shift {
-  background-size: 200% 200%;
-  animation: hero-gradient-shift 12s ease infinite;
-}
-
-/* Floating accent line — sweeps under section titles slowly */
-@keyframes accent-sweep {
-  0%, 100% { transform: translateX(0); opacity: 0.6; }
-  50% { transform: translateX(8px); opacity: 1; }
-}
-.accent-sweep {
-  animation: accent-sweep 4s ease-in-out infinite;
-}
-
-/* Sparkle rotation for icon badges */
-@keyframes badge-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.15); }
-  50% { box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.18); }
-}
-.badge-glow {
-  animation: badge-glow 3.5s ease-in-out infinite;
-}
-
-/* Funnel bar grow-in */
-@keyframes bar-grow {
-  from { width: 0; }
-}
-.bar-grow {
-  animation: bar-grow 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.4s both;
-}
 
 /* Funnel active-bar shimmer sweep (used via Tailwind arbitrary animation) */
 @keyframes funnel-shimmer {
@@ -596,12 +469,9 @@ input::placeholder, textarea::placeholder {
    Keep ambient breathing/hover/shimmer — they're gentle and don't trigger vestibular issues. */
 @media (prefers-reduced-motion: reduce) {
   .dash-reveal,
-  .value-pop,
-  .draw-line,
-  .bar-grow {
+  .draw-line {
     animation: none !important;
   }
-  /* hero-shimmer, glow-breathe, live-pulse, dash-card-hover stay on — they're ambient */
 }
 
 /* ===== DARK MODE — dashboard bg variant ===== */
@@ -632,23 +502,6 @@ input::placeholder, textarea::placeholder {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
-}
-
-/* ===== BACK-TO-TOP BUTTON ===== */
-.back-to-top {
-  position: fixed;
-  bottom: 6rem;
-  right: 1.5rem;
-  z-index: 40;
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.2s, transform 0.2s;
-  pointer-events: none;
-}
-.back-to-top.visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 /* Flash success border for realtime updates */

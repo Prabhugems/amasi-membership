@@ -119,7 +119,8 @@ export async function middleware(request: NextRequest) {
     }
     // Pages redirect to login
     const loginUrl = new URL("/login", request.url)
-    loginUrl.searchParams.set("redirect", pathname)
+    const fullPath = pathname + (request.nextUrl.search || "")
+    loginUrl.searchParams.set("redirect", fullPath)
     return NextResponse.redirect(loginUrl)
   }
 

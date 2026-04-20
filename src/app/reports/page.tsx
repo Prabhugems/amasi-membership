@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge"
 import {
   BarChart3, PieChart, TrendingUp, MapPin, Loader2, Users, Clock,
   CheckCircle2, Download, FileText, Calendar, ArrowUpRight, ArrowDownRight,
+  Bot, ShieldCheck, XCircle, AlertTriangle, GitPullRequest,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RechartsPie, Pie, Cell, Legend,
-  LineChart, Line, Area, AreaChart,
+  Area, AreaChart,
 } from "recharts"
 import { StaggerContainer, StaggerItem } from "@/components/motion/stagger"
 
@@ -19,12 +20,33 @@ interface ZoneRow { zone: string; count: number }
 interface StateRow { state: string; count: number }
 interface MonthlyRow { month: string; count: number }
 interface TypeRow { membership_type: string; count: number }
+interface PipelineData {
+  total: number
+  approved: number
+  rejected: number
+  pending: number
+  needClarification: number
+  approvalRate: number
+  avgProcessingHours: number
+  aiAutoApproved: number
+  aiAutoRate: number
+  manualReviewCount: number
+  statusBreakdown: { status: string; count: number }[]
+  nmc: { verified: number; mismatch: number; notFound: number; skipped: number }
+}
+interface GrowthData {
+  thisYear: number
+  lastYear: number
+  yoyPct: number
+}
 interface ReportsData {
   zoneData: ZoneRow[]
   stateData: StateRow[]
   monthlyData: MonthlyRow[]
   typeData: TypeRow[]
   total?: number
+  pipeline?: PipelineData
+  growth?: GrowthData
 }
 
 type DateRange = "30d" | "90d" | "year" | "all"
@@ -46,6 +68,26 @@ const STATE_PALETTE = [
   "#0d9488", "#14b8a6", "#0ea5e9", "#6366f1", "#8b5cf6",
   "#ec4899", "#f59e0b", "#10b981", "#ef4444", "#06b6d4",
 ]
+
+const STATUS_COLORS: Record<string, string> = {
+  approved: "#10b981",
+  ai_approved: "#06b6d4",
+  pending: "#f59e0b",
+  submitted: "#f59e0b",
+  pending_review: "#f97316",
+  rejected: "#ef4444",
+  need_clarification: "#8b5cf6",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  approved: "Approved",
+  ai_approved: "AI Approved",
+  pending: "Pending",
+  submitted: "Submitted",
+  pending_review: "Pending Review",
+  rejected: "Rejected",
+  need_clarification: "Need Clarification",
+}
 
 const DATE_RANGES: { label: string; value: DateRange }[] = [
   { label: "Last 30 days", value: "30d" },
@@ -79,7 +121,7 @@ function PieTooltip({ active, payload }: any) {
         Count: <span className="font-bold text-foreground">{d.value?.toLocaleString()}</span>
       </p>
       <p className="text-muted-foreground">
-        Share: <span className="font-bold text-foreground">{(d.payload?.percent * 100)?.toFixed(1) ?? d.percent}%</span>
+        Share: <span className="font-bold text-foreground">{typeof d.percent === "number" ? (d.percent * 100).toFixed(1) : "--"}%</span>
       </p>
     </div>
   )
@@ -101,6 +143,13 @@ function ChartToggle({ mode, onChange }: { mode: ChartMode; onChange: (m: ChartM
       ))}
     </div>
   )
+}
+
+function formatHours(hours: number): string {
+  if (hours === 0) return "--"
+  if (hours < 1) return `${Math.round(hours * 60)}m`
+  if (hours < 24) return `${Math.round(hours * 10) / 10}h`
+  return `${Math.round((hours / 24) * 10) / 10}d`
 }
 
 export default function ReportsPage() {
@@ -147,9 +196,9 @@ export default function ReportsPage() {
     const total = data.total || data.typeData.reduce((s, r) => s + r.count, 0)
     const monthlyTotal = filteredMonthlyData.reduce((s, m) => s + m.count, 0)
     const avgPerMonth = filteredMonthlyData.length > 0 ? Math.round(monthlyTotal / filteredMonthlyData.length) : 0
-    // Approval rate: we assume total is approved (active members)
-    const approvalRate = total > 0 ? 95 : 0 // Placeholder since we don't have rejected data from this API
-    return { total, monthlyTotal, avgPerMonth, approvalRate }
+    const approvalRate = data.pipeline?.approvalRate ?? 0
+    const avgProcessingHours = data.pipeline?.avgProcessingHours ?? 0
+    return { total, monthlyTotal, avgPerMonth, approvalRate, avgProcessingHours }
   }, [data, filteredMonthlyData])
 
   const handleExportCSV = useCallback(() => {
@@ -159,6 +208,22 @@ export default function ReportsPage() {
     data.stateData.forEach((s) => rows.push(["State", s.state, String(s.count)]))
     data.monthlyData.forEach((m) => rows.push(["Monthly", m.month, String(m.count)]))
     data.typeData.forEach((t) => rows.push(["Type", t.membership_type, String(t.count)]))
+    if (data.pipeline) {
+      data.pipeline.statusBreakdown.forEach((s) => rows.push(["Application Status", STATUS_LABELS[s.status] || s.status, String(s.count)]))
+      rows.push(["Pipeline", "Approval Rate", `${data.pipeline.approvalRate}%`])
+      rows.push(["Pipeline", "Avg Processing Time", formatHours(data.pipeline.avgProcessingHours)])
+      rows.push(["Pipeline", "AI Auto-Approved", String(data.pipeline.aiAutoApproved)])
+      rows.push(["Pipeline", "Manual Review", String(data.pipeline.manualReviewCount)])
+      rows.push(["NMC", "Verified", String(data.pipeline.nmc.verified)])
+      rows.push(["NMC", "Mismatch", String(data.pipeline.nmc.mismatch)])
+      rows.push(["NMC", "Not Found", String(data.pipeline.nmc.notFound)])
+      rows.push(["NMC", "Skipped", String(data.pipeline.nmc.skipped)])
+    }
+    if (data.growth) {
+      rows.push(["Growth", "This Year", String(data.growth.thisYear)])
+      rows.push(["Growth", "Last Year", String(data.growth.lastYear)])
+      rows.push(["Growth", "YoY %", `${data.growth.yoyPct}%`])
+    }
     const csv = rows.map((r) => r.join(",")).join("\n")
     const blob = new Blob([csv], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
@@ -189,14 +254,35 @@ export default function ReportsPage() {
     )
   }
 
-  const { zoneData, stateData, monthlyData, typeData } = data
+  const { zoneData, stateData, typeData, pipeline, growth } = data
   const zoneTotal = zoneData.reduce((s, r) => s + r.count, 0) || 1
   const typeTotal = typeData.reduce((s, r) => s + r.count, 0) || 1
 
   // Prepare recharts data
-  const zonePieData = zoneData.map((z, i) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
+  const zonePieData = zoneData.map((z) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
   const typePieData = typeData.map((t) => ({ name: t.membership_type, value: t.count, percent: t.count / typeTotal }))
   const stateBarData = stateData.slice(0, 10).map((s) => ({ name: s.state, count: s.count }))
+
+  // Application status pie data
+  const statusPieData = pipeline
+    ? pipeline.statusBreakdown.map((s) => ({
+        name: STATUS_LABELS[s.status] || s.status,
+        value: s.count,
+        color: STATUS_COLORS[s.status] || "#94a3b8",
+      }))
+    : []
+
+  // NMC pie data
+  const nmcPieData = pipeline
+    ? [
+        { name: "Verified", value: pipeline.nmc.verified, color: "#10b981" },
+        { name: "Mismatch", value: pipeline.nmc.mismatch, color: "#f59e0b" },
+        { name: "Not Found", value: pipeline.nmc.notFound, color: "#ef4444" },
+        { name: "Skipped", value: pipeline.nmc.skipped, color: "#94a3b8" },
+      ].filter((d) => d.value > 0)
+    : []
+
+  const nmcTotal = nmcPieData.reduce((s, d) => s + d.value, 0) || 1
 
   return (
     <div className="space-y-6 print:space-y-4" ref={reportRef}>
@@ -247,8 +333,9 @@ export default function ReportsPage() {
               title="Total Members"
               value={stats.total.toLocaleString()}
               icon={Users}
-              trend="+12%"
-              trendUp
+              subtitle={growth ? `${growth.yoyPct >= 0 ? "+" : ""}${growth.yoyPct}% vs last year` : undefined}
+              trend={growth && growth.yoyPct !== 0 ? `${growth.yoyPct >= 0 ? "+" : ""}${growth.yoyPct}%` : undefined}
+              trendUp={growth ? growth.yoyPct >= 0 : undefined}
               color="teal"
             />
           </StaggerItem>
@@ -266,20 +353,207 @@ export default function ReportsPage() {
               title="Approval Rate"
               value={`${stats.approvalRate}%`}
               icon={CheckCircle2}
-              subtitle="Approved vs total"
+              subtitle={pipeline ? `${pipeline.approved.toLocaleString()} approved of ${(pipeline.approved + pipeline.rejected).toLocaleString()} closed` : "Approved vs rejected"}
               color="emerald"
             />
           </StaggerItem>
           <StaggerItem>
             <SummaryCard
               title="Avg Processing"
-              value="3.2 days"
+              value={formatHours(stats.avgProcessingHours)}
               icon={Clock}
               subtitle="Submit to approval"
               color="purple"
             />
           </StaggerItem>
         </StaggerContainer>
+      )}
+
+      {/* Application Pipeline Section */}
+      {pipeline && pipeline.total > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+              <GitPullRequest className="h-4 w-4" />
+            </div>
+            <h2 className="text-xl font-semibold tracking-tight">Application Pipeline</h2>
+            <Badge variant="outline" className="ml-1 text-xs">{pipeline.total.toLocaleString()} applications</Badge>
+          </div>
+
+          <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StaggerItem>
+              <MiniStatCard
+                label="AI Auto-Approved"
+                value={pipeline.aiAutoApproved.toLocaleString()}
+                sub={`${pipeline.aiAutoRate}% of total`}
+                icon={Bot}
+                iconBg="bg-cyan-100"
+                iconColor="text-cyan-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Manual Review"
+                value={pipeline.manualReviewCount.toLocaleString()}
+                sub={`${pipeline.total > 0 ? Math.round((pipeline.manualReviewCount / pipeline.total) * 100) : 0}% flagged`}
+                icon={AlertTriangle}
+                iconBg="bg-orange-100"
+                iconColor="text-orange-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Rejected"
+                value={pipeline.rejected.toLocaleString()}
+                sub={`${pipeline.total > 0 ? Math.round((pipeline.rejected / pipeline.total) * 1000) / 10 : 0}% rejection rate`}
+                icon={XCircle}
+                iconBg="bg-red-100"
+                iconColor="text-red-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Pending / Clarification"
+                value={(pipeline.pending + pipeline.needClarification).toLocaleString()}
+                sub={pipeline.needClarification > 0 ? `${pipeline.needClarification} need clarification` : "In queue"}
+                icon={Clock}
+                iconBg="bg-amber-100"
+                iconColor="text-amber-600"
+              />
+            </StaggerItem>
+          </StaggerContainer>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Application Status Breakdown */}
+            <Card className="card-lift">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+                    <PieChart className="h-4 w-4" />
+                  </div>
+                  Application Status Breakdown
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={statusPieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={95}
+                        paddingAngle={2}
+                        dataKey="value"
+                        label={({ name, percent }: any) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
+                        labelLine={{ stroke: "#94a3b8" }}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
+                      >
+                        {statusPieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip />} />
+                      <Legend />
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* NMC Verification Stats */}
+            <Card className="card-lift">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  NMC Verification Results
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {nmcPieData.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-8 text-center">No NMC verification data available.</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RechartsPie>
+                          <Pie
+                            data={nmcPieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={80}
+                            paddingAngle={3}
+                            dataKey="value"
+                            isAnimationActive={true}
+                            animationDuration={1200}
+                            animationBegin={300}
+                            animationEasing="ease-out"
+                          >
+                            {nmcPieData.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<PieTooltip />} />
+                          <Legend />
+                        </RechartsPie>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {nmcPieData.map((d) => (
+                        <div key={d.name} className="flex items-center gap-2 text-sm">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                          <span className="text-muted-foreground">{d.name}:</span>
+                          <span className="font-semibold">{d.value.toLocaleString()}</span>
+                          <span className="text-muted-foreground text-xs">({Math.round((d.value / nmcTotal) * 100)}%)</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* YoY Growth Card */}
+      {growth && growth.lastYear > 0 && (
+        <Card className="card-lift">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+              Year-over-Year Growth
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-8 flex-wrap">
+              <div>
+                <p className="text-sm text-muted-foreground">This Year ({new Date().getFullYear()})</p>
+                <p className="text-3xl font-bold">{growth.thisYear.toLocaleString()}</p>
+              </div>
+              <div className="text-4xl text-muted-foreground/30 font-light">vs</div>
+              <div>
+                <p className="text-sm text-muted-foreground">Last Year ({new Date().getFullYear() - 1})</p>
+                <p className="text-3xl font-bold">{growth.lastYear.toLocaleString()}</p>
+              </div>
+              <div className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-lg font-bold ${
+                growth.yoyPct >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              }`}>
+                {growth.yoyPct >= 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
+                {growth.yoyPct >= 0 ? "+" : ""}{growth.yoyPct}%
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Charts grid */}
@@ -430,7 +704,7 @@ export default function ReportsPage() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
                   <TrendingUp className="h-4 w-4" />
                 </div>
-                Applications by Month
+                Members by Month
               </CardTitle>
               <Badge variant="outline" className="text-xs">
                 {filteredMonthlyData.length} month{filteredMonthlyData.length !== 1 ? "s" : ""}
@@ -544,7 +818,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        {/* Approval Rate Chart */}
+        {/* Approval Breakdown — now uses real data */}
         <Card className="card-lift">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -559,11 +833,12 @@ export default function ReportsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsPie>
                   <Pie
-                    data={[
-                      { name: "Approved", value: stats ? stats.total : 0 },
-                      { name: "Pending", value: stats ? Math.round(stats.total * 0.03) : 0 },
-                      { name: "Rejected", value: stats ? Math.round(stats.total * 0.02) : 0 },
-                    ]}
+                    data={pipeline ? [
+                      { name: "Approved", value: pipeline.approved, color: "#10b981" },
+                      { name: "Pending", value: pipeline.pending, color: "#f59e0b" },
+                      { name: "Rejected", value: pipeline.rejected, color: "#ef4444" },
+                      { name: "Clarification", value: pipeline.needClarification, color: "#8b5cf6" },
+                    ].filter((d) => d.value > 0) : []}
                     cx="50%"
                     cy="50%"
                     innerRadius={55}
@@ -577,9 +852,14 @@ export default function ReportsPage() {
                     animationBegin={300}
                     animationEasing="ease-out"
                   >
-                    <Cell fill="#10b981" />
-                    <Cell fill="#f59e0b" />
-                    <Cell fill="#ef4444" />
+                    {(pipeline ? [
+                      { name: "Approved", value: pipeline.approved, color: "#10b981" },
+                      { name: "Pending", value: pipeline.pending, color: "#f59e0b" },
+                      { name: "Rejected", value: pipeline.rejected, color: "#ef4444" },
+                      { name: "Clarification", value: pipeline.needClarification, color: "#8b5cf6" },
+                    ].filter((d) => d.value > 0) : []).map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
                   </Pie>
                   <Tooltip content={<PieTooltip />} />
                   <Legend />
@@ -631,6 +911,34 @@ function SummaryCard({
           </div>
           <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${c.bg} ${c.text} ring-4 ${c.ring}`}>
             <Icon className="h-6 w-6" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function MiniStatCard({
+  label, value, sub, icon: Icon, iconBg, iconColor,
+}: {
+  label: string
+  value: string
+  sub: string
+  icon: typeof Users
+  iconBg: string
+  iconColor: string
+}) {
+  return (
+    <Card className="card-lift">
+      <CardContent className="py-4 px-5">
+        <div className="flex items-center gap-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${iconBg} ${iconColor} shrink-0`}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground truncate">{label}</p>
+            <p className="text-2xl font-bold tracking-tight">{value}</p>
+            <p className="text-xs text-muted-foreground">{sub}</p>
           </div>
         </div>
       </CardContent>

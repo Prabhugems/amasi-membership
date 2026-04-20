@@ -479,7 +479,7 @@ export default function PendingPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Application Approvals</h2>
+          <h1 className="text-3xl font-bold tracking-tight">Application Approvals</h1>
           <p className="text-muted-foreground mt-1">
             Review, approve, or reject membership applications
           </p>

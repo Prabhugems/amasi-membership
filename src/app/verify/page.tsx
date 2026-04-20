@@ -87,9 +87,9 @@ function VerifyContent() {
           <ShieldCheck className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Official Membership Verification
-          </h2>
+          </h1>
           <p className="text-muted-foreground mt-2 text-sm sm:text-base max-w-md mx-auto">
             Verify the membership status of an AMASI-registered surgeon
           </p>
@@ -226,7 +226,7 @@ function VerifyContent() {
                 {card.profilePhoto ? (
                   <img
                     src={card.profilePhoto}
-                    alt=""
+                    alt="Member photo"
                     className="h-24 w-24 rounded-full object-cover mx-auto border-4 border-green-100 shadow-md"
                   />
                 ) : (

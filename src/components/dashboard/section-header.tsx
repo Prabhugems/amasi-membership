@@ -52,9 +52,9 @@ export function SectionHeader({
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </div>
         <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 leading-tight">
+          <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 leading-tight">
             {title}
-          </h3>
+          </h2>
           {subtitle && (
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
               {subtitle}

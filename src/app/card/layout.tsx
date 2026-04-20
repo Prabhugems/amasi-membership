@@ -1,3 +1,11 @@
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Digital Membership Card",
+  description: "View and share your AMASI digital membership card. Access your verified membership credentials anytime with a scannable QR code for instant verification.",
+  alternates: { canonical: "/card" },
+}
+
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto">

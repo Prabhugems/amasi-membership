@@ -45,3 +45,6 @@ next-env.d.ts
 .claude/
 .playwright-mcp/
 /*.png
+
+# test results (generated screenshots, archives, snapshots)
+/test-results/

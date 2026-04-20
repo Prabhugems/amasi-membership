@@ -115,7 +115,7 @@ export default function AuditPage() {
             <ScrollText className="h-5 w-5 text-violet-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Activity Log</h2>
+            <h1 className="text-2xl font-bold tracking-tight">Activity Log</h1>
             <p className="text-sm text-muted-foreground">
               {total.toLocaleString()} recorded action{total !== 1 ? "s" : ""}
             </p>

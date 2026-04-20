@@ -218,7 +218,7 @@ export function Sidebar() {
                 transition={labelTransition}
                 className="overflow-hidden whitespace-nowrap flex-1"
               >
-                <h1 className="font-semibold text-sm leading-tight">AMASI</h1>
+                <span className="font-semibold text-sm leading-tight">AMASI</span>
                 <p className="text-xs text-muted-foreground truncate">Membership Management</p>
               </motion.div>
             )}

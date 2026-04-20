@@ -493,10 +493,10 @@ function ApplicationCard({
 
           {/* Status Timeline */}
           <div className="bg-muted/30 rounded-xl p-5 border">
-            <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <Clock className="h-4 w-4 text-muted-foreground" />
               Application Timeline
-            </h4>
+            </h3>
             <Timeline steps={steps} />
           </div>
 
@@ -569,9 +569,9 @@ function ApplicationCard({
           {/* Review notes (only show separately if not clarification/resubmit since those have their own banner) */}
           {app.review_notes && !needsAction && (
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">
+              <h3 className="text-sm font-medium text-muted-foreground mb-1">
                 Review Notes
-              </h4>
+              </h3>
               <p className="text-sm">{app.review_notes}</p>
             </div>
           )}
@@ -662,9 +662,9 @@ function StatusContent() {
             <FileSearch className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">
+            <h1 className="text-2xl font-bold tracking-tight">
               Track Your Application
-            </h2>
+            </h1>
             <p className="text-muted-foreground text-sm">
               Check your application status using reference number, email, or
               mobile number

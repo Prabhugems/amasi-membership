@@ -43,19 +43,22 @@ export const metadata: Metadata = {
     template: "%s | AMASI",
   },
   description:
-    "Association of Minimal Access Surgeons of India — Membership application, tracking, and management system.",
+    "Association of Minimal Access Surgeons of India — Apply for membership, track applications, verify members, download certificates, and manage your profile.",
   icons: {
     icon: "/icon.svg",
   },
   openGraph: {
     title: "AMASI — Membership Management System",
     description:
-      "Association of Minimal Access Surgeons of India — Membership application, tracking, and management system.",
+      "Association of Minimal Access Surgeons of India — Apply for membership, track applications, verify members, download certificates, and manage your profile.",
     siteName: "AMASI",
     type: "website",
     locale: "en_IN",
   },
   metadataBase: new URL("https://membership.amasi.org"),
+  alternates: {
+    canonical: "/",
+  },
 }
 
 export default function RootLayout({

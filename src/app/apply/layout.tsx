@@ -1,4 +1,11 @@
+import type { Metadata } from "next"
 import { HelpButton } from "@/components/ui/help-button"
+
+export const metadata: Metadata = {
+  title: "Apply for Membership",
+  description: "Apply for AMASI membership online. Submit your credentials, upload documents, and begin your journey with the Association of Minimal Access Surgeons of India.",
+  alternates: { canonical: "/apply" },
+}
 
 export default function ApplyLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -837,7 +837,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
         <div className="space-y-6">
           {/* MCI Registration Group */}
           <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">MCI / State Medical Council</h4>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">MCI / State Medical Council</h3>
             <div className={`rounded-xl border p-4 mb-4 ${data.mciCertificate ? "border-green-200 bg-green-50/50" : "border-blue-200 bg-blue-50/30"}`}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -887,7 +887,7 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
           {/* ASI Membership Group */}
           {(data.membership_type === "LM" || data.asiMembershipNo) && (
             <div className="border-t pt-5">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">ASI Membership</h4>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">ASI Membership</h3>
               {data.asiMembershipNo && (
                 <div className={`rounded-xl border p-4 mb-4 ${data.asiMemberCertificate ? "border-green-200 bg-green-50/50" : "border-blue-200 bg-blue-50/30"}`}>
                   <div className="flex items-center justify-between flex-wrap gap-3">

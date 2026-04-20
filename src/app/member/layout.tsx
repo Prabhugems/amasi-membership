@@ -1,3 +1,11 @@
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Member Portal",
+  description: "Access your AMASI member dashboard. View your membership details, download certificates, update your profile, and manage your account in one place.",
+  alternates: { canonical: "/member" },
+}
+
 export default function MemberLayout({
   children,
 }: {

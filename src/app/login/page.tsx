@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff } from "lucide-react"
 
 function LoginForm() {
@@ -55,7 +55,7 @@ function LoginForm() {
               A
             </div>
             <div>
-              <CardTitle className="text-xl font-bold tracking-tight">AMASI</CardTitle>
+              <h1 className="text-xl font-bold tracking-tight">AMASI</h1>
               <p className="text-sm text-muted-foreground flex items-center justify-center gap-1 mt-0.5">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Admin Portal

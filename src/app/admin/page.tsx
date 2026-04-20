@@ -201,7 +201,7 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Admin Users</h2>
+          <h1 className="text-3xl font-bold tracking-tight">Admin Users</h1>
           <p className="text-muted-foreground mt-1">
             Manage admin accounts and their roles
           </p>

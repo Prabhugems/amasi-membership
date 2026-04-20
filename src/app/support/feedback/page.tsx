@@ -77,7 +77,7 @@ function FeedbackContent() {
                 <div className="mx-auto w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center">
                   <AlertCircle className="h-8 w-8 text-amber-500" />
                 </div>
-                <h2 className="text-xl font-semibold">Already Submitted</h2>
+                <h1 className="text-xl font-semibold">Already Submitted</h1>
                 <p className="text-sm text-muted-foreground">
                   You have already submitted feedback for this ticket.
                 </p>
@@ -95,9 +95,9 @@ function FeedbackContent() {
                 <div className="mx-auto w-16 h-16 rounded-full bg-green-50 flex items-center justify-center">
                   <CheckCircle className="h-8 w-8 text-green-600" />
                 </div>
-                <h2 className="text-xl font-semibold text-green-800">
+                <h1 className="text-xl font-semibold text-green-800">
                   Thank you for your feedback!
-                </h2>
+                </h1>
                 {ratingInfo && (
                   <div className="flex items-center justify-center gap-2">
                     <span className="text-4xl">{ratingInfo.emoji}</span>

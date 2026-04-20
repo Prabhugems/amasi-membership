@@ -1,3 +1,11 @@
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "My Profile",
+  description: "Manage your AMASI member profile. Update your personal information, contact details, qualifications, and membership preferences from your account.",
+  alternates: { canonical: "/profile" },
+}
+
 export default function ProfileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto">

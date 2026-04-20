@@ -211,7 +211,7 @@ function CertificateContent() {
           <Award className="h-7 w-7 text-amber-600" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold">Membership Certificate</h2>
+          <h1 className="text-2xl font-bold">Membership Certificate</h1>
           <p className="text-muted-foreground text-sm">AMASI #{cert.amasiNumber} &mdash; Dr. {cert.name}</p>
         </div>
       </div>
@@ -248,7 +248,7 @@ function CertificateContent() {
               {/* Template background */}
               <img
                 src={cert.templateUrl || "/certificates/term-2024-2026.png"}
-                alt=""
+                alt="AMASI membership certificate"
                 crossOrigin="anonymous"
                 style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }}
               />

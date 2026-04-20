@@ -181,7 +181,7 @@ function CardFront({ card, theme }: { card: CardData; theme: ThemeData }) {
               <div className="absolute -inset-1 rounded-full bg-white/10 blur-sm" />
               <img
                 src={card.profilePhoto}
-                alt=""
+                alt="Member profile photo"
                 className="relative h-[72px] w-[72px] rounded-full object-cover border-2 border-white/30 shadow-lg"
               />
             </div>
@@ -220,7 +220,7 @@ function CardFront({ card, theme }: { card: CardData; theme: ThemeData }) {
             )}
           </div>
           <div className="bg-white rounded-xl p-2 shadow-xl ring-1 ring-white/20">
-            <img src={card.qrCode} alt="QR" className="h-[64px] w-[64px] rounded-sm" crossOrigin="anonymous" />
+            <img src={card.qrCode} alt="Membership verification QR code" className="h-[64px] w-[64px] rounded-sm" crossOrigin="anonymous" />
           </div>
         </div>
       </div>
@@ -285,7 +285,7 @@ function CardBack({ card, theme }: { card: CardData; theme: ThemeData }) {
         {/* Middle: QR code + verification details */}
         <div className="flex items-center gap-5">
           <div className="bg-white rounded-xl p-3 shadow-xl ring-1 ring-white/20 flex-shrink-0">
-            <img src={card.qrCode} alt="QR" className="h-[80px] w-[80px] rounded-sm" crossOrigin="anonymous" />
+            <img src={card.qrCode} alt="Membership verification QR code" className="h-[80px] w-[80px] rounded-sm" crossOrigin="anonymous" />
           </div>
           <div className="space-y-2.5 min-w-0 flex-1">
             <div>
@@ -504,7 +504,7 @@ function CardContent() {
               <CreditCard className="h-7 w-7 text-primary" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold">Digital Membership Card</h2>
+              <h1 className="text-2xl font-bold">Digital Membership Card</h1>
               <p className="text-muted-foreground text-sm">Enter your email, phone, or membership number</p>
             </div>
           </div>

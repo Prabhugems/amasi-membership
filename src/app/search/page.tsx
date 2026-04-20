@@ -562,12 +562,12 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
           <div className="grid gap-8 sm:grid-cols-2">
             {/* Personal Info */}
             <div className="space-y-4">
-              <h4 className="font-semibold text-sm flex items-center gap-2 text-primary">
+              <h3 className="font-semibold text-sm flex items-center gap-2 text-primary">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
                   <User className="h-4 w-4" />
                 </div>
                 Personal Info
-              </h4>
+              </h3>
               <dl className="space-y-3 text-sm">
                 {[
                   { label: "Membership No", value: member.membership_no, bold: true },
@@ -589,12 +589,12 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
 
             {/* Education */}
             <div className="space-y-4">
-              <h4 className="font-semibold text-sm flex items-center gap-2 text-primary">
+              <h3 className="font-semibold text-sm flex items-center gap-2 text-primary">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
                   <GraduationCap className="h-4 w-4" />
                 </div>
                 Education
-              </h4>
+              </h3>
               <div className="space-y-4 text-sm">
                 {member.ug_college ? (
                   <div className="p-3 rounded-lg bg-muted/50 space-y-1">
@@ -637,12 +637,12 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
 
           {/* Documents */}
           <div className="mt-8 space-y-4">
-            <h4 className="font-semibold text-sm flex items-center gap-2 text-primary">
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-primary">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
                 <FileText className="h-4 w-4" />
               </div>
               Documents
-            </h4>
+            </h3>
             <div className="grid gap-3 sm:grid-cols-3">
               {[
                 { label: "MCI Certificate", url: member.mci_certificate },
@@ -843,7 +843,7 @@ function SearchContent() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Search Member</h2>
+        <h1 className="text-3xl font-bold tracking-tight">Search Member</h1>
         <p className="text-muted-foreground mt-1">
           Look up any member by name, email, phone, or AMASI number
         </p>

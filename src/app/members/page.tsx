@@ -114,7 +114,7 @@ function MemberPreview({ hover }: { hover: HoverState }) {
       <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-start gap-3">
           <Avatar className="h-14 w-14 border shadow-sm shrink-0">
-            {m.profile_photo && <AvatarImage src={m.profile_photo} />}
+            {m.profile_photo && <AvatarImage src={m.profile_photo} alt={m.name || "Member photo"} />}
             <AvatarFallback className="text-sm font-semibold bg-primary/5 text-primary">
               {getInitials(m.name || "?")}
             </AvatarFallback>
@@ -164,7 +164,7 @@ function MemberCard({ m }: { m: any }) {
     <div className="border rounded-xl p-4 bg-card hover:shadow-md transition-all group">
       <div className="flex items-start gap-3">
         <Avatar className="h-12 w-12 border shadow-sm shrink-0">
-          {m.profile_photo && <AvatarImage src={m.profile_photo} />}
+          {m.profile_photo && <AvatarImage src={m.profile_photo} alt={m.name || "Member photo"} />}
           <AvatarFallback className="text-xs font-semibold bg-primary/5 text-primary">
             {getInitials(m.name || "?")}
           </AvatarFallback>
@@ -396,7 +396,7 @@ export default function MembersPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">All Members</h2>
+          <h1 className="text-3xl font-bold tracking-tight">All Members</h1>
           <p className="text-muted-foreground mt-1 flex items-center gap-1.5">
             <Users className="h-4 w-4" />
             {isLoading ? (
@@ -572,7 +572,7 @@ export default function MembersPage() {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-10 w-10 border shadow-sm shrink-0">
-                          {m.profile_photo && <AvatarImage src={m.profile_photo} />}
+                          {m.profile_photo && <AvatarImage src={m.profile_photo} alt={m.name || "Member photo"} />}
                           <AvatarFallback className="text-xs font-semibold bg-primary/5 text-primary">
                             {getInitials(m.name || "?")}
                           </AvatarFallback>

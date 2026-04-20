@@ -1,3 +1,11 @@
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Verify Membership",
+  description: "Verify the authenticity of an AMASI membership. Confirm whether a surgeon is a registered member of the Association of Minimal Access Surgeons of India.",
+  alternates: { canonical: "/verify" },
+}
+
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-auto">

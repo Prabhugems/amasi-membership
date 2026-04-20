@@ -169,7 +169,7 @@ export function EducationSection({ data, update, onChange, quickFill }: {
           <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-blue-100 text-blue-600">
             <BookOpen className="h-3.5 w-3.5" />
           </div>
-          <h4 className="text-sm font-semibold text-foreground">Undergraduate (MBBS)</h4>
+          <h3 className="text-sm font-semibold text-foreground">Undergraduate (MBBS)</h3>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <EduField label="Degree" value={data.eduUndergradDegree} onChange={(v) => update("eduUndergradDegree", v)} placeholder="MBBS" show={!quickFill} />
@@ -233,9 +233,9 @@ export function EducationSection({ data, update, onChange, quickFill }: {
           <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-purple-100 text-purple-600">
             <GraduationCap className="h-3.5 w-3.5" />
           </div>
-          <h4 className="text-sm font-semibold text-foreground">
+          <h3 className="text-sm font-semibold text-foreground">
             Postgraduate Degree <span className="text-destructive">*</span>
-          </h4>
+          </h3>
         </div>
 
         {/* PG Degree - Pill buttons for top 8 + Other */}
@@ -379,7 +379,7 @@ export function EducationSection({ data, update, onChange, quickFill }: {
               <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-amber-100 text-amber-600">
                 <Award className="h-3.5 w-3.5" />
               </div>
-              <h4 className="text-sm font-semibold text-foreground">Super Specialty</h4>
+              <h3 className="text-sm font-semibold text-foreground">Super Specialty</h3>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground border-border">
                 Optional
               </Badge>

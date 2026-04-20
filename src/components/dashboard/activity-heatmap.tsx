@@ -135,7 +135,7 @@ export function ActivityHeatmap({
     <div>
       <div className="flex items-baseline justify-between gap-4 mb-3">
         <div>
-          {title && <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">{title}</h3>}
+          {title && <h2 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">{title}</h2>}
           {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
         </div>
         <div className="flex items-baseline gap-1.5 ml-auto">

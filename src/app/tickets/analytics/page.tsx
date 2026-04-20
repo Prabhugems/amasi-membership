@@ -419,12 +419,12 @@ export default function TicketAnalyticsPage() {
             <ArrowLeft className="h-4 w-4 text-muted-foreground" />
           </Link>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
               <div className="h-9 w-9 rounded-lg bg-teal-600 flex items-center justify-center shadow-sm">
                 <Ticket className="h-5 w-5 text-white" />
               </div>
               Ticket Analytics
-            </h2>
+            </h1>
             <p className="text-sm text-muted-foreground mt-0.5 ml-[46px]">
               Support performance overview
             </p>

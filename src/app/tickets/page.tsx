@@ -45,12 +45,12 @@ function TicketsContent() {
       {/* Top bar: title + stats */}
       <div className="flex items-center justify-between px-1 pb-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
             <div className="h-9 w-9 rounded-lg bg-teal-600 flex items-center justify-center shadow-sm">
               <Ticket className="h-5 w-5 text-white" />
             </div>
             Support Tickets
-          </h2>
+          </h1>
           <p className="text-sm text-muted-foreground mt-0.5 ml-[46px]">
             Manage and respond to member support requests
           </p>

@@ -396,9 +396,15 @@ export async function GET(request: Request) {
       ? Math.round(((thisYearCount - lastYearCount) / lastYearCount) * 1000) / 10
       : 0
 
+    // All states (no slice) for geographic distribution grid
+    const allStateData = Object.entries(stateCounts)
+      .map(([state, count]) => ({ state, count }))
+      .sort((a, b) => b.count - a.count)
+
     return Response.json({
       zoneData,
       stateData,
+      allStateData,
       monthlyData,
       typeData,
       total: memberRows.length,

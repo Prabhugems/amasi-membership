@@ -14,7 +14,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RechartsPie, Pie, Cell, Legend,
-  Area, AreaChart,
+  Area, AreaChart, ComposedChart,
 } from "recharts"
 import { StaggerContainer, StaggerItem } from "@/components/motion/stagger"
 
@@ -66,6 +66,7 @@ interface TicketsData {
 interface ReportsData {
   zoneData: ZoneRow[]
   stateData: StateRow[]
+  allStateData?: StateRow[]
   monthlyData: MonthlyRow[]
   typeData: TypeRow[]
   total?: number
@@ -91,6 +92,9 @@ interface RenewalsData {
   expiringSoon: RenewalMember[]
   totalActive: number
 }
+
+interface RetentionYear { year: number; new: number; cumulative: number }
+interface RetentionData { yearly: RetentionYear[] }
 
 type DateRange = "30d" | "90d" | "year" | "all"
 type ChartMode = "bar" | "pie" | "donut"
@@ -222,6 +226,16 @@ export default function ReportsPage() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const { data: retention } = useQuery<RetentionData>({
+    queryKey: ["retention"],
+    queryFn: async () => {
+      const res = await fetch("/api/reports/retention")
+      if (!res.ok) throw new Error("Failed to fetch retention data")
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
@@ -307,6 +321,11 @@ export default function ReportsPage() {
       rows.push(["Growth", "Last Year", String(data.growth.lastYear)])
       rows.push(["Growth", "YoY %", `${data.growth.yoyPct}%`])
     }
+    if (retention?.yearly) {
+      retention.yearly.forEach((y) => {
+        rows.push(["Retention", String(y.year), `New: ${y.new} / Cumulative: ${y.cumulative}`])
+      })
+    }
     const csv = rows.map((r) => r.join(",")).join("\n")
     const blob = new Blob([csv], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
@@ -315,11 +334,13 @@ export default function ReportsPage() {
     a.download = `amasi-report-${new Date().toISOString().split("T")[0]}.csv`
     a.click()
     URL.revokeObjectURL(url)
-  }, [data])
+  }, [data, retention])
 
   const handleExportPDF = useCallback(() => {
-    window.print()
-  }, [])
+    const params = new URLSearchParams()
+    if (dateRange !== "all") params.set("range", dateRange)
+    window.open(`/api/reports/pdf${params.toString() ? `?${params}` : ""}`, "_blank")
+  }, [dateRange])
 
   if (loading) {
     return (
@@ -337,7 +358,7 @@ export default function ReportsPage() {
     )
   }
 
-  const { zoneData, stateData, typeData, pipeline, growth, revenue, tickets } = data
+  const { zoneData, stateData, allStateData, typeData, pipeline, growth, revenue, tickets } = data
 
   // Memoize all derived chart data
   const { zonePieData, typePieData, stateBarData, statusPieData, nmcPieData, nmcTotal } = useMemo(() => {
@@ -644,6 +665,79 @@ export default function ReportsPage() {
                 {growth.yoyPct >= 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
                 {growth.yoyPct >= 0 ? "+" : ""}{growth.yoyPct}%
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Membership Growth Over Time */}
+      {retention && retention.yearly.length > 1 && (
+        <Card className="card-lift">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                <Users className="h-4 w-4" />
+              </div>
+              Membership Growth Over Time
+              <Badge variant="outline" className="ml-1 text-xs">
+                {retention.yearly.length} years
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={retention.yearly.map((y) => ({ name: String(y.year), "New Members": y.new, "Cumulative Members": y.cumulative }))}>
+                  <defs>
+                    <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(v) => v.toLocaleString()}
+                    label={{ value: "Cumulative", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: "#0d9488" } }}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(v) => v.toLocaleString()}
+                    label={{ value: "New / Year", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "#3b82f6" } }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <Area
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey="Cumulative Members"
+                    stroke="#0d9488"
+                    strokeWidth={2.5}
+                    fill="url(#colorCumulative)"
+                    dot={{ fill: "#0d9488", strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={300}
+                    animationEasing="ease-out"
+                  />
+                  <Bar
+                    yAxisId="right"
+                    dataKey="New Members"
+                    fill="#3b82f6"
+                    radius={[4, 4, 0, 0]}
+                    barSize={32}
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={300}
+                    animationEasing="ease-out"
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
@@ -1305,6 +1399,26 @@ export default function ReportsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Geographic Distribution — all states grid */}
+        {(allStateData ?? stateData).length > 0 && (
+          <Card className="md:col-span-2 card-lift">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                  <MapPin className="h-4 w-4" />
+                </div>
+                Geographic Distribution
+                <Badge variant="outline" className="ml-1 text-xs">
+                  {(allStateData ?? stateData).length} states
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <StateGrid states={allStateData ?? stateData} />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )
@@ -1380,5 +1494,42 @@ function MiniStatCard({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function StateGrid({ states }: { states: StateRow[] }) {
+  const total = states.reduce((s, r) => s + r.count, 0) || 1
+  const maxCount = states[0]?.count || 1
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+      {states.map((s) => {
+        const intensity = Math.max(0.08, s.count / maxCount)
+        const pct = ((s.count / total) * 100).toFixed(1)
+        return (
+          <div
+            key={s.state}
+            className="relative rounded-lg border border-teal-200/60 px-3 py-2.5 transition-shadow hover:shadow-md"
+            style={{
+              backgroundColor: `rgba(13, 148, 136, ${intensity * 0.25})`,
+            }}
+          >
+            <p
+              className="text-xs font-semibold truncate"
+              style={{
+                color: intensity > 0.5 ? "#134e4a" : "#0f766e",
+              }}
+              title={s.state}
+            >
+              {s.state}
+            </p>
+            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight mt-0.5">
+              {s.count.toLocaleString()}
+            </p>
+            <p className="text-[10px] text-muted-foreground">{pct}%</p>
+          </div>
+        )
+      })}
+    </div>
   )
 }

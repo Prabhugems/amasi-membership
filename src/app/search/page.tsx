@@ -273,7 +273,7 @@ function ResultCard({
             <CreditCard className="h-3.5 w-3.5" /> View Card
           </Link>
           <Link
-            href={`/certificate?id=${encodeURIComponent(m.membership_no || m.email)}`}
+            href={`/member/certificate?id=${encodeURIComponent(m.membership_no || m.email)}`}
             className="flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg hover:bg-primary/5 text-primary transition-colors"
           >
             <Award className="h-3.5 w-3.5" /> Certificate
@@ -527,7 +527,7 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
                   View Card
                 </Button>
               </Link>
-              <Link href={`/certificate?id=${encodeURIComponent(member.membership_no || member.email)}`}>
+              <Link href={`/member/certificate?id=${encodeURIComponent(member.membership_no || member.email)}`}>
                 <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
                   <Award className="h-3.5 w-3.5" />
                   Certificate

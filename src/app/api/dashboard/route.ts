@@ -176,11 +176,16 @@ export async function GET(request: Request) {
         .select("*", { count: "exact", head: true })
         .lte("created_at", sameTimeLastMonthIso),
 
-      // Members by type — single SELECT, count client-side
-      supabase
-        .from("members")
-        .select("membership_type")
-        .in("membership_type", ["LM", "ALM", "ACM", "ILM"]),
+      // Members by type — 4 parallel count queries to avoid 1000-row cap
+      Promise.all([
+        supabase.from("members").select("*", { count: "exact", head: true }).eq("membership_type", "LM"),
+        supabase.from("members").select("*", { count: "exact", head: true }).eq("membership_type", "ALM"),
+        supabase.from("members").select("*", { count: "exact", head: true }).eq("membership_type", "ACM"),
+        supabase.from("members").select("*", { count: "exact", head: true }).eq("membership_type", "ILM"),
+      ]).then(([lm, alm, acm, ilm]) => ({
+        data: { LM: lm.count ?? 0, ALM: alm.count ?? 0, ACM: acm.count ?? 0, ILM: ilm.count ?? 0 },
+        error: null,
+      })),
 
       // Members created over last 8 weeks — for weekly cumulative sparkline
       supabase
@@ -322,18 +327,13 @@ export async function GET(request: Request) {
         .not("nmc_verification", "is", null),
     ])
 
-    // Members by type — count from single SELECT
-    const typeCounts: Record<string, number> = { LM: 0, ALM: 0, ACM: 0, ILM: 0 }
-    for (const row of (membersByTypeRes.data ?? []) as Array<{ membership_type: string }>) {
-      if (row.membership_type in typeCounts) {
-        typeCounts[row.membership_type]++
-      }
-    }
+    // Members by type — from parallel count queries (no 1000-row cap)
+    const typeData = (membersByTypeRes.data ?? { LM: 0, ALM: 0, ACM: 0, ILM: 0 }) as Record<string, number>
     const membersByType = {
-      LM: typeCounts.LM,
-      ALM: typeCounts.ALM,
-      ACM: typeCounts.ACM,
-      ILM: typeCounts.ILM,
+      LM: typeData.LM || 0,
+      ALM: typeData.ALM || 0,
+      ACM: typeData.ACM || 0,
+      ILM: typeData.ILM || 0,
     }
 
     const totalMembers = totalMembersRes.count ?? 0

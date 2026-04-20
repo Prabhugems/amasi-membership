@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
-const SELECT_FIELDS = "id, reference_number, name, first_name, middle_name, last_name, salutation, email, phone, membership_type, status, payment_status, ai_confidence, ai_verified, needs_manual_review, review_notes, assigned_amasi_number, created_at, reviewed_at, date_of_birth, gender, father_name, street_address_1, street_address_2, city, state, postal_code, country, pg_degree, pg_college, pg_university, pg_year, ug_college, mci_council_number, mci_council_state, asi_membership_no, documents"
+// Only return fields needed for status display — exclude sensitive PII
+const SELECT_FIELDS = "id, reference_number, name, first_name, last_name, salutation, membership_type, status, payment_status, ai_confidence, ai_verified, needs_manual_review, review_notes, assigned_amasi_number, created_at, reviewed_at, city, state, pg_degree, documents"
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("ref") || request.nextUrl.searchParams.get("q")
@@ -12,6 +14,13 @@ export async function GET(request: NextRequest) {
       { status: false, message: "Please enter your reference number, email, or mobile number" },
       { status: 400 }
     )
+  }
+
+  // Rate limit: 15 requests per 15 minutes per IP
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  const rl = await checkRateLimit(`appstatus:${ip}`, 15, 15 * 60 * 1000)
+  if (!rl.allowed) {
+    return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
   }
 
   try {

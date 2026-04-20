@@ -444,7 +444,7 @@ export function RecentApplicationsTable({
                     </button>
                   ) : null}
                   <Link
-                    href={`/pending/${row.id}`}
+                    href="/pending"
                     className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                   >
                     <Eye className="h-3 w-3" />

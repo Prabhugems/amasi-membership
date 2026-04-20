@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // Record payment
-    await supabase.from("membership_payments").insert({
+    const { error: insertError } = await supabase.from("membership_payments").insert({
       application_id: applicationId || null,
       member_email: referenceNumber, // using as reference tracker
       gateway_order_id: razorpay_order_id,
@@ -79,9 +79,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    if (insertError) {
+      console.error("Payment insert error:", insertError)
+      return Response.json({ status: false, message: "Failed to record payment" }, { status: 500 })
+    }
+
     // Update application payment status
     if (applicationId) {
-      await supabase
+      const { error: updateError } = await supabase
         .from("membership_applications")
         .update({
           payment_status: "paid",
@@ -89,6 +94,10 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", applicationId)
+
+      if (updateError) {
+        console.error("Application payment status update error:", updateError)
+      }
     }
 
     return Response.json({

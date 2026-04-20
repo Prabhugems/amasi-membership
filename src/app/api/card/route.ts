@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 import QRCode from "qrcode"
 
 export async function GET(request: NextRequest) {
@@ -7,6 +8,13 @@ export async function GET(request: NextRequest) {
 
   if (!amasiNumber) {
     return Response.json({ status: false, message: "Membership number required" }, { status: 400 })
+  }
+
+  // Rate limit: 20 requests per 15 minutes per IP
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+  const rl = await checkRateLimit(`card:${ip}`, 20, 15 * 60 * 1000)
+  if (!rl.allowed) {
+    return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
   }
 
   try {

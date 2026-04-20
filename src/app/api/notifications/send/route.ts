@@ -2,18 +2,21 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { sendTemplate } from "@/lib/whatsapp"
+import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
 const MAX_BATCH = 500
 
 function buildEmailHtml(name: string, body: string) {
+  const safeName = escapeHtml(name)
+  const safeBody = escapeHtml(body)
   return `<div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
   <div style="text-align: center; margin-bottom: 24px;">
     <h1 style="color: #0f766e; margin: 0;">AMASI</h1>
     <p style="color: #666; font-size: 14px;">Association of Minimal Access Surgeons of India</p>
   </div>
-  <p style="color: #555;">Dear ${name},</p>
-  <div style="color: #333; line-height: 1.6; white-space: pre-wrap;">${body}</div>
+  <p style="color: #555;">Dear ${safeName},</p>
+  <div style="color: #333; line-height: 1.6; white-space: pre-wrap;">${safeBody}</div>
   <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
   <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
 </div>`

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -18,8 +19,15 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "No data provided" }, { status: 400 })
     }
 
+    // Rate limit: 10 requests per 15 minutes per IP
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`resubmit:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+    }
+
     const data = JSON.parse(dataStr)
-    const { applicationId, updates: rawUpdates } = data
+    const { applicationId, email: callerEmail, updates: rawUpdates } = data
     const updates = rawUpdates || {}
 
     if (!applicationId) {
@@ -37,6 +45,11 @@ export async function POST(request: NextRequest) {
 
     if (fetchError || !app) {
       return Response.json({ status: false, message: "Application not found" }, { status: 404 })
+    }
+
+    // Verify caller owns this application
+    if (!callerEmail || app.email?.toLowerCase() !== callerEmail.toLowerCase()) {
+      return Response.json({ status: false, message: "Unauthorized" }, { status: 403 })
     }
 
     if (!["need_clarification", "resubmit_requested"].includes(app.status)) {

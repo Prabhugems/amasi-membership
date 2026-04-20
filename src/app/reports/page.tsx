@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -8,7 +9,7 @@ import {
   BarChart3, PieChart, TrendingUp, MapPin, Loader2, Users, Clock,
   CheckCircle2, Download, FileText, Calendar, ArrowUpRight, ArrowDownRight,
   Bot, ShieldCheck, XCircle, AlertTriangle, GitPullRequest,
-  IndianRupee, Headphones, Timer, ShieldAlert,
+  IndianRupee, Headphones, Timer, ShieldAlert, RefreshCw,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -72,6 +73,23 @@ interface ReportsData {
   revenue?: RevenueData
   tickets?: TicketsData
   growth?: GrowthData
+}
+
+interface RenewalMember {
+  id: string
+  name: string
+  email: string
+  amasi_number: number
+  membership_type: string
+  joining_date: string
+  expiryDate: string
+  daysUntilExpiry: number
+}
+
+interface RenewalsData {
+  expired: RenewalMember[]
+  expiringSoon: RenewalMember[]
+  totalActive: number
 }
 
 type DateRange = "30d" | "90d" | "year" | "all"
@@ -193,6 +211,16 @@ export default function ReportsPage() {
   const [typeChartMode, setTypeChartMode] = useState<ChartMode>("donut")
   const [stateChartMode, setStateChartMode] = useState<ChartMode>("bar")
   const reportRef = useRef<HTMLDivElement>(null)
+
+  const { data: renewals } = useQuery<RenewalsData>({
+    queryKey: ["renewals"],
+    queryFn: async () => {
+      const res = await fetch("/api/members/renewals")
+      if (!res.ok) throw new Error("Failed to fetch renewals")
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -860,6 +888,108 @@ export default function ReportsPage() {
               </Card>
             )}
           </div>
+        </>
+      )}
+
+      {/* Membership Renewals Section */}
+      {renewals && (renewals.expiringSoon.length > 0 || renewals.expired.length > 0) && (
+        <>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+              <RefreshCw className="h-4 w-4" />
+            </div>
+            <h2 className="text-xl font-semibold tracking-tight">Membership Renewals</h2>
+            <Badge variant="outline" className="ml-1 text-xs">
+              {renewals.expiringSoon.length + renewals.expired.length} need attention
+            </Badge>
+          </div>
+
+          <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StaggerItem>
+              <MiniStatCard
+                label="Expiring Soon"
+                value={renewals.expiringSoon.length.toLocaleString()}
+                sub="Within 30 days"
+                icon={Clock}
+                iconBg="bg-amber-100"
+                iconColor="text-amber-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Expired"
+                value={renewals.expired.length.toLocaleString()}
+                sub="Past expiry date"
+                icon={XCircle}
+                iconBg="bg-red-100"
+                iconColor="text-red-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Active ACM"
+                value={renewals.totalActive.toLocaleString()}
+                sub="Currently valid"
+                icon={CheckCircle2}
+                iconBg="bg-green-100"
+                iconColor="text-green-600"
+              />
+            </StaggerItem>
+          </StaggerContainer>
+
+          <Card className="card-lift">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                  <RefreshCw className="h-4 w-4" />
+                </div>
+                Members Needing Renewal
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {[...renewals.expired, ...renewals.expiringSoon].length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">All ACM memberships are up to date.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left">
+                        <th className="pb-2 font-medium text-muted-foreground">Name</th>
+                        <th className="pb-2 font-medium text-muted-foreground">AMASI #</th>
+                        <th className="pb-2 font-medium text-muted-foreground">Expiry Date</th>
+                        <th className="pb-2 font-medium text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...renewals.expired, ...renewals.expiringSoon].slice(0, 20).map((m) => (
+                        <tr key={m.id} className="border-b last:border-0">
+                          <td className="py-2.5 font-medium">{m.name}</td>
+                          <td className="py-2.5 font-mono text-xs">{m.amasi_number}</td>
+                          <td className="py-2.5">{m.expiryDate}</td>
+                          <td className="py-2.5">
+                            {m.daysUntilExpiry < 0 ? (
+                              <Badge variant="destructive" className="text-xs">
+                                Expired {Math.abs(m.daysUntilExpiry)}d ago
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs">
+                                Expires in {m.daysUntilExpiry}d
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {[...renewals.expired, ...renewals.expiringSoon].length > 20 && (
+                    <p className="text-xs text-muted-foreground mt-3 text-center">
+                      Showing 20 of {renewals.expired.length + renewals.expiringSoon.length} members
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 

@@ -409,7 +409,7 @@ function MemberPortalContent() {
       { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "card", label: "Membership Card", icon: CreditCard },
       { id: "certificate", label: "Certificate", icon: Award },
-      { id: "profile", label: "Edit Profile", icon: UserPen },
+      { id: "profile", label: "My Profile", icon: User },
       { id: "documents", label: "Documents", icon: Upload },
       ...(isALM ? [{ id: "upgrade" as Tab, label: "Upgrade to LM", icon: Star }] : []),
       { id: "support", label: "Support", icon: Ticket },
@@ -586,6 +586,55 @@ function MemberPortalContent() {
                   </div>
                 )}
 
+                {/* ACM Membership expiry/renewal banner */}
+                {(() => {
+                  const rawType = (member.membership_type || "").toUpperCase()
+                  if (rawType !== "ACM") return null
+                  const jd = member.joining_date || member.created_at
+                  if (!jd) return null
+                  const joiningDate = new Date(jd)
+                  const expiryDate = new Date(joiningDate)
+                  expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+                  const now = new Date()
+                  const diffMs = expiryDate.getTime() - now.getTime()
+                  const daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+                  const expiryStr = expiryDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+
+                  if (daysUntilExpiry < 0) {
+                    return (
+                      <div className="rounded-xl border border-red-200 bg-red-50/80 dark:bg-red-950/30 dark:border-red-900/50 p-4">
+                        <div className="flex gap-3">
+                          <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                          <div className="text-sm">
+                            <p className="font-semibold text-red-900 dark:text-red-200 mb-1">Membership Expired</p>
+                            <p className="text-red-800/80 dark:text-red-300/80 leading-relaxed">
+                              Your membership expired on {expiryStr}. Please renew to maintain your benefits.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (daysUntilExpiry <= 30) {
+                    return (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/80 dark:bg-amber-950/30 dark:border-amber-900/50 p-4">
+                        <div className="flex gap-3">
+                          <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <div className="text-sm">
+                            <p className="font-semibold text-amber-900 dark:text-amber-200 mb-1">Membership Expiring Soon</p>
+                            <p className="text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                              Your membership expires on {expiryStr}. Contact AMASI to renew.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return null
+                })()}
+
                 {/* Membership status + Profile completeness */}
                 <div className="grid gap-4 lg:grid-cols-3">
                   {/* Membership status card */}
@@ -613,6 +662,20 @@ function MemberPortalContent() {
                           </div>
                         </div>
                       </div>
+                      {member.application_no && (
+                        <div className="mt-4 pt-3 border-t">
+                          <a
+                            href={`/api/payments/receipt?ref=${encodeURIComponent(member.application_no)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Download Payment Receipt
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -823,10 +886,10 @@ function MemberPortalContent() {
 
             {/* Profile Tab */}
             {activeTab === "profile" && (
-              <div className="max-w-2xl space-y-6">
+              <div className="max-w-3xl space-y-6">
                 <div>
-                  <h2 className="text-2xl font-bold">Edit Profile</h2>
-                  <p className="text-muted-foreground text-sm mt-1">Update your personal details, education, and documents</p>
+                  <h2 className="text-2xl font-bold">My Profile</h2>
+                  <p className="text-muted-foreground text-sm mt-1">Your membership information at a glance</p>
                 </div>
 
                 {/* Profile completeness inline */}
@@ -852,17 +915,132 @@ function MemberPortalContent() {
                   </Card>
                 )}
 
-                <a href={`/profile?q=${encodeURIComponent(member.email)}`} target="_blank"
-                  className="group block p-10 rounded-2xl border-2 border-dashed hover:border-green-400 hover:bg-green-50 transition-all text-center">
-                  <div className="mx-auto w-20 h-20 rounded-2xl bg-green-100 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">
-                    <UserPen className="h-10 w-10 text-green-600" />
-                  </div>
-                  <p className="font-semibold text-xl">Open Profile Editor</p>
-                  <p className="text-sm text-muted-foreground mt-2">Edit your details, upload documents, and update your photo</p>
-                  <div className="flex items-center justify-center gap-1.5 text-green-600 text-sm font-medium mt-4">
-                    Open Editor <ExternalLink className="h-3.5 w-3.5" />
-                  </div>
-                </a>
+                {/* Personal Information */}
+                <Card>
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <User className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-sm">Personal Information</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Full Name</p>
+                        <p className="text-sm font-medium">{fullName || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Date of Birth</p>
+                        <p className="text-sm font-medium">{member.date_of_birth ? formatDate(member.date_of_birth) : "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Gender</p>
+                        <p className="text-sm font-medium">{member.gender || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Father&apos;s Name</p>
+                        <p className="text-sm font-medium">{member.father_name || "--"}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Contact Information */}
+                <Card>
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Mail className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-sm">Contact Information</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Email</p>
+                        <p className="text-sm font-medium">{member.email || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Phone</p>
+                        <p className="text-sm font-medium">{member.mobile || member.phone || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">City</p>
+                        <p className="text-sm font-medium">{member.city || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">State</p>
+                        <p className="text-sm font-medium">{member.state || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Zone</p>
+                        <p className="text-sm font-medium">{member.zone || "--"}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Professional Information */}
+                <Card>
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <GraduationCap className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-sm">Professional Information</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">PG Degree</p>
+                        <p className="text-sm font-medium">{member.pg_degree || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">PG College</p>
+                        <p className="text-sm font-medium">{member.pg_college || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">MCI Council Number</p>
+                        <p className="text-sm font-medium">{member.mci_council_number || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">ASI Membership No.</p>
+                        <p className="text-sm font-medium">{member.asi_membership_no || "--"}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Membership Details */}
+                <Card>
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Shield className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold text-sm">Membership Details</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">AMASI Number</p>
+                        <p className="text-sm font-medium">{member.membership_no || member.amasi_number || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Membership Type</p>
+                        <p className="text-sm font-medium">{member.application_name || member.membership_type || "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Member Since</p>
+                        <p className="text-sm font-medium">{member.created_at ? formatDate(member.created_at) : "--"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Last Updated</p>
+                        <p className="text-sm font-medium">{member.updated_at ? formatDate(member.updated_at) : "--"}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Edit Profile Link */}
+                <div className="pt-2">
+                  <a href={`/profile?q=${encodeURIComponent(member.email)}`} target="_blank"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+                    <UserPen className="h-4 w-4" />
+                    Edit Profile
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                  <p className="text-xs text-muted-foreground mt-2">Opens the profile editor in a new tab to update your details</p>
+                </div>
               </div>
             )}
 

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  Search, Download, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
+  Search, Download, Upload, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
   MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle,
 } from "lucide-react"
@@ -297,6 +297,18 @@ function SortableHeader({
 }
 
 export default function MembersPage() {
+  const [adminRole, setAdminRole] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Fetch admin role on mount
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => { if (d.user?.adminRole) setAdminRole(d.user.adminRole) })
+      .catch(() => {})
+  }, [])
+
   const [searchQuery, setSearchQuery] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [typeFilter, setTypeFilter] = useState("")
@@ -410,6 +422,46 @@ export default function MembersPage() {
     }
   }, [searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter])
 
+  const handleImportCSV = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // Reset input so the same file can be selected again
+    e.target.value = ""
+
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/members/import", { method: "POST", body: formData })
+      const result = await res.json()
+
+      if (!res.ok) {
+        toast.error(result.error || "Import failed")
+        return
+      }
+
+      const parts: string[] = []
+      if (result.imported > 0) parts.push(`${result.imported} imported`)
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped (duplicates)`)
+      if (result.errors?.length > 0) parts.push(`${result.errors.length} errors`)
+
+      if (result.imported > 0) {
+        toast.success(`Import complete: ${parts.join(", ")}`)
+      } else {
+        toast.warning(`Import complete: ${parts.join(", ")}`)
+      }
+
+      if (result.errors?.length > 0) {
+        console.warn("Import errors:", result.errors)
+      }
+    } catch (err) {
+      console.error("Import error:", err)
+      toast.error("Failed to import CSV")
+    } finally {
+      setImporting(false)
+    }
+  }, [])
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -452,8 +504,28 @@ export default function MembersPage() {
             </button>
           </div>
           <Button variant="outline" size="sm" className="gap-2 shadow-sm" onClick={exportCSV} disabled={exporting}>
-            <Download className="h-4 w-4" /> {exporting ? "Exporting..." : "Export All CSV"}
+            <Download className="h-4 w-4" /> {exporting ? "Exporting..." : "Export CSV"}
           </Button>
+          {adminRole === "super_admin" && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleImportCSV}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 shadow-sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+              >
+                <Upload className="h-4 w-4" /> {importing ? "Importing..." : "Import CSV"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

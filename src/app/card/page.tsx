@@ -345,6 +345,7 @@ function CardContent() {
   const [showBack, setShowBack] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [walletLoading, setWalletLoading] = useState<string | null>(null)
   const cardFrontRef = useRef<HTMLDivElement>(null)
   const cardBackRef = useRef<HTMLDivElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
@@ -476,6 +477,34 @@ function CardContent() {
       setTimeout(() => win.print(), 500)
     } catch {
       toast.error("Print failed.")
+    }
+  }
+
+  const handleAddToWallet = async (type: "apple" | "google") => {
+    if (!card) return
+    setWalletLoading(type)
+    try {
+      const res = await fetch(`/api/card/wallet?id=${card.amasiNumber}&type=${type}`)
+      const data = await res.json()
+      if (res.status === 501) {
+        toast.info("Coming soon \u2014 wallet passes are being set up")
+        return
+      }
+      if (!res.ok) {
+        toast.error(data.error || "Failed to generate wallet pass")
+        return
+      }
+      if (type === "google" && data.url) {
+        window.open(data.url, "_blank")
+        toast.success("Opening Google Wallet...")
+      } else if (type === "apple" && data.passUrl) {
+        window.open(data.passUrl, "_blank")
+        toast.success("Downloading Apple Wallet pass...")
+      }
+    } catch {
+      toast.error("Failed to generate wallet pass. Please try again.")
+    } finally {
+      setWalletLoading(null)
     }
   }
 
@@ -642,23 +671,23 @@ function CardContent() {
               </Button>
             </div>
 
-            {/* Wallet - coming soon */}
+            {/* Wallet passes */}
             <div className="flex gap-3">
               <button
-                disabled
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-dashed border-muted-foreground/20 text-muted-foreground/50 text-xs cursor-not-allowed"
+                onClick={() => handleAddToWallet("apple")}
+                disabled={walletLoading === "apple"}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-muted-foreground/20 hover:border-primary/30 hover:bg-accent/50 text-muted-foreground hover:text-foreground text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Wallet className="h-3.5 w-3.5" />
+                {walletLoading === "apple" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}
                 Apple Wallet
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Soon</Badge>
               </button>
               <button
-                disabled
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-dashed border-muted-foreground/20 text-muted-foreground/50 text-xs cursor-not-allowed"
+                onClick={() => handleAddToWallet("google")}
+                disabled={walletLoading === "google"}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-muted-foreground/20 hover:border-primary/30 hover:bg-accent/50 text-muted-foreground hover:text-foreground text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Wallet className="h-3.5 w-3.5" />
+                {walletLoading === "google" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}
                 Google Wallet
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Soon</Badge>
               </button>
             </div>
 

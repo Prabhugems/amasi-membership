@@ -219,16 +219,26 @@ export async function GET(request: Request) {
           "pg_degree.is.null,mci_council_number.is.null,date_of_birth.is.null,gender.is.null"
         ),
 
-      // All-time payments (backward compat) — bounded to last 365 days to avoid all-rows scan
-      // TODO: replace with server-side SUM() aggregate when payment count > ~10k
-      (() => {
+      // All-time payments — bounded to last 365 days
+      // Note: uses .range() to handle >1000 rows (Supabase default row limit)
+      (async () => {
         const oneYearAgo = new Date()
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
-        return supabase
-          .from("membership_payments")
-          .select("amount")
-          .eq("status", "paid")
-          .gte("created_at", oneYearAgo.toISOString())
+        const rows: Array<{ amount: unknown }> = []
+        let offset = 0
+        while (offset < 50000) {
+          const { data, error } = await supabase
+            .from("membership_payments")
+            .select("amount")
+            .eq("status", "paid")
+            .gte("created_at", oneYearAgo.toISOString())
+            .range(offset, offset + 999)
+          if (error || !data || data.length === 0) break
+          rows.push(...data)
+          if (data.length < 1000) break
+          offset += 1000
+        }
+        return { data: rows, error: null }
       })(),
 
       // This month's payments
@@ -236,7 +246,8 @@ export async function GET(request: Request) {
         .from("membership_payments")
         .select("amount")
         .eq("status", "paid")
-        .gte("created_at", firstOfMonth),
+        .gte("created_at", firstOfMonth)
+        .range(0, 999),
 
       // Last month's payments (for trend)
       supabase
@@ -244,14 +255,27 @@ export async function GET(request: Request) {
         .select("amount")
         .eq("status", "paid")
         .gte("created_at", firstOfLastMonth)
-        .lt("created_at", endOfLastMonth),
+        .lt("created_at", endOfLastMonth)
+        .range(0, 999),
 
       // Payments over last 8 weeks for sparkline
-      supabase
-        .from("membership_payments")
-        .select("amount, created_at")
-        .eq("status", "paid")
-        .gte("created_at", eightWeeksAgoIso),
+      (async () => {
+        const rows: Array<{ amount: unknown; created_at: string }> = []
+        let offset = 0
+        while (offset < 50000) {
+          const { data, error } = await supabase
+            .from("membership_payments")
+            .select("amount, created_at")
+            .eq("status", "paid")
+            .gte("created_at", eightWeeksAgoIso)
+            .range(offset, offset + 999)
+          if (error || !data || data.length === 0) break
+          rows.push(...data)
+          if (data.length < 1000) break
+          offset += 1000
+        }
+        return { data: rows, error: null }
+      })(),
 
       // Approved applications this month
       supabase

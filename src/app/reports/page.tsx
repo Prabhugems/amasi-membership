@@ -8,6 +8,7 @@ import {
   BarChart3, PieChart, TrendingUp, MapPin, Loader2, Users, Clock,
   CheckCircle2, Download, FileText, Calendar, ArrowUpRight, ArrowDownRight,
   Bot, ShieldCheck, XCircle, AlertTriangle, GitPullRequest,
+  IndianRupee, Headphones, Timer, ShieldAlert,
 } from "lucide-react"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -39,6 +40,28 @@ interface GrowthData {
   lastYear: number
   yoyPct: number
 }
+interface RevenueData {
+  total: number
+  paidCount: number
+  failedCount: number
+  pendingPayments: number
+  avgAmount: number
+  collectionRate: number
+  monthlyTrend: { month: string; amount: number }[]
+}
+interface TicketsData {
+  total: number
+  open: number
+  closed: number
+  resolved: number
+  slaBreached: number
+  slaComplianceRate: number
+  avgFirstResponseHours: number
+  avgResolutionHours: number
+  categoryBreakdown: { category: string; count: number }[]
+  priorityBreakdown: { priority: string; count: number }[]
+  statusBreakdown: { status: string; count: number }[]
+}
 interface ReportsData {
   zoneData: ZoneRow[]
   stateData: StateRow[]
@@ -46,6 +69,8 @@ interface ReportsData {
   typeData: TypeRow[]
   total?: number
   pipeline?: PipelineData
+  revenue?: RevenueData
+  tickets?: TicketsData
   growth?: GrowthData
 }
 
@@ -68,6 +93,13 @@ const STATE_PALETTE = [
   "#0d9488", "#14b8a6", "#0ea5e9", "#6366f1", "#8b5cf6",
   "#ec4899", "#f59e0b", "#10b981", "#ef4444", "#06b6d4",
 ]
+
+const PRIORITY_COLORS: Record<string, string> = {
+  urgent: "#ef4444",
+  high: "#f97316",
+  normal: "#3b82f6",
+  low: "#94a3b8",
+}
 
 const STATUS_COLORS: Record<string, string> = {
   approved: "#10b981",
@@ -219,6 +251,24 @@ export default function ReportsPage() {
       rows.push(["NMC", "Not Found", String(data.pipeline.nmc.notFound)])
       rows.push(["NMC", "Skipped", String(data.pipeline.nmc.skipped)])
     }
+    if (data.revenue) {
+      rows.push(["Revenue", "Total", `₹${data.revenue.total}`])
+      rows.push(["Revenue", "Paid Count", String(data.revenue.paidCount)])
+      rows.push(["Revenue", "Failed Count", String(data.revenue.failedCount)])
+      rows.push(["Revenue", "Avg Amount", `₹${data.revenue.avgAmount}`])
+      rows.push(["Revenue", "Collection Rate", `${data.revenue.collectionRate}%`])
+      data.revenue.monthlyTrend.forEach((m) => rows.push(["Monthly Revenue", m.month, `₹${m.amount}`]))
+    }
+    if (data.tickets) {
+      rows.push(["Tickets", "Total", String(data.tickets.total)])
+      rows.push(["Tickets", "Open", String(data.tickets.open)])
+      rows.push(["Tickets", "SLA Compliance", `${data.tickets.slaComplianceRate}%`])
+      rows.push(["Tickets", "SLA Breached", String(data.tickets.slaBreached)])
+      rows.push(["Tickets", "Avg First Response", formatHours(data.tickets.avgFirstResponseHours)])
+      rows.push(["Tickets", "Avg Resolution", formatHours(data.tickets.avgResolutionHours)])
+      data.tickets.categoryBreakdown.forEach((c) => rows.push(["Ticket Category", c.category, String(c.count)]))
+      data.tickets.priorityBreakdown.forEach((p) => rows.push(["Ticket Priority", p.priority, String(p.count)]))
+    }
     if (data.growth) {
       rows.push(["Growth", "This Year", String(data.growth.thisYear)])
       rows.push(["Growth", "Last Year", String(data.growth.lastYear)])
@@ -254,7 +304,7 @@ export default function ReportsPage() {
     )
   }
 
-  const { zoneData, stateData, typeData, pipeline, growth } = data
+  const { zoneData, stateData, typeData, pipeline, growth, revenue, tickets } = data
   const zoneTotal = zoneData.reduce((s, r) => s + r.count, 0) || 1
   const typeTotal = typeData.reduce((s, r) => s + r.count, 0) || 1
 
@@ -554,6 +604,248 @@ export default function ReportsPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Revenue Section */}
+      {revenue && revenue.paidCount > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+              <IndianRupee className="h-4 w-4" />
+            </div>
+            <h2 className="text-xl font-semibold tracking-tight">Revenue</h2>
+            <Badge variant="outline" className="ml-1 text-xs">{revenue.paidCount.toLocaleString()} payments</Badge>
+          </div>
+
+          <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StaggerItem>
+              <MiniStatCard
+                label="Total Revenue"
+                value={`₹${revenue.total.toLocaleString()}`}
+                sub={`${revenue.paidCount.toLocaleString()} paid transactions`}
+                icon={IndianRupee}
+                iconBg="bg-green-100"
+                iconColor="text-green-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Avg Payment"
+                value={`₹${revenue.avgAmount.toLocaleString()}`}
+                sub="Per transaction"
+                icon={IndianRupee}
+                iconBg="bg-emerald-100"
+                iconColor="text-emerald-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Collection Rate"
+                value={`${revenue.collectionRate}%`}
+                sub={`${revenue.failedCount} failed`}
+                icon={CheckCircle2}
+                iconBg="bg-teal-100"
+                iconColor="text-teal-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Pending"
+                value={revenue.pendingPayments.toLocaleString()}
+                sub="Awaiting confirmation"
+                icon={Clock}
+                iconBg="bg-amber-100"
+                iconColor="text-amber-600"
+              />
+            </StaggerItem>
+          </StaggerContainer>
+
+          {revenue.monthlyTrend.length > 1 && (
+            <Card className="card-lift">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+                    <TrendingUp className="h-4 w-4" />
+                  </div>
+                  Monthly Revenue Trend
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={revenue.monthlyTrend}>
+                      <defs>
+                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip
+                        content={({ active, payload, label }: any) => {
+                          if (!active || !payload?.length) return null
+                          return (
+                            <div className="bg-white dark:bg-slate-900 border border-border rounded-lg shadow-lg px-3 py-2 text-sm">
+                              <p className="font-semibold">{label}</p>
+                              <p className="text-muted-foreground">
+                                Revenue: <span className="font-bold text-foreground">₹{payload[0].value?.toLocaleString()}</span>
+                              </p>
+                            </div>
+                          )
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="#10b981"
+                        strokeWidth={2.5}
+                        fill="url(#colorRevenue)"
+                        dot={{ fill: "#10b981", strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff" }}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationBegin={300}
+                        animationEasing="ease-out"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Support Tickets Section */}
+      {tickets && tickets.total > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+              <Headphones className="h-4 w-4" />
+            </div>
+            <h2 className="text-xl font-semibold tracking-tight">Support Tickets</h2>
+            <Badge variant="outline" className="ml-1 text-xs">{tickets.total.toLocaleString()} tickets</Badge>
+          </div>
+
+          <StaggerContainer className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StaggerItem>
+              <MiniStatCard
+                label="Open Tickets"
+                value={tickets.open.toLocaleString()}
+                sub={`${tickets.total.toLocaleString()} total`}
+                icon={Headphones}
+                iconBg="bg-violet-100"
+                iconColor="text-violet-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="SLA Compliance"
+                value={`${tickets.slaComplianceRate}%`}
+                sub={`${tickets.slaBreached} breached`}
+                icon={ShieldAlert}
+                iconBg={tickets.slaComplianceRate >= 90 ? "bg-green-100" : "bg-red-100"}
+                iconColor={tickets.slaComplianceRate >= 90 ? "text-green-600" : "text-red-600"}
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Avg First Response"
+                value={formatHours(tickets.avgFirstResponseHours)}
+                sub="Time to first reply"
+                icon={Timer}
+                iconBg="bg-blue-100"
+                iconColor="text-blue-600"
+              />
+            </StaggerItem>
+            <StaggerItem>
+              <MiniStatCard
+                label="Avg Resolution"
+                value={formatHours(tickets.avgResolutionHours)}
+                sub={`${(tickets.closed + tickets.resolved).toLocaleString()} resolved`}
+                icon={CheckCircle2}
+                iconBg="bg-emerald-100"
+                iconColor="text-emerald-600"
+              />
+            </StaggerItem>
+          </StaggerContainer>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Category Breakdown */}
+            {tickets.categoryBreakdown.length > 0 && (
+              <Card className="card-lift">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                      <BarChart3 className="h-4 w-4" />
+                    </div>
+                    Tickets by Category
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={tickets.categoryBreakdown.slice(0, 8).map((c) => ({ name: c.category, count: c.count }))} layout="vertical" margin={{ left: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 12 }} />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Bar dataKey="count" fill="#8b5cf6" radius={[0, 4, 4, 0]} isAnimationActive={true} animationDuration={1200} animationBegin={300} animationEasing="ease-out" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Priority Breakdown */}
+            {tickets.priorityBreakdown.length > 0 && (
+              <Card className="card-lift">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                      <AlertTriangle className="h-4 w-4" />
+                    </div>
+                    Tickets by Priority
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPie>
+                        <Pie
+                          data={tickets.priorityBreakdown.map((p) => ({
+                            name: p.priority.charAt(0).toUpperCase() + p.priority.slice(1),
+                            value: p.count,
+                            color: PRIORITY_COLORS[p.priority] || "#94a3b8",
+                          }))}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={45}
+                          outerRadius={80}
+                          paddingAngle={3}
+                          dataKey="value"
+                          isAnimationActive={true}
+                          animationDuration={1200}
+                          animationBegin={300}
+                          animationEasing="ease-out"
+                        >
+                          {tickets.priorityBreakdown.map((p, i) => (
+                            <Cell key={i} fill={PRIORITY_COLORS[p.priority] || "#94a3b8"} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<PieTooltip />} />
+                        <Legend />
+                      </RechartsPie>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </>
       )}
 
       {/* Charts grid */}

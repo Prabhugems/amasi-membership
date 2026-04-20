@@ -45,8 +45,8 @@ export async function GET(request: Request) {
       dateCutoff = now.toISOString().split("T")[0]
     }
 
-    // Fetch members and applications in parallel
-    const [memberRows, applicationRows] = await Promise.all([
+    // Fetch members, applications, payments, and tickets in parallel
+    const [memberRows, applicationRows, paymentRows, ticketRows] = await Promise.all([
       fetchAllBatched<{
         zone: string | null
         state: string | null
@@ -70,6 +70,33 @@ export async function GET(request: Request) {
         let query = supabase
           .from("membership_applications")
           .select("status, created_at, updated_at, ai_confidence, nmc_verification, needs_manual_review")
+        if (dateCutoff) query = query.gte("created_at", dateCutoff)
+        return query.range(offset, offset + limit - 1)
+      }),
+      fetchAllBatched<{
+        amount: number | null
+        status: string | null
+        currency: string | null
+        created_at: string | null
+      }>((offset, limit) => {
+        let query = supabase
+          .from("membership_payments")
+          .select("amount, status, currency, created_at")
+        if (dateCutoff) query = query.gte("created_at", dateCutoff)
+        return query.range(offset, offset + limit - 1)
+      }),
+      fetchAllBatched<{
+        status: string | null
+        category: string | null
+        priority: string | null
+        created_at: string | null
+        closed_at: string | null
+        first_response_at: string | null
+        sla_breached: boolean | null
+      }>((offset, limit) => {
+        let query = supabase
+          .from("support_tickets")
+          .select("status, category, priority, created_at, closed_at, first_response_at, sla_breached")
         if (dateCutoff) query = query.gte("created_at", dateCutoff)
         return query.range(offset, offset + limit - 1)
       }),
@@ -205,6 +232,132 @@ export async function GET(request: Request) {
       },
     }
 
+    // ── Revenue aggregations ──
+
+    let totalRevenue = 0
+    let paidCount = 0
+    let failedCount = 0
+    let pendingPayments = 0
+    const monthlyRevenue: Record<string, number> = {}
+
+    for (const p of paymentRows) {
+      const s = p.status || "unknown"
+      if (s === "paid") {
+        const amt = Number(p.amount) || 0
+        totalRevenue += amt
+        paidCount++
+        if (p.created_at) {
+          const month = p.created_at.substring(0, 7)
+          monthlyRevenue[month] = (monthlyRevenue[month] || 0) + amt
+        }
+      } else if (s === "failed") {
+        failedCount++
+      } else {
+        pendingPayments++
+      }
+    }
+
+    const avgPaymentAmount = paidCount > 0
+      ? Math.round((totalRevenue / paidCount) * 100) / 100
+      : 0
+
+    const collectionRate = paymentRows.length > 0
+      ? Math.round((paidCount / paymentRows.length) * 1000) / 10
+      : 0
+
+    const monthlyRevenueData = Object.entries(monthlyRevenue)
+      .map(([month, amount]) => ({ month, amount: Math.round(amount) }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+
+    const revenue = {
+      total: Math.round(totalRevenue),
+      paidCount,
+      failedCount,
+      pendingPayments,
+      avgAmount: avgPaymentAmount,
+      collectionRate,
+      monthlyTrend: monthlyRevenueData,
+    }
+
+    // ── Ticket aggregations ──
+
+    const totalTickets = ticketRows.length
+    let openTickets = 0
+    let closedTickets = 0
+    let resolvedTickets = 0
+    let slaBreached = 0
+    let totalFirstResponseHours = 0
+    let firstResponseCount = 0
+    let totalResolutionHours = 0
+    let resolutionCount = 0
+    const ticketCategoryCounts: Record<string, number> = {}
+    const ticketPriorityCounts: Record<string, number> = {}
+    const ticketStatusCounts: Record<string, number> = {}
+
+    for (const t of ticketRows) {
+      const s = t.status || "unknown"
+      ticketStatusCounts[s] = (ticketStatusCounts[s] || 0) + 1
+
+      if (s === "open" || s === "in_progress") openTickets++
+      else if (s === "closed") closedTickets++
+      else if (s === "resolved") resolvedTickets++
+
+      if (t.sla_breached) slaBreached++
+
+      if (t.category) {
+        ticketCategoryCounts[t.category] = (ticketCategoryCounts[t.category] || 0) + 1
+      }
+      if (t.priority) {
+        ticketPriorityCounts[t.priority] = (ticketPriorityCounts[t.priority] || 0) + 1
+      }
+
+      // First response time
+      if (t.first_response_at && t.created_at) {
+        const dur = new Date(t.first_response_at).getTime() - new Date(t.created_at).getTime()
+        if (dur >= 0) {
+          totalFirstResponseHours += dur / (1000 * 60 * 60)
+          firstResponseCount++
+        }
+      }
+
+      // Resolution time
+      if (t.closed_at && t.created_at) {
+        const dur = new Date(t.closed_at).getTime() - new Date(t.created_at).getTime()
+        if (dur >= 0) {
+          totalResolutionHours += dur / (1000 * 60 * 60)
+          resolutionCount++
+        }
+      }
+    }
+
+    const slaComplianceRate = totalTickets > 0
+      ? Math.round(((totalTickets - slaBreached) / totalTickets) * 1000) / 10
+      : 100
+
+    const tickets = {
+      total: totalTickets,
+      open: openTickets,
+      closed: closedTickets,
+      resolved: resolvedTickets,
+      slaBreached,
+      slaComplianceRate,
+      avgFirstResponseHours: firstResponseCount > 0
+        ? Math.round((totalFirstResponseHours / firstResponseCount) * 10) / 10
+        : 0,
+      avgResolutionHours: resolutionCount > 0
+        ? Math.round((totalResolutionHours / resolutionCount) * 10) / 10
+        : 0,
+      categoryBreakdown: Object.entries(ticketCategoryCounts)
+        .map(([category, count]) => ({ category, count }))
+        .sort((a, b) => b.count - a.count),
+      priorityBreakdown: Object.entries(ticketPriorityCounts)
+        .map(([priority, count]) => ({ priority, count }))
+        .sort((a, b) => b.count - a.count),
+      statusBreakdown: Object.entries(ticketStatusCounts)
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count),
+    }
+
     // ── YoY growth (always computed from full dataset, not filtered by range) ──
     const now = new Date()
     const thisYear = now.getFullYear()
@@ -250,6 +403,8 @@ export async function GET(request: Request) {
       typeData,
       total: memberRows.length,
       pipeline,
+      revenue,
+      tickets,
       growth: {
         thisYear: thisYearCount,
         lastYear: lastYearCount,

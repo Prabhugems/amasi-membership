@@ -95,6 +95,24 @@ export async function POST(request: NextRequest) {
     if (dbAdmins && dbAdmins.length > 0) {
       const admin = dbAdmins[0]
 
+      // Check if 2FA is enabled — if so, don't issue a session yet
+      const { data: adminRow } = await supabase
+        .from("admin_users")
+        .select("totp_secret")
+        .eq("id", admin.id)
+        .limit(1)
+        .maybeSingle()
+
+      if (adminRow?.totp_secret) {
+        // Password is correct but 2FA is required
+        return Response.json({
+          status: true,
+          requires2fa: true,
+          email: admin.email,
+        })
+      }
+
+      // No 2FA — proceed with session as before
       // Update last_login timestamp
       await supabase
         .from("admin_users")

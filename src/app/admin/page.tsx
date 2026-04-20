@@ -5,10 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2, Activity, Mail,
+  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2, Activity, Mail, KeyRound, X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { AdminActivityPanel, type AdminActivityAdmin } from "@/components/admin/admin-activity-panel"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose,
+} from "@/components/ui/dialog"
 
 interface AdminUser {
   id: string
@@ -63,6 +66,14 @@ export default function AdminUsersPage() {
 
   // Test digest state
   const [sendingDigest, setSendingDigest] = useState(false)
+
+  // 2FA setup state
+  const [show2faDialog, setShow2faDialog] = useState(false)
+  const [totpSecret, setTotpSecret] = useState("")
+  const [totpQrUrl, setTotpQrUrl] = useState("")
+  const [totpCode, setTotpCode] = useState("")
+  const [totpLoading, setTotpLoading] = useState(false)
+  const [totpStep, setTotpStep] = useState<"scan" | "done">("scan")
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -206,6 +217,65 @@ export default function AdminUsersPage() {
     }
   }
 
+  const handleStart2fa = async () => {
+    setTotpLoading(true)
+    setTotpStep("scan")
+    setTotpCode("")
+    try {
+      const res = await fetch("/api/auth/totp/setup", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || "Failed to start 2FA setup")
+        return
+      }
+      setTotpSecret(data.secret)
+      setTotpQrUrl(data.qrDataUrl)
+      setShow2faDialog(true)
+    } catch {
+      toast.error("Failed to start 2FA setup")
+    } finally {
+      setTotpLoading(false)
+    }
+  }
+
+  const handleVerify2fa = async () => {
+    if (totpCode.length !== 6) return
+    setTotpLoading(true)
+    try {
+      const res = await fetch("/api/auth/totp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: totpSecret, code: totpCode }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || "Invalid code")
+        return
+      }
+      setTotpStep("done")
+      toast.success("Two-factor authentication enabled")
+    } catch {
+      toast.error("Verification failed")
+    } finally {
+      setTotpLoading(false)
+    }
+  }
+
+  const handleDisable2fa = async () => {
+    if (!confirm("Disable two-factor authentication? You can re-enable it later.")) return
+    try {
+      const res = await fetch("/api/auth/totp/verify", { method: "DELETE" })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("2FA disabled")
+      } else {
+        toast.error(data.error || "Failed to disable 2FA")
+      }
+    } catch {
+      toast.error("Failed to disable 2FA")
+    }
+  }
+
   if (!authorized) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
@@ -228,7 +298,20 @@ export default function AdminUsersPage() {
             Manage admin accounts and their roles
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            onClick={handleStart2fa}
+            disabled={totpLoading}
+            className="gap-2"
+          >
+            {totpLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <KeyRound className="h-4 w-4" />
+            )}
+            Setup 2FA
+          </Button>
           <Button
             variant="outline"
             onClick={handleSendTestDigest}
@@ -508,6 +591,105 @@ export default function AdminUsersPage() {
         open={!!activityAdmin}
         onClose={() => setActivityAdmin(null)}
       />
+
+      {/* 2FA Setup Dialog */}
+      <Dialog open={show2faDialog} onOpenChange={setShow2faDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-emerald-600" />
+              {totpStep === "done" ? "2FA Enabled" : "Setup Two-Factor Authentication"}
+            </DialogTitle>
+            <DialogDescription>
+              {totpStep === "done"
+                ? "Two-factor authentication is now active on your account."
+                : "Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.) then enter the 6-digit code to confirm."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {totpStep === "scan" ? (
+            <div className="space-y-4">
+              {/* QR Code */}
+              {totpQrUrl && (
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={totpQrUrl}
+                    alt="TOTP QR Code"
+                    width={200}
+                    height={200}
+                    className="rounded-lg border"
+                  />
+                </div>
+              )}
+
+              {/* Manual entry secret */}
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground text-center">
+                  Or enter this key manually:
+                </p>
+                <div className="bg-muted rounded-md px-3 py-2 text-center">
+                  <code className="text-sm font-mono tracking-wider break-all select-all">
+                    {totpSecret}
+                  </code>
+                </div>
+              </div>
+
+              {/* Verification code input */}
+              <div className="space-y-2">
+                <label htmlFor="totp-verify" className="text-sm font-medium">
+                  Enter verification code
+                </label>
+                <Input
+                  id="totp-verify"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="text-center text-xl tracking-[0.4em] font-mono"
+                  autoComplete="one-time-code"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleVerify2fa}
+                  disabled={totpLoading || totpCode.length !== 6}
+                  className="flex-1"
+                >
+                  {totpLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Verifying...
+                    </>
+                  ) : (
+                    "Enable 2FA"
+                  )}
+                </Button>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 text-center">
+              <div className="h-16 w-16 rounded-full bg-emerald-50 dark:bg-emerald-500/15 flex items-center justify-center mx-auto">
+                <ShieldCheck className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                You will be asked for a code from your authenticator app each time you log in.
+              </p>
+              <DialogClose asChild>
+                <Button className="w-full">Done</Button>
+              </DialogClose>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

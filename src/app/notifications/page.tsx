@@ -12,6 +12,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
+  Settings,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,6 +28,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
@@ -29,12 +36,368 @@ import { INDIAN_STATES } from "@/lib/membership-types"
 
 const ZONES = ["North Zone", "South Zone", "East Zone", "West Zone", "Central Zone", "International"]
 const MEMBERSHIP_TYPES = ["LM", "ALM", "ACM", "ILM"]
-const WA_TEMPLATES = [
-  { value: "application_submit_templeate", label: "Application Submitted" },
-  { value: "member_approve_template", label: "Membership Approved" },
-  { value: "application_payment_pending", label: "Payment Pending" },
-  { value: "amasi_certificate_template", label: "Certificate Ready" },
-]
+
+interface WhatsAppTemplate {
+  id: string
+  name: string
+  template_id: string
+  description: string | null
+  variables: string[]
+  is_active: boolean
+  created_at: string
+}
+
+// --- WhatsApp Template Management Dialog ---
+
+function WhatsAppTemplatesDialog() {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Partial<WhatsAppTemplate & { variablesStr: string }>>({})
+  const [newTemplate, setNewTemplate] = useState({
+    name: "",
+    template_id: "",
+    description: "",
+    variablesStr: "",
+  })
+
+  const { data: templates = [], isLoading } = useQuery<WhatsAppTemplate[]>({
+    queryKey: ["whatsapp-templates"],
+    queryFn: async () => {
+      const res = await fetch("/api/whatsapp-templates")
+      if (!res.ok) throw new Error("Failed to fetch templates")
+      return res.json()
+    },
+    enabled: open,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (tpl: typeof newTemplate) => {
+      const variables = tpl.variablesStr
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean)
+      const res = await fetch("/api/whatsapp-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: tpl.name,
+          template_id: tpl.template_id,
+          description: tpl.description || null,
+          variables,
+        }),
+      })
+      if (!res.ok) throw new Error("Failed to create template")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Template created")
+      setNewTemplate({ name: "", template_id: "", description: "", variablesStr: "" })
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-templates"] })
+    },
+    onError: () => toast.error("Failed to create template"),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: async (tpl: Partial<WhatsAppTemplate & { variablesStr: string }> & { id: string }) => {
+      const payload: Record<string, unknown> = { id: tpl.id }
+      if (tpl.name !== undefined) payload.name = tpl.name
+      if (tpl.template_id !== undefined) payload.template_id = tpl.template_id
+      if (tpl.description !== undefined) payload.description = tpl.description
+      if (tpl.variablesStr !== undefined) {
+        payload.variables = tpl.variablesStr
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean)
+      }
+      if (tpl.is_active !== undefined) payload.is_active = tpl.is_active
+      const res = await fetch("/api/whatsapp-templates", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error("Failed to update template")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Template updated")
+      setEditingId(null)
+      setEditForm({})
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-templates"] })
+    },
+    onError: () => toast.error("Failed to update template"),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/whatsapp-templates?id=${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Failed to delete template")
+      return res.json()
+    },
+    onSuccess: () => {
+      toast.success("Template deleted")
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-templates"] })
+    },
+    onError: () => toast.error("Failed to delete template"),
+  })
+
+  const toggleActive = (tpl: WhatsAppTemplate) => {
+    updateMutation.mutate({ id: tpl.id, is_active: !tpl.is_active })
+  }
+
+  const startEdit = (tpl: WhatsAppTemplate) => {
+    setEditingId(tpl.id)
+    setEditForm({
+      name: tpl.name,
+      template_id: tpl.template_id,
+      description: tpl.description || "",
+      variablesStr: (tpl.variables || []).join(", "),
+    })
+  }
+
+  const saveEdit = () => {
+    if (!editingId) return
+    updateMutation.mutate({
+      id: editingId,
+      name: editForm.name,
+      template_id: editForm.template_id,
+      description: editForm.description,
+      variablesStr: editForm.variablesStr,
+    })
+  }
+
+  const handleCreate = () => {
+    if (!newTemplate.name || !newTemplate.template_id) {
+      toast.error("Name and Template ID are required")
+      return
+    }
+    createMutation.mutate(newTemplate)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 shrink-0 hover:bg-gray-100 dark:hover:bg-slate-800"
+          title="Manage WhatsApp Templates"
+        >
+          <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4 text-green-600" />
+            WhatsApp Templates
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Manage WhatsApp notification templates. Templates must also be approved in your Gallabox/WhatsApp Business account.
+          </p>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="space-y-4 mt-2">
+            {/* Templates table */}
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 dark:bg-slate-800/60 border-b">
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Template ID</th>
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Variables</th>
+                    <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Active</th>
+                    <th className="text-right px-3 py-2 font-semibold text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {templates.map((tpl) => (
+                    <tr key={tpl.id} className="border-b last:border-b-0 hover:bg-gray-50/50 dark:hover:bg-slate-800/30">
+                      {editingId === tpl.id ? (
+                        <>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editForm.name || ""}
+                              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              placeholder="Template name"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editForm.template_id || ""}
+                              onChange={(e) => setEditForm({ ...editForm, template_id: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              placeholder="template_id"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              value={editForm.variablesStr || ""}
+                              onChange={(e) => setEditForm({ ...editForm, variablesStr: e.target.value })}
+                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              placeholder="Name, Var2, Var3"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className="text-muted-foreground/50">--</span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                onClick={saveEdit}
+                                disabled={updateMutation.isPending}
+                              >
+                                <Check className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => { setEditingId(null); setEditForm({}) }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-2">
+                            <span className="font-medium">{tpl.name}</span>
+                            {tpl.description && (
+                              <span className="block text-[10px] text-muted-foreground mt-0.5">{tpl.description}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[10px]">{tpl.template_id}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-wrap gap-1">
+                              {(tpl.variables || []).map((v) => (
+                                <span
+                                  key={v}
+                                  className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800"
+                                >
+                                  {`{{${v}}}`}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => toggleActive(tpl)}
+                              disabled={updateMutation.isPending || tpl.id.startsWith("seed-")}
+                              role="switch"
+                              aria-checked={tpl.is_active}
+                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                tpl.is_active ? "bg-green-500" : "bg-gray-300 dark:bg-slate-600"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                                  tpl.is_active ? "translate-x-[18px]" : "translate-x-[3px]"
+                                }`}
+                              />
+                            </button>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => startEdit(tpl)}
+                                disabled={tpl.id.startsWith("seed-")}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                onClick={() => deleteMutation.mutate(tpl.id)}
+                                disabled={deleteMutation.isPending || tpl.id.startsWith("seed-")}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                  {templates.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-muted-foreground/60">
+                        No templates configured
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Add new template form */}
+            <div className="border rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/30 space-y-2">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <Plus className="h-3 w-3" />
+                Add Template
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  placeholder="Template name"
+                />
+                <input
+                  value={newTemplate.template_id}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, template_id: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  placeholder="MSG91/WhatsApp template ID"
+                />
+                <input
+                  value={newTemplate.description}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  placeholder="Description (optional)"
+                />
+                <input
+                  value={newTemplate.variablesStr}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, variablesStr: e.target.value })}
+                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  placeholder="Variables (comma-separated, e.g. Name, Date)"
+                />
+              </div>
+              <Button
+                size="sm"
+                className="h-7 text-xs gap-1.5 bg-green-600 hover:bg-green-700"
+                onClick={handleCreate}
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                Add Template
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// --- Main Notifications Content ---
 
 function NotificationsContent() {
   const queryClient = useQueryClient()
@@ -50,6 +413,17 @@ function NotificationsContent() {
   const [message, setMessage] = useState("")
   const [template, setTemplate] = useState("")
   const [showConfirm, setShowConfirm] = useState(false)
+
+  // Fetch dynamic WhatsApp templates
+  const { data: waTemplates = [] } = useQuery<WhatsAppTemplate[]>({
+    queryKey: ["whatsapp-templates"],
+    queryFn: async () => {
+      const res = await fetch("/api/whatsapp-templates")
+      if (!res.ok) return []
+      return res.json()
+    },
+  })
+  const activeTemplates = waTemplates.filter((t) => t.is_active)
 
   // Build filter object
   const filter = {
@@ -137,10 +511,11 @@ function NotificationsContent() {
         <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
           <Bell className="h-5 w-5 text-primary" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">Bulk Notifications</h1>
           <p className="text-sm text-muted-foreground">Send emails and WhatsApp messages to members</p>
         </div>
+        <WhatsAppTemplatesDialog />
       </div>
 
       {/* Tabs */}
@@ -345,8 +720,8 @@ function NotificationsContent() {
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
                 >
                   <option value="">Select a template</option>
-                  {WA_TEMPLATES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
+                  {activeTemplates.map((t) => (
+                    <option key={t.template_id} value={t.template_id}>{t.name}</option>
                   ))}
                 </select>
               </div>

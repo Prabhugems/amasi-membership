@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2, Activity,
+  Shield, ShieldCheck, Eye, Plus, Trash2, UserCheck, UserX, Loader2, Activity, Mail,
 } from "lucide-react"
 import { toast } from "sonner"
 import { AdminActivityPanel, type AdminActivityAdmin } from "@/components/admin/admin-activity-panel"
@@ -60,6 +60,9 @@ export default function AdminUsersPage() {
 
   // Activity panel state
   const [activityAdmin, setActivityAdmin] = useState<AdminActivityAdmin | null>(null)
+
+  // Test digest state
+  const [sendingDigest, setSendingDigest] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -184,6 +187,25 @@ export default function AdminUsersPage() {
     }
   }
 
+  const handleSendTestDigest = async () => {
+    setSendingDigest(true)
+    try {
+      const res = await fetch("/api/cron/weekly-digest?test=1")
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(
+          `Digest sent to ${data.sent} admin(s). New members: ${data.metrics?.newMembersThisWeek ?? 0}, Revenue: ${data.metrics?.revenueThisWeek ?? 0}`
+        )
+      } else {
+        toast.error(data.error || "Failed to send test digest")
+      }
+    } catch {
+      toast.error("Failed to send test digest")
+    } finally {
+      setSendingDigest(false)
+    }
+  }
+
   if (!authorized) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
@@ -206,10 +228,25 @@ export default function AdminUsersPage() {
             Manage admin accounts and their roles
           </p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Admin User
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSendTestDigest}
+            disabled={sendingDigest}
+            className="gap-2"
+          >
+            {sendingDigest ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Mail className="h-4 w-4" />
+            )}
+            {sendingDigest ? "Sending..." : "Send Test Digest"}
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Admin User
+          </Button>
+        </div>
       </div>
 
       {/* Role legend */}

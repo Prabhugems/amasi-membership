@@ -9,7 +9,7 @@ import {
   User, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
   Activity, Lock, ArrowUpCircle, Sparkles, Paperclip, Send, MessageCircle,
-  Inbox, Plus, X, Image, FileIcon, ChevronDown, Info,
+  Inbox, Plus, X, Image, FileIcon, ChevronDown, Info, Loader2, RotateCw,
 } from "lucide-react"
 import { AdminBackLink } from "@/components/ui/admin-back-link"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1046,44 +1046,7 @@ function MemberPortalContent() {
 
             {/* Documents Tab */}
             {activeTab === "documents" && (
-              <div className="max-w-2xl space-y-6">
-                <div>
-                  <h2 className="text-2xl font-bold">My Documents</h2>
-                  <p className="text-muted-foreground text-sm mt-1">Upload or view your membership documents</p>
-                </div>
-                <div className="grid gap-3">
-                  {[
-                    { label: "Profile Photo", url: member.profile_photo, key: "photo", required: true, icon: User },
-                    { label: "MCI Certificate", url: member.mci_certificate, key: "mci", required: true, icon: FileText },
-                    { label: "PG Degree Certificate", url: member.pg_degree_certificate, key: "pg", required: true, icon: GraduationCap },
-                    { label: "MBBS Degree", url: member.mbbs_degree_certificate, key: "mbbs", required: false, icon: FileText },
-                    { label: "ASI Certificate", url: member.asi_member_certificate, key: "asi", required: memberType === "Life Member" || memberType === "LM", icon: Award },
-                    { label: "Active License", url: member.active_license, key: "license", required: false, icon: Shield },
-                    { label: "HOD Letter", url: member.letter_hod, key: "hod", required: false, icon: FileText },
-                  ].filter(doc => doc.required || doc.url).map((doc) => (
-                    <div key={doc.key} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:bg-muted/30 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${doc.url ? "bg-green-100" : "bg-muted"}`}>
-                          {doc.url ? <CheckCircle className="h-4 w-4 text-green-600" /> : <doc.icon className="h-4 w-4 text-muted-foreground" />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{doc.label}</p>
-                          <p className="text-xs text-muted-foreground">{doc.url ? "Uploaded" : doc.required ? "Required - Not uploaded" : "Optional - Not uploaded"}</p>
-                        </div>
-                      </div>
-                      {doc.url ? (
-                        <a href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium">
-                          <Eye className="h-3.5 w-3.5" /> View
-                        </a>
-                      ) : (
-                        <Button variant="outline" size="sm" className="text-xs" onClick={() => { setActiveTab("profile"); toast.info("Upload documents from the Edit Profile page") }}>
-                          <Upload className="h-3 w-3 mr-1" /> Upload
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <DocumentsTab member={member} setMember={setMember} memberType={memberType} />
             )}
 
             {/* Support Tab */}
@@ -1104,6 +1067,142 @@ function MemberPortalContent() {
   }
 
   return null
+}
+
+// ===================== DOCUMENTS TAB =====================
+
+const DOC_SLOTS = [
+  { label: "Profile Photo", field: "profile_photo", docType: "profile_photo", required: true, icon: User, accept: "image/jpeg,image/png" },
+  { label: "MCI Certificate", field: "mci_certificate", docType: "mci_certificate", required: true, icon: FileText, accept: "image/jpeg,image/png,application/pdf" },
+  { label: "PG Degree Certificate", field: "pg_degree_certificate", docType: "pg_degree_certificate", required: true, icon: GraduationCap, accept: "image/jpeg,image/png,application/pdf" },
+  { label: "MBBS Degree", field: "mbbs_degree_certificate", docType: "mbbs_degree_certificate", required: false, icon: FileText, accept: "image/jpeg,image/png,application/pdf" },
+  { label: "ASI Certificate", field: "asi_member_certificate", docType: "asi_member_certificate", required: false, icon: Award, accept: "image/jpeg,image/png,application/pdf" },
+  { label: "Active License", field: "active_license", docType: "active_license", required: false, icon: Shield, accept: "image/jpeg,image/png,application/pdf" },
+  { label: "HOD Letter", field: "letter_hod", docType: "letter_hod", required: false, icon: FileText, accept: "image/jpeg,image/png,application/pdf" },
+] as const
+
+function DocumentsTab({ member, setMember, memberType }: { member: any; setMember: (m: any) => void; memberType: string }) {
+  const [uploadingField, setUploadingField] = useState<string | null>(null)
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  const visibleDocs = DOC_SLOTS.filter(doc => {
+    // ASI certificate only required/shown for Life Members
+    if (doc.docType === "asi_member_certificate") {
+      const isLM = memberType === "Life Member" || memberType === "LM"
+      return isLM || !!member[doc.field]
+    }
+    return doc.required || !!member[doc.field]
+  })
+
+  const handleUpload = useCallback(async (file: File, docType: string, field: string) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File too large. Maximum 5 MB.")
+      return
+    }
+
+    setUploadingField(field)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("memberId", member.id)
+      formData.append("docType", docType)
+
+      const res = await fetch("/api/members/upload", { method: "POST", body: formData })
+      const data = await res.json()
+
+      if (!res.ok || !data.status) {
+        toast.error(data.message || "Upload failed")
+        return
+      }
+
+      // Update local member state with the signed URL for immediate display
+      setMember({ ...member, [field]: data.url })
+      toast.success(`${DOC_SLOTS.find(d => d.field === field)?.label || "Document"} uploaded successfully`)
+    } catch {
+      toast.error("Upload failed. Please try again.")
+    } finally {
+      setUploadingField(null)
+      // Reset the file input so the same file can be re-selected
+      const input = fileInputRefs.current[field]
+      if (input) input.value = ""
+    }
+  }, [member, setMember])
+
+  const triggerFileInput = useCallback((field: string) => {
+    fileInputRefs.current[field]?.click()
+  }, [])
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold">My Documents</h2>
+        <p className="text-muted-foreground text-sm mt-1">Upload or view your membership documents</p>
+      </div>
+      <div className="grid gap-3">
+        {visibleDocs.map((doc) => {
+          const url = member[doc.field]
+          const isUploading = uploadingField === doc.field
+          const IconComponent = doc.icon
+
+          return (
+            <div key={doc.field} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${url ? "bg-green-100" : "bg-muted"}`}>
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                  ) : url ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <IconComponent className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{doc.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isUploading ? "Uploading..." : url ? "Uploaded" : doc.required ? "Required - Not uploaded" : "Optional - Not uploaded"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  accept={doc.accept}
+                  className="hidden"
+                  ref={(el) => { fileInputRefs.current[doc.field] = el }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleUpload(file, doc.docType, doc.field)
+                  }}
+                />
+                {url && (
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium">
+                    <Eye className="h-3.5 w-3.5" /> View
+                  </a>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  disabled={isUploading}
+                  onClick={() => triggerFileInput(doc.field)}
+                >
+                  {isUploading ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Uploading</>
+                  ) : url ? (
+                    <><RotateCw className="h-3 w-3 mr-1" /> Replace</>
+                  ) : (
+                    <><Upload className="h-3 w-3 mr-1" /> Upload</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">Accepted formats: JPG, PNG, PDF. Maximum file size: 5 MB.</p>
+    </div>
+  )
 }
 
 // ===================== MEMBER SUPPORT TAB =====================

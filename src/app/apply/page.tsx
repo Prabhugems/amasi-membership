@@ -89,9 +89,9 @@ function StableFieldInput({ field, label, required, value, error, placeholder, h
         value={value}
         onChange={(e) => onChange(field, e.target.value)}
         placeholder={placeholder || ""}
-        className={error ? "border-destructive bg-destructive/5" : isFilled ? "border-green-300" : ""}
+        className={error ? "border-destructive bg-destructive/5 ring-2 ring-destructive/30 animate-pulse" : isFilled ? "border-green-300" : ""}
       />
-      {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
+      {error && <p className="text-xs text-destructive mt-0.5 font-medium">{error}</p>}
     </div>
   )
 }
@@ -662,6 +662,9 @@ export default function ApplyPage() {
       const dupData = await dupRes.json()
       if (dupData.isDuplicate) {
         toast.error(dupData.message || "A duplicate application was found")
+        // Highlight the MCI field with error for easy identification
+        setErrors(prev => ({ ...prev, mciCouncilNumber: dupData.message || "This MCI number is already registered" }))
+        setEditSection("registration")
         setSubmitting(false)
         return
       }
@@ -766,6 +769,7 @@ export default function ApplyPage() {
               amount: totalAmount,
               currency: fee?.currency === "$" ? "USD" : "INR",
               email: formData.email,
+              membershipType: formData.membershipType || type?.id,
             }),
           })
           const verifyData = await verifyRes.json()
@@ -2022,7 +2026,10 @@ export default function ApplyPage() {
       )
     }
     if (type?.id !== "ILM") {
-      requiredFields.push({ key: "mciCouncilNumber", label: "MCI Number" })
+      requiredFields.push(
+        { key: "mciCouncilNumber", label: "MCI Number" },
+        { key: "mciCouncilState", label: "Council State" },
+      )
     }
     if (type?.requiresASI) {
       requiredFields.push({ key: "asiMembershipNo", label: "ASI Number" })
@@ -2035,7 +2042,7 @@ export default function ApplyPage() {
     const filledSummary = [
       formData.salutation && formData.firstName ? `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim() : null,
       formData.email,
-      formData.mobile ? `+91 ${formData.mobile}` : null,
+      formData.mobile ? `${formData.mobileCode || "+91"} ${formData.mobile}` : null,
       formData.dob,
       formData.gender,
       formData.eduPostgradDegree,

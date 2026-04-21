@@ -190,23 +190,30 @@ export async function POST(request: NextRequest) {
 
     // --- Send reminder action ---
     if (action === "send_reminder") {
-      const { data: draft, error: fetchError } = await supabase
+      // Atomically claim the send — only proceed if reminder_sent_at is null
+      // or older than 1 hour (prevent spam)
+      const { data: claimed, error: claimError } = await supabase
         .from("draft_applications")
-        .select("*")
+        .update({ reminder_sent_at: new Date().toISOString() })
         .eq("id", draftId)
-        .single()
+        .eq("status", "stuck")
+        .or("reminder_sent_at.is.null,reminder_sent_at.lt." + new Date(Date.now() - 60 * 60 * 1000).toISOString())
+        .select("*")
+        .maybeSingle()
 
-      if (fetchError || !draft) {
-        return Response.json({ status: false, message: "Draft application not found" }, { status: 404 })
+      if (claimError) {
+        console.error("Claim reminder error:", claimError)
+        return Response.json({ status: false, message: "Failed to send reminder" }, { status: 500 })
       }
 
-      if (draft.status !== "stuck") {
+      if (!claimed) {
         return Response.json(
-          { status: false, message: `Cannot send reminder for draft with status "${draft.status}". Expected "stuck".` },
+          { status: false, message: "Reminder already sent recently or draft not in stuck status" },
           { status: 400 }
         )
       }
 
+      const draft = claimed
       const currentStep = draft.current_step || 1
       const stepLabel = escapeHtml(STEP_LABELS[currentStep] || `Step ${currentStep}`)
       const applicantEmail = draft.email
@@ -245,13 +252,91 @@ export async function POST(request: NextRequest) {
         `,
       })
 
-      // Update reminder_sent_at
-      await supabase
+      // reminder_sent_at was already set atomically above
+      return Response.json({ status: true, message: "Reminder sent successfully" })
+    }
+
+    // --- Resume action ---
+    if (action === "resume") {
+      const { data: draft, error: fetchError } = await supabase
         .from("draft_applications")
-        .update({ reminder_sent_at: new Date().toISOString() })
+        .select("*")
+        .eq("id", draftId)
+        .single()
+
+      if (fetchError || !draft) {
+        return Response.json({ status: false, message: "Draft application not found" }, { status: 404 })
+      }
+
+      if (draft.status !== "payment_on_hold" && draft.status !== "stuck") {
+        return Response.json(
+          { status: false, message: `Cannot resume draft with status "${draft.status}".` },
+          { status: 400 }
+        )
+      }
+
+      // Reset status to in_progress so the user can continue
+      const { error: updateError } = await supabase
+        .from("draft_applications")
+        .update({
+          status: "in_progress",
+          failure_reason: null,
+          stale_since: null,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", draftId)
 
-      return Response.json({ status: true, message: "Reminder sent successfully" })
+      if (updateError) {
+        console.error("Resume draft error:", updateError)
+        return Response.json({ status: false, message: "Failed to resume draft" }, { status: 500 })
+      }
+
+      // Send resume email to applicant
+      try {
+        const resend = getResend()
+        const stepLabel = escapeHtml(STEP_LABELS[draft.current_step] || `Step ${draft.current_step}`)
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
+          to: draft.email,
+          subject: "Your AMASI application is ready to resume",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+              <div style="background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); padding: 32px 24px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="color: #ffffff; margin: 0; font-size: 22px;">AMASI</h1>
+                <p style="color: #ccfbf1; font-size: 13px; margin: 6px 0 0;">Association of Minimal Access Surgeons of India</p>
+              </div>
+              <div style="padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
+                <p style="color: #374151; font-size: 15px;">Dear Applicant,</p>
+                <p style="color: #555; font-size: 14px; line-height: 1.6;">
+                  Good news! The issue with your membership application has been resolved by our admin team.
+                  You were on <strong>${stepLabel}</strong>. Please click below to resume.
+                </p>
+                <div style="text-align: center; margin: 28px 0 16px;">
+                  <a href="${escapeHtml(baseUrl)}/apply"
+                     style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+                    Resume Application
+                  </a>
+                </div>
+                <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
+              </div>
+            </div>
+          `,
+        })
+      } catch (emailErr) {
+        console.error("Resume email error:", emailErr)
+      }
+
+      // Audit log
+      await supabase.from("membership_audit_log").insert({
+        action: "draft_resumed",
+        target_type: "draft_application",
+        target_id: draftId,
+        performed_by: (session as any).email || "admin",
+      }).then(({ error }) => {
+        if (error) console.error("Audit log error:", error)
+      })
+
+      return Response.json({ status: true, message: "Application resumed and applicant notified" })
     }
 
     return Response.json({ status: false, message: `Unknown action: ${action}` }, { status: 400 })

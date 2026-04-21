@@ -342,6 +342,33 @@ export async function GET(request: Request) {
               summary.payment_holds++
             } else {
               // Payment not captured — treat as unpaid, expire and delete
+              // Send expiry notification email
+              try {
+                await resend.emails.send({
+                  from: fromEmail,
+                  to: draft.email,
+                  subject: "Your AMASI membership application has expired",
+                  html: emailWrapper(
+                    "Application Expired",
+                    `
+                    <p style="font-size:14px;color:#374151;">Dear Applicant,</p>
+                    <p style="font-size:14px;color:#555;line-height:1.6;">
+                      Your AMASI membership application started on ${new Date(draft.created_at).toLocaleDateString("en-IN")}
+                      has expired due to inactivity. The payment was not completed.
+                    </p>
+                    <p style="font-size:14px;color:#555;line-height:1.6;">
+                      You are welcome to apply again at any time.
+                    </p>
+                    <div style="text-align:center;margin:24px 0;">
+                      <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Apply Again</a>
+                    </div>
+                    `,
+                  ),
+                })
+              } catch (emailErr) {
+                console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
+              }
+
               const paths = extractStoragePaths(draft.step_data || {})
               if (paths.length > 0) {
                 await supabase.storage.from("uploads").remove(paths)

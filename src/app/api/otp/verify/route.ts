@@ -80,10 +80,11 @@ export async function POST(request: NextRequest) {
         .limit(1)
         .maybeSingle()
       if (draftRow) {
+        // Only return metadata — step_data contains PII and is fetched
+        // separately via GET /api/applications/save-draft after user clicks Resume
         draft = {
           id: draftRow.id,
           current_step: draftRow.current_step,
-          step_data: draftRow.step_data,
           membership_type: draftRow.membership_type,
           status: draftRow.status,
           has_verified_payment: draftRow.has_verified_payment,

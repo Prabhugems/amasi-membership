@@ -248,15 +248,25 @@ export default function ApplyPage() {
   const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>) => {
     if (!emailVerified || !formData.email) return
     try {
+      // Sanitize extracted OCR data — strip non-JSON-safe values
+      const safeUploads = Object.fromEntries(
+        Object.entries(uploads).map(([k, v]) => {
+          const safeExtracted: Record<string, any> = {}
+          for (const [ek, ev] of Object.entries(v.extracted || {})) {
+            if (typeof ev === "string" || typeof ev === "number" || typeof ev === "boolean" || ev === null) {
+              safeExtracted[ek] = ev
+            }
+          }
+          return [k, { status: v.status, extracted: safeExtracted, message: v.message }]
+        })
+      )
       const body: any = {
         email: formData.email,
         current_step: step,
         step_data: {
           formData,
           membership_type: selectedType?.id || formData.membershipType,
-          uploads: Object.fromEntries(
-            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
-          ),
+          uploads: safeUploads,
           ...extraData,
         },
       }
@@ -1379,17 +1389,25 @@ export default function ApplyPage() {
                   <div className="flex gap-3">
                     <Button
                       className="flex-1 h-11 font-semibold"
-                      onClick={() => {
-                        // Restore form data from draft
-                        const stepData = serverDraft.step_data || {}
-                        if (stepData.formData) {
-                          setFormData((prev: ApplicationFormData) => ({ ...prev, ...stepData.formData }))
+                      onClick={async () => {
+                        // Fetch full step_data from authenticated endpoint
+                        try {
+                          const draftRes = await fetch(`/api/applications/save-draft?email=${encodeURIComponent(formData.email)}`)
+                          const draftData = await draftRes.json()
+                          const stepData = draftData?.data?.step_data || {}
+                          if (stepData.formData) {
+                            setFormData((prev: ApplicationFormData) => ({ ...prev, ...stepData.formData }))
+                          }
+                          const mType = stepData.membership_type || serverDraft.membership_type
+                          if (mType) {
+                            const type = getMembershipType(mType)
+                            if (type) setSelectedType(type)
+                          }
+                          toast.success("Application restored. Continue where you left off.")
+                        } catch {
+                          toast.error("Could not restore application data. Please try again.")
+                          return
                         }
-                        if (stepData.membership_type) {
-                          const type = getMembershipType(stepData.membership_type)
-                          if (type) setSelectedType(type)
-                        }
-                        toast.success("Application restored. Continue where you left off.")
                         setResumingDraft(false)
                         // Navigate to the step they were on
                         const stepToPhase: Record<number, Phase> = { 1: "landing", 2: "verify", 3: "upload", 4: "review", 5: "review", 6: "review" }

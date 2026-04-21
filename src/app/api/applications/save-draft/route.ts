@@ -1,18 +1,13 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { getMemberSession } from "@/lib/auth"
 
-async function verifyOtpSession(supabase: ReturnType<typeof createAdminClient>, email: string) {
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-  const { data } = await supabase
-    .from("otp_codes")
-    .select("id")
-    .eq("email", email.toLowerCase())
-    .eq("verified", true)
-    .gte("created_at", twoHoursAgo)
-    .limit(1)
-    .maybeSingle()
-  return !!data
+/** Verify the caller has a valid member JWT cookie matching the given email. */
+async function verifyMemberSession(email: string): Promise<boolean> {
+  const session = await getMemberSession()
+  if (!session) return false
+  return (session.email as string)?.toLowerCase() === email.toLowerCase()
 }
 
 export async function PUT(request: NextRequest) {
@@ -38,9 +33,9 @@ export async function PUT(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Verify OTP session
-    const otpValid = await verifyOtpSession(supabase, email)
-    if (!otpValid) {
+    // Verify member JWT session matches this email
+    const sessionValid = await verifyMemberSession(email)
+    if (!sessionValid) {
       return Response.json({ status: false, message: "Email not verified or session expired" }, { status: 401 })
     }
 
@@ -134,9 +129,9 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Verify OTP session
-    const otpValid = await verifyOtpSession(supabase, email)
-    if (!otpValid) {
+    // Verify member JWT session matches this email
+    const sessionValid = await verifyMemberSession(email)
+    if (!sessionValid) {
       return Response.json({ status: false, message: "Email not verified or session expired" }, { status: 401 })
     }
 
@@ -158,5 +153,47 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Get draft error:", error)
     return Response.json({ status: false, message: "Failed to retrieve draft" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const email = request.nextUrl.searchParams.get("email")
+
+    if (!email || typeof email !== "string") {
+      return Response.json({ status: false, message: "Email is required" }, { status: 400 })
+    }
+
+    // Verify member JWT session matches this email
+    const sessionValid = await verifyMemberSession(email)
+    if (!sessionValid) {
+      return Response.json({ status: false, message: "Email not verified or session expired" }, { status: 401 })
+    }
+
+    const supabase = createAdminClient()
+    const normalizedEmail = email.toLowerCase().trim()
+
+    // Check if draft has a verified payment — block deletion
+    const { data: draft } = await supabase
+      .from("draft_applications")
+      .select("has_verified_payment")
+      .eq("email", normalizedEmail)
+      .maybeSingle()
+
+    if (draft?.has_verified_payment) {
+      return Response.json(
+        { status: false, message: "Cannot delete application with pending payment. Please resume instead." },
+        { status: 400 }
+      )
+    }
+
+    // Delete draft and clean up storage
+    const { deleteDraft } = await import("@/lib/draft-utils")
+    await deleteDraft(normalizedEmail)
+
+    return Response.json({ status: true, message: "Draft deleted" })
+  } catch (error: unknown) {
+    console.error("Delete draft error:", error)
+    return Response.json({ status: false, message: "Failed to delete draft" }, { status: 500 })
   }
 }

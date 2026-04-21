@@ -125,16 +125,8 @@ export async function saveDraft(
   const existing = await getDraftByEmail(input.email)
 
   if (existing) {
-    // Update path — enforce optimistic lock if caller supplied lastUpdatedAt
-    if (input.lastUpdatedAt && existing.updated_at !== input.lastUpdatedAt) {
-      console.warn(
-        "[draft-utils] saveDraft optimistic lock conflict for",
-        input.email,
-      )
-      return null
-    }
-
-    const { data, error } = await supabase
+    // Update path — enforce optimistic lock at DB level if caller supplied lastUpdatedAt
+    let query = supabase
       .from("draft_applications")
       .update({
         phone: input.phone ?? existing.phone,
@@ -146,11 +138,27 @@ export async function saveDraft(
         updated_at: new Date().toISOString(),
       })
       .eq("id", existing.id)
+
+    // Push lock check into WHERE clause to prevent TOCTOU race
+    if (input.lastUpdatedAt) {
+      query = query.eq("updated_at", input.lastUpdatedAt)
+    }
+
+    const { data, error } = await query
       .select("*")
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error("[draft-utils] saveDraft update error:", error.message)
+      return null
+    }
+
+    // If no row returned with optimistic lock, another writer won
+    if (!data && input.lastUpdatedAt) {
+      console.warn(
+        "[draft-utils] saveDraft optimistic lock conflict for",
+        input.email,
+      )
       return null
     }
 

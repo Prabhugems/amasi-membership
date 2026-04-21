@@ -182,14 +182,14 @@ async function fetchMetrics(supabase: ReturnType<typeof createAdminClient>): Pro
 
     // Revenue this week (paid payments)
     supabase
-      .from("payments")
+      .from("membership_payments")
       .select("amount")
       .eq("status", "paid")
       .gte("created_at", oneWeekAgoISO),
 
     // Revenue last week
     supabase
-      .from("payments")
+      .from("membership_payments")
       .select("amount")
       .eq("status", "paid")
       .gte("created_at", twoWeeksAgoISO)

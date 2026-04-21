@@ -1,12 +1,33 @@
 import { NextRequest } from "next/server"
 import Razorpay from "razorpay"
+import { checkRateLimit } from "@/lib/rate-limit"
+
+// Server-side fee lookup — source of truth for membership fees
+const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
+  LM:  { amount: 4230, currency: "INR" },
+  ALM: { amount: 4230, currency: "INR" },
+  ACM: { amount: 4230, currency: "INR" },
+  ILM: { amount: 400,  currency: "USD" },
+}
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`create-order:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+    }
+
     const { amount, currency, referenceNumber, email, name, membershipType } = await request.json()
 
     if (!amount || !referenceNumber) {
       return Response.json({ status: false, message: "Amount and reference number required" }, { status: 400 })
+    }
+
+    // Validate amount against expected fee for membership type
+    const expectedFee = MEMBERSHIP_FEES[membershipType?.toUpperCase()]
+    if (expectedFee && amount < expectedFee.amount) {
+      return Response.json({ status: false, message: `Invalid amount for ${membershipType} membership` }, { status: 400 })
     }
 
     const razorpay = new Razorpay({

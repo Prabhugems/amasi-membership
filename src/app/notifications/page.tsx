@@ -750,11 +750,11 @@ function NotificationsContent() {
 
           {/* Result display */}
           {sendMutation.isSuccess && sendMutation.data && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-400/30 bg-emerald-50 dark:bg-emerald-500/15 p-4 flex items-start gap-3">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium text-emerald-800">Notification sent successfully</p>
-                <p className="text-sm text-emerald-700 mt-1">
+                <p className="font-medium text-emerald-800 dark:text-emerald-300">Notification sent successfully</p>
+                <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-1">
                   Sent: {sendMutation.data.sent} | Failed: {sendMutation.data.failed} | Total: {sendMutation.data.total}
                 </p>
               </div>
@@ -762,11 +762,11 @@ function NotificationsContent() {
           )}
 
           {sendMutation.isError && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-3">
-              <XCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+            <div className="rounded-xl border border-red-200 dark:border-red-400/30 bg-red-50 dark:bg-red-500/15 p-4 flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-red-600 dark:text-red-300 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium text-red-800">Failed to send</p>
-                <p className="text-sm text-red-700 mt-1">{(sendMutation.error as Error).message}</p>
+                <p className="font-medium text-red-800 dark:text-red-300">Failed to send</p>
+                <p className="text-sm text-red-700 dark:text-red-400 mt-1">{(sendMutation.error as Error).message}</p>
               </div>
             </div>
           )}
@@ -836,10 +836,10 @@ function NotificationsContent() {
                         variant="outline"
                         className={
                           log.type === "email"
-                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            ? "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-400/30"
                             : log.type === "whatsapp"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : "bg-purple-50 text-purple-700 border-purple-200"
+                            ? "bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border-green-200 dark:border-green-400/30"
+                            : "bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-400/30"
                         }
                       >
                         {log.type === "email" ? (

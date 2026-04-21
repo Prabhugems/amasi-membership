@@ -663,7 +663,7 @@ export default function ReportsPage() {
                 <p className="text-3xl font-bold">{growth.lastYear.toLocaleString()}</p>
               </div>
               <div className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-lg font-bold ${
-                growth.yoyPct >= 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                growth.yoyPct >= 0 ? "bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300" : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300"
               }`}>
                 {growth.yoyPct >= 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
                 {growth.yoyPct >= 0 ? "+" : ""}{growth.yoyPct}%
@@ -1439,10 +1439,10 @@ function SummaryCard({
   color: "teal" | "blue" | "emerald" | "purple"
 }) {
   const colorMap = {
-    teal: { bg: "bg-teal-100", text: "text-teal-600", ring: "ring-teal-50" },
-    blue: { bg: "bg-blue-100", text: "text-blue-600", ring: "ring-blue-50" },
-    emerald: { bg: "bg-emerald-100", text: "text-emerald-600", ring: "ring-emerald-50" },
-    purple: { bg: "bg-purple-100", text: "text-purple-600", ring: "ring-purple-50" },
+    teal: { bg: "bg-teal-100 dark:bg-teal-500/20", text: "text-teal-600 dark:text-teal-300", ring: "ring-teal-50 dark:ring-teal-500/10" },
+    blue: { bg: "bg-blue-100 dark:bg-blue-500/20", text: "text-blue-600 dark:text-blue-300", ring: "ring-blue-50 dark:ring-blue-500/10" },
+    emerald: { bg: "bg-emerald-100 dark:bg-emerald-500/20", text: "text-emerald-600 dark:text-emerald-300", ring: "ring-emerald-50 dark:ring-emerald-500/10" },
+    purple: { bg: "bg-purple-100 dark:bg-purple-500/20", text: "text-purple-600 dark:text-purple-300", ring: "ring-purple-50 dark:ring-purple-500/10" },
   }
   const c = colorMap[color]
 

@@ -4,7 +4,7 @@ export default function NotFound() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="text-center max-w-md">
-        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-teal-50 text-teal-600">
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-teal-50 dark:bg-teal-500/15 text-teal-600 dark:text-teal-300">
           <span className="text-4xl font-bold">404</span>
         </div>
         <h1 className="text-2xl font-bold tracking-tight">Page not found</h1>

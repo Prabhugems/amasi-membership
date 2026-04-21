@@ -172,6 +172,7 @@ export async function POST(
       try {
         const adminEmail =
           process.env.ADMIN_NOTIFICATION_EMAIL ||
+          process.env.ADMIN_DEFAULT_EMAIL ||
           process.env.ADMIN_EMAIL ||
           "admin@amasi.org"
         const resend = new Resend(process.env.RESEND_API_KEY?.trim())

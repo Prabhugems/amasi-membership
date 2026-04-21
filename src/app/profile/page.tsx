@@ -20,26 +20,27 @@ type Phase = "identify" | "otp" | "view" | "edit" | "review" | "success"
 function ProfileContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams.get("q") || ""
-  const [phase, setPhase] = useState<Phase>("identify")
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [phase, setPhase] = useState<Phase>(initialQuery ? "identify" : "identify")
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null) // null = checking
   const [rawMember, setRawMember] = useState<any>(null)
   const [originalData, setOriginalData] = useState<ProfileFormData | null>(null)
   const [formData, setFormData] = useState<ProfileFormData | null>(null)
   const [changes, setChanges] = useState<ChangeEntry[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(!!initialQuery) // start loading if auto-search
   const [isSaving, setIsSaving] = useState(false)
 
   // Check if admin is logged in — skip OTP if so
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => { if (d.authenticated) setIsAdmin(true) })
-      .catch(() => {})
+      .then((d) => setIsAdmin(!!d.authenticated))
+      .catch(() => setIsAdmin(false))
   }, [])
 
-  // Auto-search if ?q= param is provided (e.g. from search page link)
+  // Auto-search if ?q= param is provided — wait for admin check to finish first
   useEffect(() => {
+    if (isAdmin === null) return // still checking admin status
     if (initialQuery && phase === "identify") {
       setIsLoading(true)
       fetch(`/api/members/search?q=${encodeURIComponent(initialQuery)}`)
@@ -64,7 +65,7 @@ function ProfileContent() {
     const mapped = dbToFormData(member)
     setOriginalData(mapped)
     setFormData({ ...mapped })
-    setPhase(isAdmin ? "view" : "otp")
+    setPhase(isAdmin === true ? "view" : "otp")
   }
 
   const handleEdit = () => {
@@ -179,7 +180,7 @@ function ProfileContent() {
               setError(null)
               setPhase("view")
             }}
-            isAdmin={isAdmin}
+            isAdmin={isAdmin ?? false}
           />
         </>
       )}

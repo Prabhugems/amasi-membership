@@ -28,6 +28,7 @@ const PUBLIC_ROUTES = [
   "/login",
   "/apply",
   "/member",
+  "/membership",
   "/verify",
   "/support",
   "/card",

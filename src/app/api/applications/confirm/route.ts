@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -10,6 +11,12 @@ function getResend() {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`confirm-email:${ip}`, 5, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+    }
+
     const { email, name, referenceNumber, membershipType, fee } = await request.json()
 
     if (!email || !referenceNumber) {

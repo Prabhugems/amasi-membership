@@ -18,6 +18,13 @@ function generateTicketNumber(): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit ticket creation
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`ticket-create:${ip}`, 5, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 })
+    }
+
     const body = await request.json()
     const { name, email, phone, amasi_number, category, subject, description, priority, attachments } = body
 
@@ -120,6 +127,7 @@ export async function POST(request: NextRequest) {
     try {
       const adminEmail =
         process.env.ADMIN_NOTIFICATION_EMAIL ||
+        process.env.ADMIN_DEFAULT_EMAIL ||
         process.env.ADMIN_EMAIL ||
         "admin@amasi.org"
       const resend = new Resend(process.env.RESEND_API_KEY?.trim())

@@ -18,18 +18,18 @@ import Link from "next/link"
 const PAGE_SIZE = 50
 
 const TYPE_FILTER_STYLES: Record<string, { active: string; inactive: string }> = {
-  "": { active: "bg-gray-800 text-white border-gray-800", inactive: "bg-white text-gray-700 border-gray-200 hover:bg-gray-50" },
-  LM: { active: "bg-emerald-600 text-white border-emerald-600", inactive: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
-  ALM: { active: "bg-blue-600 text-white border-blue-600", inactive: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
-  ACM: { active: "bg-purple-600 text-white border-purple-600", inactive: "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100" },
-  ILM: { active: "bg-amber-600 text-white border-amber-600", inactive: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+  "": { active: "bg-gray-800 text-white border-gray-800", inactive: "bg-white dark:bg-gray-500/15 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-400/30 hover:bg-gray-50 dark:hover:bg-gray-500/25" },
+  LM: { active: "bg-emerald-600 text-white border-emerald-600", inactive: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-100 dark:hover:bg-emerald-500/25" },
+  ALM: { active: "bg-blue-600 text-white border-blue-600", inactive: "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-400/30 hover:bg-blue-100 dark:hover:bg-blue-500/25" },
+  ACM: { active: "bg-purple-600 text-white border-purple-600", inactive: "bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-400/30 hover:bg-purple-100 dark:hover:bg-purple-500/25" },
+  ILM: { active: "bg-amber-600 text-white border-amber-600", inactive: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-400/30 hover:bg-amber-100 dark:hover:bg-amber-500/25" },
 }
 
 const TYPE_BADGE_STYLES: Record<string, string> = {
-  LM: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  ALM: "bg-blue-50 text-blue-700 border border-blue-200",
-  ACM: "bg-purple-50 text-purple-700 border border-purple-200",
-  ILM: "bg-amber-50 text-amber-700 border border-amber-200",
+  LM: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30",
+  ALM: "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30",
+  ACM: "bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-400/30",
+  ILM: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30",
 }
 
 const TYPE_FULL_NAMES: Record<string, string> = {
@@ -40,9 +40,9 @@ const TYPE_FULL_NAMES: Record<string, string> = {
 }
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
-  active: "bg-green-50 text-green-700 border border-green-200",
-  inactive: "bg-red-50 text-red-700 border border-red-200",
-  pending: "bg-yellow-50 text-yellow-700 border border-yellow-200",
+  active: "bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-400/30",
+  inactive: "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30",
+  pending: "bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-400/30",
 }
 
 const ZONES = ["North Zone", "South Zone", "East Zone", "West Zone", "Central Zone", "International"]
@@ -590,19 +590,19 @@ export default function MembersPage() {
         {activeFilterCount > 0 && (
           <div className="flex gap-1.5 flex-wrap">
             {stateFilter && (
-              <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-1 font-medium">
+              <span className="inline-flex items-center gap-1 text-xs bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30 rounded-full px-2.5 py-1 font-medium">
                 <MapPin className="h-3 w-3" /> {stateFilter}
                 <button onClick={() => { setStateFilter(""); setPage(0) }} className="hover:text-blue-900"><X className="h-3 w-3" /></button>
               </span>
             )}
             {zoneFilter && (
-              <span className="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-1 font-medium">
+              <span className="inline-flex items-center gap-1 text-xs bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-400/30 rounded-full px-2.5 py-1 font-medium">
                 Zone: {zoneFilter}
                 <button onClick={() => { setZoneFilter(""); setPage(0) }} className="hover:text-violet-900"><X className="h-3 w-3" /></button>
               </span>
             )}
             {statusFilter && (
-              <span className="inline-flex items-center gap-1 text-xs bg-orange-50 text-orange-700 border border-orange-200 rounded-full px-2.5 py-1 font-medium capitalize">
+              <span className="inline-flex items-center gap-1 text-xs bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-400/30 rounded-full px-2.5 py-1 font-medium capitalize">
                 Status: {statusFilter}
                 <button onClick={() => { setStatusFilter(""); setPage(0) }} className="hover:text-orange-900"><X className="h-3 w-3" /></button>
               </span>

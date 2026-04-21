@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "5mb",
     },
+    optimizePackageImports: ["lucide-react", "recharts", "framer-motion"],
   },
   async headers() {
     return [

@@ -4,7 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limit"
 import { randomInt } from "node:crypto"
 
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
-const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID
+const MSG91_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || process.env.MSG91_TEMPLATE_ID
 
 function generateOTP(): string {
   return String(randomInt(100000, 999999))

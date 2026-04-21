@@ -45,8 +45,8 @@ const MEMBERSHIP_TYPE_LABELS: Record<string, string> = {
 // ─── Confidence meter component ─────────────────────────────────────────────
 function ConfidenceMeter({ score, label, size = "md" }: { score: number; label?: string; size?: "sm" | "md" }) {
   const color = score >= 80 ? "bg-emerald-500" : score >= 50 ? "bg-amber-500" : "bg-red-500"
-  const textColor = score >= 80 ? "text-emerald-700" : score >= 50 ? "text-amber-700" : "text-red-700"
-  const bgColor = score >= 80 ? "bg-emerald-100" : score >= 50 ? "bg-amber-100" : "bg-red-100"
+  const textColor = score >= 80 ? "text-emerald-700 dark:text-emerald-300" : score >= 50 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"
+  const bgColor = score >= 80 ? "bg-emerald-100 dark:bg-emerald-500/20" : score >= 50 ? "bg-amber-100 dark:bg-amber-500/20" : "bg-red-100 dark:bg-red-500/20"
   const h = size === "sm" ? "h-1.5" : "h-2.5"
 
   return (
@@ -99,8 +99,8 @@ function ApplicationTimeline({ app }: { app: any }) {
             <div className="flex flex-col items-center min-w-[100px]">
               <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all ${
                 step.done
-                  ? app.status === "rejected" && i >= 2 ? "border-red-400 bg-red-50 text-red-600" : "border-emerald-400 bg-emerald-50 text-emerald-600"
-                  : "border-gray-200 bg-gray-50 text-gray-400"
+                  ? app.status === "rejected" && i >= 2 ? "border-red-400 bg-red-50 dark:bg-red-500/15 text-red-600 dark:text-red-300" : "border-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-300"
+                  : "border-gray-200 dark:border-gray-400/30 bg-gray-50 dark:bg-gray-500/15 text-gray-400"
               }`}>
                 <StepIcon className="h-3.5 w-3.5" />
               </div>
@@ -158,10 +158,10 @@ function CompareRow({ label, formValue, ocrValue }: { label: string; formValue: 
   const mismatch = formValue && ocrValue && !match
 
   return (
-    <tr className={mismatch ? "bg-red-50" : ""}>
+    <tr className={mismatch ? "bg-red-50 dark:bg-red-500/15" : ""}>
       <td className="px-3 py-1.5 text-xs font-medium text-muted-foreground whitespace-nowrap">{label}</td>
       <td className="px-3 py-1.5 text-xs">{formValue || <span className="text-muted-foreground/50">--</span>}</td>
-      <td className={`px-3 py-1.5 text-xs ${mismatch ? "text-red-700 font-semibold" : ""}`}>
+      <td className={`px-3 py-1.5 text-xs ${mismatch ? "text-red-700 dark:text-red-300 font-semibold" : ""}`}>
         {ocrValue || <span className="text-muted-foreground/50">--</span>}
         {match && <CheckCircle className="inline h-3 w-3 ml-1 text-emerald-500" />}
         {mismatch && <AlertCircle className="inline h-3 w-3 ml-1 text-red-500" />}
@@ -778,7 +778,7 @@ export default function PendingPage() {
                         app.status === "rejected" ? "destructive" :
                         app.status === "need_clarification" || app.status === "resubmit_requested" ? "outline" :
                         "warning"
-                      } className={`text-xs ${app.status === "need_clarification" ? "border-orange-300 text-orange-700 bg-orange-50 soft-pulse" : app.status === "resubmit_requested" ? "border-amber-300 text-amber-700 bg-amber-50 soft-pulse" : ["pending_review", "submitted", "pending"].includes(app.status) ? "soft-pulse" : ""}`}>
+                      } className={`text-xs ${app.status === "need_clarification" ? "border-orange-300 dark:border-orange-400/30 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15 soft-pulse" : app.status === "resubmit_requested" ? "border-amber-300 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 soft-pulse" : ["pending_review", "submitted", "pending"].includes(app.status) ? "soft-pulse" : ""}`}>
                         {app.status === "ai_approved" ? "AI Approved" :
                          app.status === "pending_review" ? "Needs Review" :
                          app.status === "submitted" ? "Submitted" :
@@ -796,22 +796,22 @@ export default function PendingPage() {
                             <ConfidenceMeter score={aiScore} size="sm" />
                           </div>
                           <span className={`text-[10px] font-bold ${
-                            aiScore >= 80 ? "text-emerald-700" : aiScore >= 50 ? "text-amber-700" : "text-red-700"
+                            aiScore >= 80 ? "text-emerald-700 dark:text-emerald-300" : aiScore >= 50 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"
                           }`}>{aiScore}%</span>
                         </div>
                       )}
                       {app.ai_confidence && aiScore < 0 && (
                         <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                          app.ai_confidence.includes("high") ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                          app.ai_confidence.includes("medium") ? "bg-amber-50 text-amber-700 border-amber-200" :
-                          "bg-red-50 text-red-700 border-red-200"
+                          app.ai_confidence.includes("high") ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30" :
+                          app.ai_confidence.includes("medium") ? "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-400/30" :
+                          "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-400/30"
                         }`}>
                           <Sparkles className="h-3 w-3" />
                           {app.ai_confidence}
                         </span>
                       )}
                       {app.needs_manual_review && (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 soft-pulse">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30 soft-pulse">
                           <AlertCircle className="h-3 w-3" />
                           Manual Review
                         </span>
@@ -845,20 +845,20 @@ export default function PendingPage() {
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setShowActions(null)} />
                             <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl border bg-card shadow-xl py-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-emerald-50 text-emerald-700 flex items-center gap-2.5 transition-colors"
+                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 flex items-center gap-2.5 transition-colors"
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode(null); setApproveNotes(""); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
                                 <CheckCircle className="h-4 w-4" /> Approve
                               </button>
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-blue-50 text-blue-700 flex items-center gap-2.5 transition-colors"
+                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-2.5 transition-colors"
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("clarification"); setActionMessage(""); setApproveNotes(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
                                 <MessageSquare className="h-4 w-4" /> Need Clarification
                               </button>
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-amber-50 text-amber-700 flex items-center gap-2.5 transition-colors"
+                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-500/15 text-amber-700 dark:text-amber-300 flex items-center gap-2.5 transition-colors"
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("resubmit"); setActionMessage(""); setApproveNotes(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
                                 <RotateCcw className="h-4 w-4" /> Ask to Resubmit
                               </button>
                               <div className="border-t my-1" />
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-red-50 text-red-600 flex items-center gap-2.5 transition-colors"
+                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-red-50 dark:hover:bg-red-500/15 text-red-600 dark:text-red-300 flex items-center gap-2.5 transition-colors"
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("reject"); setRejectReason(""); setApproveNotes(""); setActionMessage(""); setInternalNote(""); setShowNotes(null) }}>
                                 <XCircle className="h-4 w-4" /> Reject
                               </button>
@@ -892,8 +892,8 @@ export default function PendingPage() {
 
                     {/* AI Flags with confidence meters */}
                     {(aiFlags.length > 0 || app.ai_checks) && (
-                      <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 space-y-4">
-                        <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
+                      <div className="bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-4">
+                        <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
                           <Sparkles className="h-4 w-4" /> AI Verification Results
                         </p>
 
@@ -903,7 +903,7 @@ export default function PendingPage() {
                             {app.ai_checks.map((check: any, i: number) => (
                               <div key={i} className="flex items-center gap-3">
                                 <div className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                                  check.passed ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600"
+                                  check.passed ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300" : "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300"
                                 }`}>
                                   {check.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                                 </div>
@@ -915,23 +915,23 @@ export default function PendingPage() {
 
                         {/* Overall score */}
                         {aiScore >= 0 && (
-                          <div className="flex items-center gap-3 pt-2 border-t border-amber-200">
-                            <span className="text-xs font-bold text-amber-800">Overall Score</span>
+                          <div className="flex items-center gap-3 pt-2 border-t border-amber-200 dark:border-amber-400/30">
+                            <span className="text-xs font-bold text-amber-800 dark:text-amber-300">Overall Score</span>
                             <div className="flex-1">
                               <ConfidenceMeter score={aiScore} />
                             </div>
                             <span className={`text-sm font-bold ${
-                              aiScore >= 80 ? "text-emerald-700" : aiScore >= 50 ? "text-amber-700" : "text-red-700"
+                              aiScore >= 80 ? "text-emerald-700 dark:text-emerald-300" : aiScore >= 50 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"
                             }`}>{aiScore}%</span>
                           </div>
                         )}
 
                         {/* Flag list */}
                         {aiFlags.length > 0 && (
-                          <div className="space-y-1 pt-2 border-t border-amber-200">
-                            <p className="text-xs font-semibold text-amber-700 mb-1.5">Flagged Issues</p>
+                          <div className="space-y-1 pt-2 border-t border-amber-200 dark:border-amber-400/30">
+                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1.5">Flagged Issues</p>
                             {aiFlags.map((flag: string, i: number) => (
-                              <p key={i} className="text-xs text-amber-700 flex items-start gap-2">
+                              <p key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
                                 <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
                                 {flag}
                               </p>
@@ -1040,7 +1040,7 @@ export default function PendingPage() {
                                 <button
                                   onClick={() => verifyNmc(app.id, app.mci_council_number, app.mci_council_state)}
                                   disabled={nmcResults[app.id]?.loading}
-                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30 hover:bg-blue-100 dark:hover:bg-blue-500/25 transition-colors disabled:opacity-50"
                                 >
                                   {nmcResults[app.id]?.loading ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -1051,15 +1051,15 @@ export default function PendingPage() {
                                 </button>
                                 {nmcResults[app.id] && !nmcResults[app.id].loading && (
                                   nmcResults[app.id].verified ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 px-2 py-1 rounded-full">
                                       <CheckCircle className="h-3 w-3" /> NMC Verified
                                     </span>
                                   ) : nmcResults[app.id].reachable === false ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 px-2 py-1 rounded-full">
                                       <AlertCircle className="h-3 w-3" /> Verification unavailable
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 px-2 py-1 rounded-full">
                                       <XCircle className="h-3 w-3" /> Not found
                                     </span>
                                   )
@@ -1068,7 +1068,7 @@ export default function PendingPage() {
                               {nmcResults[app.id]?.verified && nmcResults[app.id].doctors && nmcResults[app.id].doctors!.length > 0 && (
                                 <div className="mt-2 space-y-1.5">
                                   {nmcResults[app.id].doctors!.map((doc: any, idx: number) => (
-                                    <div key={idx} className="text-xs bg-emerald-50/60 border border-emerald-100 rounded-lg p-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                    <div key={idx} className="text-xs bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-400/20 rounded-lg p-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
                                       <span><span className="text-muted-foreground">Name:</span> <strong>{doc.name}</strong></span>
                                       <span><span className="text-muted-foreground">Council:</span> {doc.council}</span>
                                       <span><span className="text-muted-foreground">Degree:</span> {doc.degree}</span>
@@ -1085,8 +1085,8 @@ export default function PendingPage() {
                           <div className="pt-2 border-t">
                             <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
                               app.payment_status === "paid"
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-red-50 text-red-700 border border-red-200"
+                                ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30"
+                                : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30"
                             }`}>
                               {app.payment_status === "paid" ? "Payment Received" : "Payment Pending"}
                             </span>
@@ -1281,24 +1281,24 @@ export default function PendingPage() {
 
                     {/* Admin notes for clarification/resubmit */}
                     {app.review_notes && (app.status === "need_clarification" || app.status === "resubmit_requested") && (
-                      <div className={`border rounded-xl p-4 ${app.status === "need_clarification" ? "bg-blue-50 border-blue-200" : "bg-amber-50 border-amber-200"}`}>
-                        <p className={`text-sm font-bold mb-1 flex items-center gap-2 ${app.status === "need_clarification" ? "text-blue-800" : "text-amber-800"}`}>
+                      <div className={`border rounded-xl p-4 ${app.status === "need_clarification" ? "bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-400/30" : "bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-400/30"}`}>
+                        <p className={`text-sm font-bold mb-1 flex items-center gap-2 ${app.status === "need_clarification" ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
                           {app.status === "need_clarification" ? <MessageSquare className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
                           {app.status === "need_clarification" ? "Clarification Requested" : "Resubmission Requested"}
                         </p>
-                        <p className={`text-sm ${app.status === "need_clarification" ? "text-blue-700" : "text-amber-700"}`}>{app.review_notes}</p>
+                        <p className={`text-sm ${app.status === "need_clarification" ? "text-blue-700 dark:text-blue-300" : "text-amber-700 dark:text-amber-300"}`}>{app.review_notes}</p>
                       </div>
                     )}
 
                     {/* Assigned number */}
                     {app.assigned_amasi_number && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
-                          <Shield className="h-5 w-5 text-emerald-600" />
+                      <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 rounded-xl p-4 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
+                          <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-emerald-800">AMASI #{app.assigned_amasi_number}</p>
-                          <p className="text-xs text-emerald-600">{app.review_notes}</p>
+                          <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">AMASI #{app.assigned_amasi_number}</p>
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400">{app.review_notes}</p>
                         </div>
                       </div>
                     )}
@@ -1361,12 +1361,12 @@ export default function PendingPage() {
 
                     {/* Need Clarification form */}
                     {actionMode === "clarification" && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+                      <div className="bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-400/30 rounded-xl p-4 space-y-3">
                         <div className="flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 text-blue-600" />
-                          <Label className="text-sm font-semibold text-blue-700">Need Clarification</Label>
+                          <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                          <Label className="text-sm font-semibold text-blue-700 dark:text-blue-300">Need Clarification</Label>
                         </div>
-                        <p className="text-xs text-blue-600">The applicant will receive an email with your message asking for additional information.</p>
+                        <p className="text-xs text-blue-600 dark:text-blue-400">The applicant will receive an email with your message asking for additional information.</p>
                         <Textarea
                           value={actionMessage}
                           onChange={(e) => setActionMessage(e.target.value)}
@@ -1390,12 +1390,12 @@ export default function PendingPage() {
 
                     {/* Ask to Resubmit form */}
                     {actionMode === "resubmit" && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                      <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-3">
                         <div className="flex items-center gap-2">
-                          <RotateCcw className="h-4 w-4 text-amber-600" />
-                          <Label className="text-sm font-semibold text-amber-700">Ask to Resubmit</Label>
+                          <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                          <Label className="text-sm font-semibold text-amber-700 dark:text-amber-300">Ask to Resubmit</Label>
                         </div>
-                        <p className="text-xs text-amber-600">The applicant will receive an email with instructions to correct and resubmit their application.</p>
+                        <p className="text-xs text-amber-600 dark:text-amber-400">The applicant will receive an email with instructions to correct and resubmit their application.</p>
                         <Textarea
                           value={actionMessage}
                           onChange={(e) => setActionMessage(e.target.value)}
@@ -1419,10 +1419,10 @@ export default function PendingPage() {
 
                     {/* Reject form */}
                     {actionMode === "reject" && (
-                      <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                      <div className="bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 rounded-xl p-4 space-y-3">
                         <div className="flex items-center gap-2">
-                          <XCircle className="h-4 w-4 text-red-600" />
-                          <Label className="text-sm font-semibold text-red-700">Reject Application</Label>
+                          <XCircle className="h-4 w-4 text-red-600 dark:text-red-300" />
+                          <Label className="text-sm font-semibold text-red-700 dark:text-red-300">Reject Application</Label>
                         </div>
                         <Textarea
                           value={rejectReason}
@@ -1448,8 +1448,8 @@ export default function PendingPage() {
 
                     {/* Approve with notes (show when no action mode is selected) */}
                     {!actionMode && isActionable(app.status) && (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
-                        <Label className="text-sm font-semibold text-emerald-700">Approval Notes (optional)</Label>
+                      <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 rounded-xl p-4 space-y-3">
+                        <Label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Approval Notes (optional)</Label>
                         <Input
                           value={approveNotes}
                           onChange={(e) => setApproveNotes(e.target.value)}

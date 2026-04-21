@@ -34,16 +34,16 @@ interface AuditEntry {
 }
 
 const ACTION_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string; bg: string }> = {
-  approve_application: { label: "Approved Application", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
-  reject_application: { label: "Rejected Application", icon: XCircle, color: "text-red-600", bg: "bg-red-50" },
-  request_clarification: { label: "Requested Clarification", icon: MailQuestion, color: "text-blue-600", bg: "bg-blue-50" },
-  request_resubmit: { label: "Requested Resubmission", icon: RotateCcw, color: "text-amber-600", bg: "bg-amber-50" },
-  add_internal_note: { label: "Added Internal Note", icon: StickyNote, color: "text-gray-600", bg: "bg-gray-50" },
-  approve_upgrade: { label: "Approved Upgrade", icon: ArrowUpCircle, color: "text-emerald-600", bg: "bg-emerald-50" },
-  reject_upgrade: { label: "Rejected Upgrade", icon: XCircle, color: "text-red-600", bg: "bg-red-50" },
-  reply_ticket: { label: "Replied to Ticket", icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
-  close_ticket: { label: "Closed Ticket", icon: CheckCircle2, color: "text-gray-600", bg: "bg-gray-50" },
-  update_ticket_status: { label: "Updated Ticket Status", icon: FileEdit, color: "text-violet-600", bg: "bg-violet-50" },
+  approve_application: { label: "Approved Application", icon: CheckCircle2, color: "text-emerald-600 dark:text-emerald-300", bg: "bg-emerald-50 dark:bg-emerald-500/15" },
+  reject_application: { label: "Rejected Application", icon: XCircle, color: "text-red-600 dark:text-red-300", bg: "bg-red-50 dark:bg-red-500/15" },
+  request_clarification: { label: "Requested Clarification", icon: MailQuestion, color: "text-blue-600 dark:text-blue-300", bg: "bg-blue-50 dark:bg-blue-500/15" },
+  request_resubmit: { label: "Requested Resubmission", icon: RotateCcw, color: "text-amber-600 dark:text-amber-300", bg: "bg-amber-50 dark:bg-amber-500/15" },
+  add_internal_note: { label: "Added Internal Note", icon: StickyNote, color: "text-gray-600 dark:text-gray-300", bg: "bg-gray-50 dark:bg-gray-500/15" },
+  approve_upgrade: { label: "Approved Upgrade", icon: ArrowUpCircle, color: "text-emerald-600 dark:text-emerald-300", bg: "bg-emerald-50 dark:bg-emerald-500/15" },
+  reject_upgrade: { label: "Rejected Upgrade", icon: XCircle, color: "text-red-600 dark:text-red-300", bg: "bg-red-50 dark:bg-red-500/15" },
+  reply_ticket: { label: "Replied to Ticket", icon: MessageSquare, color: "text-blue-600 dark:text-blue-300", bg: "bg-blue-50 dark:bg-blue-500/15" },
+  close_ticket: { label: "Closed Ticket", icon: CheckCircle2, color: "text-gray-600 dark:text-gray-300", bg: "bg-gray-50 dark:bg-gray-500/15" },
+  update_ticket_status: { label: "Updated Ticket Status", icon: FileEdit, color: "text-violet-600 dark:text-violet-300", bg: "bg-violet-50 dark:bg-violet-500/15" },
 }
 
 const ENTITY_TYPES = ["application", "member", "ticket", "upgrade", "notification"]
@@ -111,7 +111,7 @@ export default function AuditPage() {
       {/* Header */}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20">
             <ScrollText className="h-5 w-5 text-violet-600" />
           </div>
           <div>
@@ -202,7 +202,7 @@ export default function AuditPage() {
                         label: entry.action,
                         icon: HelpCircle,
                         color: "text-gray-500",
-                        bg: "bg-gray-50",
+                        bg: "bg-gray-50 dark:bg-gray-500/15",
                       }
                       const IconComp = config.icon
 

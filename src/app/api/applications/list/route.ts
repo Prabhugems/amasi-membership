@@ -1,7 +1,13 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { getAdminSession } from "@/lib/auth"
 
 export async function GET(request: NextRequest) {
+  const session = await getAdminSession()
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   const status = request.nextUrl.searchParams.get("status") || "all"
   const limit = parseInt(request.nextUrl.searchParams.get("limit") || "50")
   const offset = parseInt(request.nextUrl.searchParams.get("offset") || "0")

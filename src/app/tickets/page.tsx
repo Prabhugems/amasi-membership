@@ -60,19 +60,19 @@ function TicketsContent() {
             label="Open"
             count={stats.open}
             active={stats.open > 0}
-            color="bg-amber-100 text-amber-800"
+            color="bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300"
           />
           <StatPill
             label="In Progress"
             count={stats.in_progress}
             active={stats.in_progress > 0}
-            color="bg-blue-100 text-blue-800"
+            color="bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300"
           />
           <StatPill
             label="Resolved"
             count={stats.resolved}
             active={stats.resolved > 0}
-            color="bg-emerald-100 text-emerald-800"
+            color="bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300"
           />
           <div className="h-5 w-px bg-border mx-1" />
           <span className="text-xs text-muted-foreground font-medium">

@@ -60,6 +60,18 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
+    // Dedup check — prevent double-recording the same payment
+    const { data: existingPayment } = await supabase
+      .from("membership_payments")
+      .select("id")
+      .eq("gateway_payment_id", razorpay_payment_id)
+      .limit(1)
+      .maybeSingle()
+
+    if (existingPayment) {
+      return Response.json({ status: true, message: "Payment already recorded", paymentId: razorpay_payment_id })
+    }
+
     // Record payment
     const { error: insertError } = await supabase.from("membership_payments").insert({
       application_id: applicationId || null,

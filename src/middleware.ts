@@ -33,6 +33,7 @@ const PUBLIC_ROUTES = [
   "/support",
   "/card",
   "/profile",
+  "/directory",
 ]
 
 const PUBLIC_API_ROUTES = [
@@ -48,6 +49,7 @@ const PUBLIC_API_ROUTES = [
   "/api/card",
   "/api/certificate",
   "/api/members/search",
+  "/api/directory",
   "/api/members/upload",
   "/api/nmc",
   "/api/webhooks/",

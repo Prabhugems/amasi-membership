@@ -106,7 +106,7 @@ export const MEMBERSHIP_TYPES: MembershipType[] = [
     fee: 300,
     feeCurrency: "USD",
     processingFeePercent: 0,
-  processingFeeFixed: 100,
+    processingFeeFixed: 0, // No processing fee for ILM — ₹100 fee is INR-only
     eligibility: "Surgeons practicing outside India",
     description: "For international surgeons interested in minimal access surgery.",
     requiredDocs: ["active_license", "pg_degree_certificate", "profile"],

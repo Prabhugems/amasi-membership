@@ -107,7 +107,7 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
     if (regMembers && regMembers.length > 0) {
       return {
         isDuplicate: true,
-        message: `Registration number ${regNum} is already linked to AMASI member #${regMembers[0].amasi_number}.`,
+        message: `MCI/Council registration number ${regNum} is already linked to AMASI member #${regMembers[0].amasi_number}. If this is your number, please contact support.`,
       }
     }
   }

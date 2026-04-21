@@ -205,6 +205,17 @@ export default function ApplyPage() {
   // Track fields that were empty when review page first loaded — keeps inline fields visible while typing
   const [reviewMissingFields, setReviewMissingFields] = useState<Set<string> | null>(null)
 
+  // Capture missing fields once when entering review phase
+  useEffect(() => {
+    if (phase === "review" && reviewMissingFields === null) {
+      const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
+      setReviewMissingFields(new Set(Object.keys(allErrors)))
+    }
+    if (phase !== "review") {
+      setReviewMissingFields(null)
+    }
+  }, [phase])
+
   // Auto-save form data to localStorage
   useEffect(() => {
     localStorage.setItem("amasi_apply_form", JSON.stringify(formData))
@@ -854,7 +865,8 @@ export default function ApplyPage() {
           }
         } else if (phase === "review") {
           if (submitting) return
-          if (termsAccepted) handleSubmit()
+          const reviewErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
+          if (termsAccepted && Object.keys(reviewErrors).length === 0) handleSubmit()
         }
       }
     }
@@ -1991,10 +2003,6 @@ export default function ApplyPage() {
     const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
     const missingCount = Object.keys(allErrors).length
 
-    // Capture missing fields once when review page first loads
-    if (reviewMissingFields === null) {
-      setReviewMissingFields(new Set(Object.keys(allErrors)))
-    }
     const wasInitiallyMissing = (field: string) => reviewMissingFields?.has(field) ?? Object.keys(allErrors).includes(field)
 
     // Track all required fields for progress
@@ -2146,7 +2154,10 @@ export default function ApplyPage() {
                 )}
                 {wasInitiallyMissing("eduPostgradUniversity") && type?.requiresPG && <StableFieldInput field="eduPostgradUniversity" label="PG University" required value={formData.eduPostgradUniversity || ""} error={errors.eduPostgradUniversity} placeholder={PLACEHOLDERS.eduPostgradUniversity || ""} isFilled={!!formData.eduPostgradUniversity} onChange={updateField} />}
                 {wasInitiallyMissing("eduPostgradYear") && type?.requiresPG && <StableSelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required value={formData.eduPostgradYear || ""} error={errors.eduPostgradYear} isFilled={!!formData.eduPostgradYear} onChange={updateField} />}
-                {wasInitiallyMissing("mciCouncilNumber") && formData.membershipType !== "ILM" && <StableFieldInput field="mciCouncilNumber" label="MCI/Council Number" required value={formData.mciCouncilNumber || ""} error={errors.mciCouncilNumber} placeholder={PLACEHOLDERS.mciCouncilNumber || ""} isFilled={!!formData.mciCouncilNumber} onChange={updateField} />}
+                {wasInitiallyMissing("mciCouncilNumber") && formData.membershipType !== "ILM" && <StableFieldInput field="mciCouncilNumber" label="MCI/Council Number" required value={formData.mciCouncilNumber || ""} error={errors.mciCouncilNumber} placeholder="e.g. 2021055120" isFilled={!!formData.mciCouncilNumber} onChange={updateField} />}
+                {wasInitiallyMissing("mciCouncilState") && formData.membershipType !== "ILM" && (
+                  <StableSelectInput field="mciCouncilState" label="Council State" options={INDIAN_STATES} required value={formData.mciCouncilState || ""} error={errors.mciCouncilState} isFilled={!!formData.mciCouncilState} onChange={updateField} />
+                )}
                 {wasInitiallyMissing("asiMembershipNo") && type?.requiresASI && <StableFieldInput field="asiMembershipNo" label="ASI Membership No" required value={formData.asiMembershipNo || ""} error={errors.asiMembershipNo} placeholder={PLACEHOLDERS.asiMembershipNo || ""} isFilled={!!formData.asiMembershipNo} onChange={updateField} />}
               </div>
             </CardContent>
@@ -2733,5 +2744,7 @@ export default function ApplyPage() {
     )
   }
 
+  // Fallback — should never reach here, reset to start
+  setPhase("check")
   return null
 }

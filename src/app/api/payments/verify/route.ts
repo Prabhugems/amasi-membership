@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       applicationId,
       amount,
       currency,
+      email,
     } = body as Record<string, any>
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
         processing_fee: 100,
         processing_fee_account: "events360",
         note: "₹100 processing fee (incl GST) to be settled to Events 360",
+        applicant_email: email || null,
       },
     })
 

@@ -576,6 +576,7 @@ export default function ApplyPage() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [refNumber, setRefNumber] = useState("")
+  const [existingPayment, setExistingPayment] = useState<{ gateway_payment_id: string; reference_number: string } | null>(null)
 
   const [approvalResult, setApprovalResult] = useState<{ approved: boolean; amasiNumber?: number } | null>(null)
 
@@ -597,6 +598,45 @@ export default function ApplyPage() {
     }
 
     setSubmitting(true)
+
+    // If we have an existing payment (recovery flow), skip payment and go straight to submit
+    if (existingPayment) {
+      const ref = refNumber || generateRefNumber()
+      if (!refNumber) setRefNumber(ref)
+
+      const uploadData = Object.fromEntries(
+        Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
+      )
+
+      try {
+        const submitRes = await fetch("/api/applications/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            formData,
+            referenceNumber: ref,
+            paymentId: existingPayment.gateway_payment_id,
+            uploads: uploadData,
+          }),
+        })
+        const submitData = await submitRes.json()
+
+        if (submitData.status) {
+          setApprovalResult({
+            approved: submitData.approved,
+            amasiNumber: submitData.amasiNumber,
+          })
+          setPhase("success")
+          toast.success(submitData.approved ? "Membership approved!" : "Application submitted for review!")
+        } else {
+          toast.error(submitData.message || "Failed to submit application")
+        }
+      } catch {
+        toast.error("Something went wrong. Please try again.")
+      }
+      setSubmitting(false)
+      return
+    }
 
     // Check for duplicate. On network/parse failure, abort and let the user retry —
     // silently proceeding would bypass duplicate detection and allow a double payment.
@@ -712,6 +752,7 @@ export default function ApplyPage() {
               referenceNumber: ref,
               amount: totalAmount,
               currency: fee?.currency === "$" ? "USD" : "INR",
+              email: formData.email,
             }),
           })
           const verifyData = await verifyRes.json()
@@ -1268,6 +1309,18 @@ export default function ApplyPage() {
               // Show resume prompt instead of proceeding
               setResumingDraft(true)
             } else {
+              // Check for orphaned payment (paid but no application submitted)
+              try {
+                const payRes = await fetch(`/api/payments/check-existing?email=${encodeURIComponent(formData.email)}`)
+                const payData = await payRes.json()
+                if (payData.found && payData.payment) {
+                  setExistingPayment(payData.payment)
+                  setRefNumber(payData.payment.reference_number || "")
+                  toast.info("Your previous payment was found. You won't be charged again.")
+                }
+              } catch {
+                // Non-blocking — proceed normally if check fails
+              }
               setVerifyStep("done")
               // Save initial draft to server
               saveDraftToServer(2, { email_verified: true })

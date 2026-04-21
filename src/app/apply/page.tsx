@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -202,6 +202,8 @@ export default function ApplyPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [editSection, setEditSection] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Track fields that were empty when review page first loaded — keeps inline fields visible while typing
+  const [reviewMissingFields, setReviewMissingFields] = useState<Set<string> | null>(null)
 
   // Auto-save form data to localStorage
   useEffect(() => {
@@ -1989,12 +1991,11 @@ export default function ApplyPage() {
     const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
     const missingCount = Object.keys(allErrors).length
 
-    // Track which fields were initially empty when review loaded — keep them visible while editing
-    const initiallyMissingRef = useRef<Set<string> | null>(null)
-    if (initiallyMissingRef.current === null) {
-      initiallyMissingRef.current = new Set(Object.keys(allErrors))
+    // Capture missing fields once when review page first loads
+    if (reviewMissingFields === null) {
+      setReviewMissingFields(new Set(Object.keys(allErrors)))
     }
-    const wasInitiallyMissing = (field: string) => initiallyMissingRef.current?.has(field) ?? false
+    const wasInitiallyMissing = (field: string) => reviewMissingFields?.has(field) ?? Object.keys(allErrors).includes(field)
 
     // Track all required fields for progress
     const requiredFields: { key: string; label: string }[] = [
@@ -2043,7 +2044,7 @@ export default function ApplyPage() {
         animate={{ opacity: 1, x: 0 }}
         className="max-w-2xl mx-auto px-4 pt-4 space-y-4"
       >
-        <button onClick={() => setPhase("upload")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+        <button onClick={() => { setPhase("upload"); setReviewMissingFields(null) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
           <ArrowLeft className="h-4 w-4" /> Back to Upload
         </button>
 

@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const rl = await checkRateLimit(`otp:${ip}`, 5, 15 * 60 * 1000)
     if (!rl.allowed) return Response.json({ error: "Too many attempts" }, { status: 429 })
 
-    const { email } = await request.json()
+    const { email, phone, membershipType } = await request.json()
 
     if (!email || !email.includes("@")) {
       return Response.json({ status: false, message: "Valid email is required" }, { status: 400 })
@@ -83,6 +83,32 @@ export async function POST(request: NextRequest) {
     if (emailError) {
       console.error("Email send error:", emailError)
       return Response.json({ status: false, message: "Failed to send email. Please try again." }, { status: 500 })
+    }
+
+    // Create or update draft application on OTP send — earliest capture point
+    try {
+      const { data: existingDraft } = await supabase
+        .from("draft_applications")
+        .select("id")
+        .eq("email", email.toLowerCase())
+        .maybeSingle()
+
+      if (!existingDraft) {
+        await supabase.from("draft_applications").insert({
+          email: email.toLowerCase(),
+          phone: phone || null,
+          membership_type: membershipType || null,
+          current_step: 2,
+          status: "in_progress",
+          step_data: { otp_sent: true, otp_sent_at: new Date().toISOString() },
+        })
+      } else {
+        await supabase.from("draft_applications")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", existingDraft.id)
+      }
+    } catch {
+      // Draft creation failure is non-blocking — OTP still sent
     }
 
     return Response.json({ status: true, message: "OTP sent to your email" })

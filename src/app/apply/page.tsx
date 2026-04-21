@@ -765,35 +765,60 @@ export default function ApplyPage() {
 
           toast.success("Payment successful!")
 
-          // Step 4: Submit application + trigger AI/manual approval
+          // Save draft immediately with payment info — safety net before submit
+          saveDraftToServer(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true })
+
+          // Step 4: Submit application with retry (up to 3 attempts)
           const uploadData = Object.fromEntries(
             Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
           )
 
-          const submitRes = await fetch("/api/applications/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              formData,
-              referenceNumber: ref,
-              paymentId: response.razorpay_payment_id,
-              uploads: uploadData,
-            }),
-          })
-          const submitData = await submitRes.json()
+          const submitPayload = {
+            formData,
+            referenceNumber: ref,
+            paymentId: response.razorpay_payment_id,
+            uploads: uploadData,
+          }
 
-          if (submitData.status) {
-            setApprovalResult({
-              approved: submitData.approved,
-              amasiNumber: submitData.amasiNumber,
-            })
-            setPhase("success")
-            toast.success(submitData.approved ? "Membership approved!" : "Application submitted for review!")
-          } else {
-            toast.error(submitData.message || "Failed to submit application")
+          let submitSuccess = false
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const submitRes = await fetch("/api/applications/submit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(submitPayload),
+              })
+              const submitData = await submitRes.json()
+
+              if (submitData.status) {
+                setApprovalResult({
+                  approved: submitData.approved,
+                  amasiNumber: submitData.amasiNumber,
+                })
+                setPhase("success")
+                toast.success(submitData.approved ? "Membership approved!" : "Application submitted for review!")
+                submitSuccess = true
+                break
+              } else {
+                if (attempt < 3) {
+                  await new Promise(r => setTimeout(r, 2000 * attempt))
+                } else {
+                  toast.error(submitData.message || "Failed to submit application")
+                }
+              }
+            } catch {
+              if (attempt < 3) {
+                toast.info(`Retrying submission (attempt ${attempt + 1}/3)...`)
+                await new Promise(r => setTimeout(r, 2000 * attempt))
+              }
+            }
+          }
+
+          if (!submitSuccess) {
+            toast.error("Your payment is safe but submission failed. We have saved your application. Please try again or contact support.")
           }
         } catch {
-          toast.error("Something went wrong. Please contact support.")
+          toast.error("Something went wrong. Your payment is safe — please try again or contact support.")
         }
         setSubmitting(false)
       },
@@ -1187,15 +1212,22 @@ export default function ApplyPage() {
             { icon: Sparkles, title: "AI Extracts Details", desc: "Name, registration, education — auto-filled" },
             { icon: CheckCircle, title: "Review & Submit", desc: "Verify, pay, and you're a member" },
           ].map((item, i) => (
-            <Card key={i} className="text-center border hover:border-primary/30 hover:shadow-md transition-all">
-              <CardContent className="p-6">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+            <button
+              key={i}
+              type="button"
+              onClick={() => {
+                document.getElementById("choose-membership")?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }}
+              className="group text-center rounded-xl border bg-card hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.99] transition-all"
+            >
+              <div className="p-6">
+                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:bg-primary/15 transition-colors">
                   <item.icon className="h-6 w-6 text-primary" />
                 </div>
                 <h3 className="font-semibold mb-1">{item.title}</h3>
                 <p className="text-sm text-muted-foreground">{item.desc}</p>
-              </CardContent>
-            </Card>
+              </div>
+            </button>
           ))}
         </motion.div>
 
@@ -1204,7 +1236,8 @@ export default function ApplyPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <h2 className="text-lg font-semibold text-center mb-4">Choose Your Membership</h2>
+          <h2 id="choose-membership" className="text-lg font-semibold text-center mb-4 scroll-mt-24">Choose Your Membership</h2>
+          <p className="text-sm text-muted-foreground text-center mb-4">Select a membership type below to start your application and upload documents.</p>
           <div className="grid gap-4 sm:grid-cols-2 mb-14">
             {MEMBERSHIP_TYPES.map((type) => {
               const fee = calculateFee(type)
@@ -1283,7 +1316,7 @@ export default function ApplyPage() {
       if (!formData.email || !formData.email.includes("@")) { toast.error("Please enter a valid email"); return }
       if (!formData.mobile || formData.mobile.length !== 10) { toast.error("Please enter a valid 10-digit mobile number"); return }
       try {
-        const res = await fetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: formData.email }) })
+        const res = await fetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: formData.email, phone: formData.mobile, membershipType: selectedType?.id || formData.membershipType }) })
         const data = await res.json()
         if (data.status) { setVerifyStep("email_otp"); setOtpCode(""); startCooldown(); toast.success("OTP sent to your email") }
         else toast.error(data.message || "Failed to send OTP")

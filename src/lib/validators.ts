@@ -6,6 +6,7 @@ export function validatePersonalDetails(data: ApplicationFormData): Record<strin
 
   if (!data.firstName.trim()) errors.firstName = "Enter your first name as on MCI certificate"
   else if (data.firstName.trim().length < 2) errors.firstName = "Name must be at least 2 characters"
+  if (data.lastName !== undefined && !data.lastName.trim()) errors.lastName = "Enter your last name"
   if (!data.dob) errors.dob = "Select your date of birth"
   else {
     const age = Math.floor((Date.now() - new Date(data.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))

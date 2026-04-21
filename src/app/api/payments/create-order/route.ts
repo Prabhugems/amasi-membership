@@ -24,10 +24,13 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Amount and reference number required" }, { status: 400 })
     }
 
-    // Validate amount against expected fee for membership type
+    // Validate membership type and amount
     const expectedFee = MEMBERSHIP_FEES[membershipType?.toUpperCase()]
-    if (expectedFee && amount < expectedFee.amount) {
-      return Response.json({ status: false, message: `Invalid amount for ${membershipType} membership` }, { status: 400 })
+    if (!expectedFee) {
+      return Response.json({ status: false, message: "Invalid membership type" }, { status: 400 })
+    }
+    if (amount !== expectedFee.amount) {
+      return Response.json({ status: false, message: `Invalid amount for ${membershipType} membership. Expected ${expectedFee.amount}` }, { status: 400 })
     }
 
     const razorpay = new Razorpay({

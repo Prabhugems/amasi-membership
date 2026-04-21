@@ -1334,8 +1334,9 @@ export default function ApplyPage() {
             setEmailVerified(true)
             toast.success("Email verified!")
 
-            // Check if server has a draft for this email
-            if (data.hasDraft && data.draft) {
+            // Check if server has a draft with meaningful progress (beyond just OTP send)
+            const hasMeaningfulDraft = data.hasDraft && data.draft && (data.draft.current_step > 2 || data.draft.has_verified_payment)
+            if (hasMeaningfulDraft) {
               setServerDraft(data.draft)
               setDraftUpdatedAt(data.draft.updated_at)
               setVerifyStep("done")

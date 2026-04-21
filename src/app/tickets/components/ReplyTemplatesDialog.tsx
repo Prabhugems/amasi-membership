@@ -189,7 +189,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
                                 onClick={saveEdit}
                                 disabled={updateMutation.isPending}
                               >
@@ -242,7 +242,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/15"
                                 onClick={() => deleteMutation.mutate(tpl.id)}
                                 disabled={deleteMutation.isPending}
                               >

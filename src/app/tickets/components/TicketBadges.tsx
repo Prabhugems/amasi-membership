@@ -48,21 +48,21 @@ export function SlaBadge({ ticket }: { ticket: SupportTicket }) {
 
   if (sla.type === "breached" && (ticket.status === "open" || ticket.status === "in_progress")) {
     return (
-      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200">
         {sla.label}
       </span>
     )
   }
   if (sla.type === "warning") {
     return (
-      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200">
         {sla.label}
       </span>
     )
   }
   if (sla.type === "responded") {
     return (
-      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+      <span className="inline-flex items-center text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200">
         {sla.label}
       </span>
     )

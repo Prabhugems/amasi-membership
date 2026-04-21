@@ -148,7 +148,7 @@ export function TicketDetailPanel({
               <div className="flex items-center gap-2 shrink-0">
                 {(ticketDetail.status === "open" ||
                   ticketDetail.status === "in_progress") && (
-                  <div className="flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 px-2 py-1 rounded-full border border-amber-200 font-medium">
+                  <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 px-2 py-1 rounded-full border border-amber-200 font-medium">
                     <Clock className="h-3 w-3" />
                     {waitingTime(ticketDetail.created_at)}
                   </div>
@@ -162,7 +162,7 @@ export function TicketDetailPanel({
             {(ticketDetail.first_response_at || ticketDetail.sla_due_at) && (
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 {ticketDetail.first_response_at && ticketDetail.created_at && (
-                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
                     First response: {formatDuration(
                       new Date(ticketDetail.first_response_at).getTime() -
                       new Date(ticketDetail.created_at).getTime()
@@ -268,7 +268,7 @@ export function TicketDetailPanel({
                 }
                 className={`h-7 text-xs gap-1.5 ${
                   ticketDetail.status === "closed"
-                    ? "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    ? "border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
                     : ""
                 }`}
                 onClick={handleToggleClose}

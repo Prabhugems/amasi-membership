@@ -21,11 +21,11 @@ function membershipLabel(type: string): string {
 
 function membershipColor(type: string): string {
   const mt = (type || "").toUpperCase()
-  if (mt.includes("LM") && !mt.includes("ALM") && !mt.includes("ILM")) return "bg-teal-100 text-teal-700 border-teal-300"
-  if (mt.includes("ALM")) return "bg-blue-100 text-blue-700 border-blue-300"
-  if (mt.includes("ACM")) return "bg-purple-100 text-purple-700 border-purple-300"
-  if (mt.includes("ILM")) return "bg-amber-100 text-amber-700 border-amber-300"
-  return "bg-gray-100 text-gray-700 border-gray-300"
+  if (mt.includes("LM") && !mt.includes("ALM") && !mt.includes("ILM")) return "bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border-teal-300"
+  if (mt.includes("ALM")) return "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-300"
+  if (mt.includes("ACM")) return "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-300"
+  if (mt.includes("ILM")) return "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-300"
+  return "bg-gray-100 dark:bg-gray-500/20 text-gray-700 dark:text-gray-300 border-gray-300"
 }
 
 export default function KnowYourMembershipPage() {
@@ -137,7 +137,7 @@ export default function KnowYourMembershipPage() {
                 {membershipLabel(member.membership_type)}
               </Badge>
               {member.is_active !== false && (
-                <Badge className="bg-green-100 text-green-700 border-green-300 text-sm px-3 py-1">
+                <Badge className="bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 border-green-300 text-sm px-3 py-1">
                   <CheckCircle className="h-3 w-3 mr-1" /> Active
                 </Badge>
               )}
@@ -205,7 +205,7 @@ export default function KnowYourMembershipPage() {
                 ].map((step, i, arr) => (
                   <div key={i} className="flex gap-3">
                     <div className="flex flex-col items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${step.done ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground"}`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${step.done ? "bg-green-100 dark:bg-green-500/20 text-green-600" : "bg-muted text-muted-foreground"}`}>
                         <step.icon className="h-4 w-4" />
                       </div>
                       {i < arr.length - 1 && (

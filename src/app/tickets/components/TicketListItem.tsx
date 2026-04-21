@@ -81,12 +81,12 @@ export function TicketListItem({
       {/* Bottom meta */}
       <div className="flex items-center gap-2 mt-1.5">
         {ticket.priority === "urgent" && (
-          <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+          <span className="text-[9px] font-bold text-red-600 bg-red-50 dark:bg-red-500/15 px-1.5 py-0.5 rounded uppercase tracking-wider">
             Urgent
           </span>
         )}
         {ticket.priority === "high" && (
-          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded uppercase tracking-wider">
+          <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 px-1.5 py-0.5 rounded uppercase tracking-wider">
             High
           </span>
         )}

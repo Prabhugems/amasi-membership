@@ -51,7 +51,7 @@ export function ChatBubble({ reply }: { reply: TicketReply }) {
       <div className="flex justify-end mb-4">
         <div className="flex gap-2.5 max-w-[75%] flex-row-reverse">
           {/* Avatar */}
-          <div className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 shadow-sm bg-amber-100 text-amber-700">
+          <div className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 shadow-sm bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">
             <ShieldCheck className="h-4 w-4" />
           </div>
           {/* Bubble */}
@@ -109,7 +109,7 @@ export function ChatBubble({ reply }: { reply: TicketReply }) {
         <div
           className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 shadow-sm ${
             isAdmin
-              ? "bg-teal-100 text-teal-700"
+              ? "bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300"
               : "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
           }`}
         >

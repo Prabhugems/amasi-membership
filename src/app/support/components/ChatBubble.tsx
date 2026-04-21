@@ -55,7 +55,7 @@ export function ChatBubble({ reply }: ChatBubbleProps) {
         <div
           className={`shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold mt-1 ${
             isAdmin
-              ? "bg-blue-100 text-blue-700"
+              ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300"
               : "bg-primary/10 text-primary"
           }`}
         >

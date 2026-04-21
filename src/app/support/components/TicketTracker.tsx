@@ -421,7 +421,7 @@ export function TicketTracker() {
                         {statusLabel(ticket.status)}
                       </Badge>
                       {hasAdminReply(ticket) && (
-                        <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+                        <Badge variant="secondary" className="text-[10px] bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200">
                           Admin replied
                         </Badge>
                       )}

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { verifyMemberOwnership } from "@/lib/member-ownership"
+import { checkRateLimit } from "@/lib/rate-limit"
 import { extractTextFromImage } from "@/lib/ocr"
 import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
@@ -377,6 +378,13 @@ export async function GET(request: NextRequest) {
       const adminSession = await getAdminSession()
       if (!adminSession) {
         return Response.json({ status: false, message: "Unauthorized" }, { status: 401 })
+      }
+    } else {
+      // Rate limit non-admin lookups
+      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+      const rl = await checkRateLimit(`upgrade-lookup:${ip}`, 10, 15 * 60 * 1000)
+      if (!rl.allowed) {
+        return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
       }
     }
 

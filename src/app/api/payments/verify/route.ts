@@ -1,9 +1,16 @@
 import { NextRequest } from "next/server"
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`payment-verify:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+    }
+
     const body = await request.json()
     const {
       razorpay_order_id,

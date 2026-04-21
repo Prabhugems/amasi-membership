@@ -77,7 +77,7 @@ export function ReplyComposer({
               <button
                 key={qr.label}
                 onClick={() => handleQuickReplySelect(qr.text)}
-                className="text-left text-xs px-3 py-2.5 rounded-lg hover:bg-teal-50 border border-transparent hover:border-teal-200 transition-all duration-150 group"
+                className="text-left text-xs px-3 py-2.5 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-500/15 border border-transparent hover:border-teal-200 transition-all duration-150 group"
               >
                 <span className="font-semibold text-teal-700 group-hover:text-teal-800">
                   {qr.label}
@@ -93,8 +93,8 @@ export function ReplyComposer({
 
       {/* File preview */}
       {attachedFile && (
-        <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
-          <div className="h-8 w-8 rounded-lg bg-teal-100 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-3 bg-teal-50 dark:bg-teal-500/15 border border-teal-200 rounded-lg px-3 py-2">
+          <div className="h-8 w-8 rounded-lg bg-teal-100 dark:bg-teal-500/20 flex items-center justify-center shrink-0">
             {attachedFile.type.startsWith("image/") ? (
               <ImageIcon className="h-4 w-4 text-teal-600" />
             ) : (
@@ -137,7 +137,7 @@ export function ReplyComposer({
         <Button
           variant="ghost"
           size="sm"
-          className="h-10 w-10 p-0 shrink-0 hover:bg-amber-50"
+          className="h-10 w-10 p-0 shrink-0 hover:bg-amber-50 dark:hover:bg-amber-500/15"
           onClick={() => setShowQuickReplies(!showQuickReplies)}
           title="Quick replies"
         >

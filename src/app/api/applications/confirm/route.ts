@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Missing required fields" }, { status: 400 })
     }
 
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return Response.json({ status: false, message: "Invalid email address" }, { status: 400 })
+    }
+
     const resend = getResend()
 
     const { error } = await resend.emails.send({

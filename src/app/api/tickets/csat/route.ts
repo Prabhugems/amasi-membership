@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
 
 /**
  * GET /api/tickets/csat?token=...&rating=1-5
@@ -7,6 +8,12 @@ import { createAdminClient } from "@/lib/supabase"
  */
 export async function GET(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`csat:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ error: "Too many requests" }, { status: 429 })
+    }
+
     const { searchParams } = new URL(request.url)
     const token = searchParams.get("token")
     const ratingStr = searchParams.get("rating")
@@ -65,6 +72,12 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`csat-post:${ip}`, 10, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ error: "Too many requests" }, { status: 429 })
+    }
+
     const body = await request.json()
     const { token, rating, comment } = body
 

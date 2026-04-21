@@ -57,16 +57,16 @@ const FILTER_TABS = [
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: "Pending", className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse" },
-  pending_review: { label: "Pending Review", className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse" },
-  approved: { label: "Approved", className: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  rejected: { label: "Rejected", className: "bg-red-50 text-red-700 border-red-200" },
+  pending: { label: "Pending", className: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 soft-pulse" },
+  pending_review: { label: "Pending Review", className: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 soft-pulse" },
+  approved: { label: "Approved", className: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200" },
+  rejected: { label: "Rejected", className: "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200" },
 }
 
 const CONFIDENCE_CONFIG: Record<string, { label: string; className: string; icon: typeof ShieldCheck }> = {
-  high: { label: "High", className: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: ShieldCheck },
-  medium: { label: "Medium", className: "bg-amber-50 text-amber-700 border-amber-200", icon: ShieldQuestion },
-  low: { label: "Low", className: "bg-red-50 text-red-700 border-red-200", icon: ShieldAlert },
+  high: { label: "High", className: "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200", icon: ShieldCheck },
+  medium: { label: "Medium", className: "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200", icon: ShieldQuestion },
+  low: { label: "Low", className: "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200", icon: ShieldAlert },
 }
 
 /* ---------- helpers ---------- */

@@ -66,10 +66,15 @@ export async function checkRateLimit(
     return inMemoryCheck(key, limit, windowMs)
   }
 
-  const result = await limiter.limit(key)
-  return {
-    allowed: result.success,
-    remaining: result.remaining,
-    resetAt: result.reset,
+  try {
+    const result = await limiter.limit(key)
+    return {
+      allowed: result.success,
+      remaining: result.remaining,
+      resetAt: result.reset,
+    }
+  } catch {
+    // Redis unreachable — fall back to in-memory
+    return inMemoryCheck(key, limit, windowMs)
   }
 }

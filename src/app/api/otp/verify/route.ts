@@ -69,7 +69,38 @@ export async function POST(request: NextRequest) {
     }, "1h")
     await setMemberCookie(token)
 
-    return Response.json({ status: true, message: "Email verified successfully" })
+    // Check for existing draft application
+    let draft = null
+    try {
+      const { data: draftRow } = await supabase
+        .from("draft_applications")
+        .select("*")
+        .eq("email", email.toLowerCase())
+        .not("status", "in", '("completed","expired","refunded")')
+        .limit(1)
+        .maybeSingle()
+      if (draftRow) {
+        draft = {
+          id: draftRow.id,
+          current_step: draftRow.current_step,
+          step_data: draftRow.step_data,
+          membership_type: draftRow.membership_type,
+          status: draftRow.status,
+          has_verified_payment: draftRow.has_verified_payment,
+          created_at: draftRow.created_at,
+          updated_at: draftRow.updated_at,
+        }
+      }
+    } catch {
+      // Draft check failure is non-blocking
+    }
+
+    return Response.json({
+      status: true,
+      message: "Email verified successfully",
+      hasDraft: !!draft,
+      draft,
+    })
   } catch (error: any) {
     console.error("OTP verify error:", error)
     return Response.json({ status: false, message: "Verification failed" }, { status: 500 })

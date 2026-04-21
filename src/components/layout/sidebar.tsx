@@ -25,6 +25,7 @@ import {
   Bell,
   Shield,
   ScrollText,
+  Clock,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -33,7 +34,7 @@ interface NavItem {
   name: string
   href: string
   icon: typeof LayoutDashboard
-  badgeKey?: "pending" | "tickets" | "upgrades"
+  badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete"
   superAdminOnly?: boolean
 }
 
@@ -47,8 +48,9 @@ const sections: NavSection[] = [
     label: "Admin",
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
-      { name: "All Members", href: "/members", icon: Users },
       { name: "Pending Actions", href: "/pending", icon: ClipboardCheck, badgeKey: "pending" },
+      { name: "Incomplete Applications", href: "/incomplete", icon: Clock, badgeKey: "incomplete" },
+      { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Reports", href: "/reports", icon: BarChart3 },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
@@ -89,10 +91,11 @@ function useAdminRole() {
 }
 
 function useBadgeCounts() {
-  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number }>({
+  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number }>({
     pending: 0,
     tickets: 0,
     upgrades: 0,
+    incomplete: 0,
   })
 
   useEffect(() => {
@@ -108,6 +111,7 @@ function useBadgeCounts() {
           pending: data.pending ?? 0,
           tickets: data.tickets ?? 0,
           upgrades: data.upgrades ?? 0,
+          incomplete: data.incomplete ?? 0,
         })
       } catch {
         // silently fail — badges just show 0

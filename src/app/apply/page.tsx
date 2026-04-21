@@ -222,8 +222,11 @@ export default function ApplyPage() {
   // Resume draft dialog state
   const [showResumeDraft, setShowResumeDraft] = useState(false)
   const [draftChecked, setDraftChecked] = useState(false)
+  const [serverDraft, setServerDraft] = useState<any>(null)
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
+  const [resumingDraft, setResumingDraft] = useState(false)
 
-  // Check for saved draft on mount
+  // Check for saved draft on mount (localStorage only — server draft check happens after OTP)
   useEffect(() => {
     if (!draftChecked && typeof window !== "undefined") {
       const savedPhase = localStorage.getItem("amasi_apply_phase")
@@ -240,6 +243,39 @@ export default function ApplyPage() {
       setDraftChecked(true)
     }
   }, [draftChecked])
+
+  // Save draft to server after each step change (only after email is verified)
+  const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>) => {
+    if (!emailVerified || !formData.email) return
+    try {
+      const body: any = {
+        email: formData.email,
+        current_step: step,
+        step_data: {
+          formData,
+          membership_type: selectedType?.id || formData.membershipType,
+          uploads: Object.fromEntries(
+            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
+          ),
+          ...extraData,
+        },
+      }
+      if (draftUpdatedAt) body.lastUpdatedAt = draftUpdatedAt
+      const res = await fetch("/api/applications/save-draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.draft?.updated_at) setDraftUpdatedAt(data.draft.updated_at)
+      } else if (res.status === 409) {
+        toast.error("This application is being continued on another device. Please close this tab.")
+      }
+    } catch {
+      // Draft save failure is non-blocking
+    }
+  }, [emailVerified, formData, selectedType, uploads, draftUpdatedAt])
 
   // Auto-save draft every 30 seconds
   useEffect(() => {
@@ -464,6 +500,9 @@ export default function ApplyPage() {
         },
       }))
 
+      // Save draft after each successful document upload
+      saveDraftToServer(3)
+
       // Show what was extracted in a detailed toast
       const extractedLabels: string[] = []
       if (updates.firstName) extractedLabels.push("Name")
@@ -520,6 +559,8 @@ export default function ApplyPage() {
     await new Promise((r) => setTimeout(r, 1500))
     setProcessing(false)
     setPhase("review")
+    // Save draft at step 4 (review)
+    saveDraftToServer(4)
   }
 
   const [termsAccepted, setTermsAccepted] = useState(false)
@@ -596,6 +637,8 @@ export default function ApplyPage() {
         return
       }
       orderId = orderData.orderId
+      // Save draft with payment order ID (step 5)
+      saveDraftToServer(5, { payment_order_id: orderId })
     } catch {
       toast.error("Payment service unavailable. Please try again.")
       setSubmitting(false)
@@ -1206,8 +1249,20 @@ export default function ApplyPage() {
           if (data.status) {
             setEmailVerified(true)
             toast.success("Email verified!")
-            setVerifyStep("done")
-            setTimeout(() => setPhase(selectedType ? "upload" : "landing"), 500)
+
+            // Check if server has a draft for this email
+            if (data.hasDraft && data.draft) {
+              setServerDraft(data.draft)
+              setDraftUpdatedAt(data.draft.updated_at)
+              setVerifyStep("done")
+              // Show resume prompt instead of proceeding
+              setResumingDraft(true)
+            } else {
+              setVerifyStep("done")
+              // Save initial draft to server
+              saveDraftToServer(2, { email_verified: true })
+              setTimeout(() => setPhase(selectedType ? "upload" : "landing"), 500)
+            }
           } else {
             toast.error(data.message || "Invalid OTP")
             setOtpCode("")
@@ -1286,14 +1341,82 @@ export default function ApplyPage() {
                 </div>
               )}
 
-              {/* Done */}
-              {verifyStep === "done" && (
+              {/* Done — with optional resume prompt */}
+              {verifyStep === "done" && !resumingDraft && (
                 <div className="space-y-3 text-center py-6">
                   <div className="h-14 w-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
                     <CheckCircle className="h-8 w-8 text-green-600" />
                   </div>
                   <p className="font-bold text-green-700 text-lg">Verified!</p>
                   <p className="text-sm text-muted-foreground">Proceeding to your application...</p>
+                </div>
+              )}
+
+              {/* Resume draft prompt */}
+              {verifyStep === "done" && resumingDraft && serverDraft && (
+                <div className="space-y-4 py-4">
+                  <div className="h-14 w-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto">
+                    <Clock className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-lg">Welcome back!</p>
+                    <p className="text-sm text-muted-foreground mt-1">You have an incomplete application from {new Date(serverDraft.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}.</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">You were on:</span>
+                      <span className="font-medium">
+                        {({ 1: "Select Type", 2: "Email Verification", 3: "Document Upload", 4: "Review Details", 5: "Payment", 6: "Submission" } as Record<number, string>)[serverDraft.current_step] || `Step ${serverDraft.current_step}`} (Step {serverDraft.current_step} of 6)
+                      </span>
+                    </div>
+                    {serverDraft.membership_type && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Membership Type:</span>
+                        <span className="font-medium">{serverDraft.membership_type}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      className="flex-1 h-11 font-semibold"
+                      onClick={() => {
+                        // Restore form data from draft
+                        const stepData = serverDraft.step_data || {}
+                        if (stepData.formData) {
+                          setFormData((prev: ApplicationFormData) => ({ ...prev, ...stepData.formData }))
+                        }
+                        if (stepData.membership_type) {
+                          const type = getMembershipType(stepData.membership_type)
+                          if (type) setSelectedType(type)
+                        }
+                        toast.success("Application restored. Continue where you left off.")
+                        setResumingDraft(false)
+                        // Navigate to the step they were on
+                        const stepToPhase: Record<number, Phase> = { 1: "landing", 2: "verify", 3: "upload", 4: "review", 5: "review", 6: "review" }
+                        setPhase(stepToPhase[serverDraft.current_step] || "upload")
+                      }}
+                    >
+                      Resume Application
+                    </Button>
+                    {!serverDraft.has_verified_payment ? (
+                      <Button
+                        variant="outline"
+                        className="flex-1 h-11"
+                        onClick={() => {
+                          // Delete old draft and start fresh
+                          fetch("/api/applications/save-draft?email=" + encodeURIComponent(formData.email), { method: "DELETE" }).catch(() => {})
+                          setServerDraft(null)
+                          setDraftUpdatedAt(null)
+                          setResumingDraft(false)
+                          setPhase(selectedType ? "upload" : "landing")
+                        }}
+                      >
+                        Start Fresh
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-amber-600 self-center">This application has a pending payment. Please resume.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>

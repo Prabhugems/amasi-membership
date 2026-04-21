@@ -12,7 +12,7 @@ export async function GET() {
 
     const supabase = createAdminClient()
 
-    const [pendingRes, ticketsRes, upgradesRes] = await Promise.all([
+    const [pendingRes, ticketsRes, upgradesRes, incompleteRes] = await Promise.all([
       supabase
         .from("membership_applications")
         .select("*", { count: "exact", head: true })
@@ -25,14 +25,19 @@ export async function GET() {
         .from("membership_upgrades")
         .select("*", { count: "exact", head: true })
         .in("status", ["pending", "pending_review"]),
+      supabase
+        .from("draft_applications")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["stuck", "payment_on_hold"]),
     ])
 
     return Response.json({
       pending: pendingRes.count ?? 0,
       tickets: ticketsRes.count ?? 0,
       upgrades: upgradesRes.count ?? 0,
+      incomplete: incompleteRes.count ?? 0,
     })
   } catch {
-    return Response.json({ pending: 0, tickets: 0, upgrades: 0 })
+    return Response.json({ pending: 0, tickets: 0, upgrades: 0, incomplete: 0 })
   }
 }

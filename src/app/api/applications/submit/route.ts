@@ -227,6 +227,16 @@ export async function POST(request: NextRequest) {
 
     const applicationId: string | undefined = app?.id
 
+    // Clean up draft application on successful insert
+    try {
+      await supabase
+        .from("draft_applications")
+        .delete()
+        .eq("email", emailKey)
+    } catch {
+      // Draft cleanup failure is non-blocking
+    }
+
     // --- Notify admins of new application ---
     notifyAdminsNewApplication({
       applicantName: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),

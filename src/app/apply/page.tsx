@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1205,39 +1205,9 @@ export default function ApplyPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="grid gap-4 sm:grid-cols-3 mb-12"
+          className="mt-2"
         >
-          {[
-            { icon: Upload, title: "Upload Documents", desc: "Drop your MCI certificate and degree" },
-            { icon: Sparkles, title: "AI Extracts Details", desc: "Name, registration, education — auto-filled" },
-            { icon: CheckCircle, title: "Review & Submit", desc: "Verify, pay, and you're a member" },
-          ].map((item, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                document.getElementById("choose-membership")?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }}
-              className="group text-center rounded-xl border bg-card hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-[0.99] transition-all"
-            >
-              <div className="p-6">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:bg-primary/15 transition-colors">
-                  <item.icon className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="font-semibold mb-1">{item.title}</h3>
-                <p className="text-sm text-muted-foreground">{item.desc}</p>
-              </div>
-            </button>
-          ))}
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <h2 id="choose-membership" className="text-lg font-semibold text-center mb-4 scroll-mt-24">Choose Your Membership</h2>
-          <p className="text-sm text-muted-foreground text-center mb-4">Select a membership type below to start your application and upload documents.</p>
+          <h2 className="text-lg font-semibold text-center mb-4">Choose Your Membership</h2>
           <div className="grid gap-4 sm:grid-cols-2 mb-14">
             {MEMBERSHIP_TYPES.map((type) => {
               const fee = calculateFee(type)
@@ -2019,6 +1989,13 @@ export default function ApplyPage() {
     const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
     const missingCount = Object.keys(allErrors).length
 
+    // Track which fields were initially empty when review loaded — keep them visible while editing
+    const initiallyMissingRef = useRef<Set<string> | null>(null)
+    if (initiallyMissingRef.current === null) {
+      initiallyMissingRef.current = new Set(Object.keys(allErrors))
+    }
+    const wasInitiallyMissing = (field: string) => initiallyMissingRef.current?.has(field) ?? false
+
     // Track all required fields for progress
     const requiredFields: { key: string; label: string }[] = [
       { key: "firstName", label: "First Name" },
@@ -2121,16 +2098,16 @@ export default function ApplyPage() {
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Fill these to complete your application</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {!formData.firstName && <StableFieldInput field="firstName" label="First Name" required value={formData.firstName || ""} error={errors.firstName} placeholder={PLACEHOLDERS.firstName || ""} isFilled={!!formData.firstName} onChange={updateField} />}
-                {!formData.dob && (
+                {wasInitiallyMissing("firstName") && <StableFieldInput field="firstName" label="First Name" required value={formData.firstName || ""} error={errors.firstName} placeholder={PLACEHOLDERS.firstName || ""} isFilled={!!formData.firstName} onChange={updateField} />}
+                {wasInitiallyMissing("dob") && (
                   <div>
-                    <Label className="text-xs">Date of Birth <span className="text-destructive">*</span></Label>
-                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+                    <Label className="text-xs flex items-center gap-1">Date of Birth <span className="text-destructive">*</span>{formData.dob && <CheckCircle className="h-3 w-3 text-green-500" />}</Label>
+                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} className={formData.dob ? "border-green-300" : ""} />
                   </div>
                 )}
-                {!formData.gender && (
+                {wasInitiallyMissing("gender") && (
                   <div>
-                    <Label className="text-xs">Gender <span className="text-destructive">*</span></Label>
+                    <Label className="text-xs flex items-center gap-1">Gender <span className="text-destructive">*</span>{formData.gender && <CheckCircle className="h-3 w-3 text-green-500" />}</Label>
                     <div className="flex gap-1.5">
                       {["Male", "Female", "Other"].map((g) => (
                         <button key={g} type="button" onClick={() => updateField("gender", g)}
@@ -2140,7 +2117,7 @@ export default function ApplyPage() {
                     </div>
                   </div>
                 )}
-                {!formData.eduPostgradDegree && type?.requiresPG && (
+                {wasInitiallyMissing("eduPostgradDegree") && type?.requiresPG && (
                   <StableSelectInput field="eduPostgradDegree" label="PG Degree" options={[
                     "MS General Surgery", "MS Obstetrics & Gynaecology",
                     "MCh Surgical Oncology", "MCh Urology", "MCh Cardiothoracic Surgery", "MCh Neurosurgery", "MCh Plastic Surgery", "MCh GI Surgery",
@@ -2148,9 +2125,9 @@ export default function ApplyPage() {
                     "FRCS", "MRCS",
                   ]} required value={(formData as any).eduPostgradDegree || ""} error={errors.eduPostgradDegree} isFilled={!!formData.eduPostgradDegree} onChange={updateField} />
                 )}
-                {!formData.eduPostgradCollege && type?.requiresPG && (
+                {wasInitiallyMissing("eduPostgradCollege") && type?.requiresPG && (
                   <div>
-                    <Label className="text-xs">PG College <span className="text-destructive">*</span></Label>
+                    <Label className="text-xs flex items-center gap-1">PG College <span className="text-destructive">*</span>{formData.eduPostgradCollege && <CheckCircle className="h-3 w-3 text-green-500" />}</Label>
                     <Autocomplete
                       value={formData.eduPostgradCollege}
                       onChange={(v) => {
@@ -2166,10 +2143,10 @@ export default function ApplyPage() {
                     />
                   </div>
                 )}
-                {!formData.eduPostgradUniversity && type?.requiresPG && <StableFieldInput field="eduPostgradUniversity" label="PG University" required value={formData.eduPostgradUniversity || ""} error={errors.eduPostgradUniversity} placeholder={PLACEHOLDERS.eduPostgradUniversity || ""} isFilled={!!formData.eduPostgradUniversity} onChange={updateField} />}
-                {!formData.eduPostgradYear && type?.requiresPG && <StableSelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required value={formData.eduPostgradYear || ""} error={errors.eduPostgradYear} isFilled={!!formData.eduPostgradYear} onChange={updateField} />}
-                {!formData.mciCouncilNumber && formData.membershipType !== "ILM" && <StableFieldInput field="mciCouncilNumber" label="MCI/Council Number" required value={formData.mciCouncilNumber || ""} error={errors.mciCouncilNumber} placeholder={PLACEHOLDERS.mciCouncilNumber || ""} isFilled={!!formData.mciCouncilNumber} onChange={updateField} />}
-                {!formData.asiMembershipNo && type?.requiresASI && <StableFieldInput field="asiMembershipNo" label="ASI Membership No" required value={formData.asiMembershipNo || ""} error={errors.asiMembershipNo} placeholder={PLACEHOLDERS.asiMembershipNo || ""} isFilled={!!formData.asiMembershipNo} onChange={updateField} />}
+                {wasInitiallyMissing("eduPostgradUniversity") && type?.requiresPG && <StableFieldInput field="eduPostgradUniversity" label="PG University" required value={formData.eduPostgradUniversity || ""} error={errors.eduPostgradUniversity} placeholder={PLACEHOLDERS.eduPostgradUniversity || ""} isFilled={!!formData.eduPostgradUniversity} onChange={updateField} />}
+                {wasInitiallyMissing("eduPostgradYear") && type?.requiresPG && <StableSelectInput field="eduPostgradYear" label="PG Year" options={YEAR_OPTIONS} required value={formData.eduPostgradYear || ""} error={errors.eduPostgradYear} isFilled={!!formData.eduPostgradYear} onChange={updateField} />}
+                {wasInitiallyMissing("mciCouncilNumber") && formData.membershipType !== "ILM" && <StableFieldInput field="mciCouncilNumber" label="MCI/Council Number" required value={formData.mciCouncilNumber || ""} error={errors.mciCouncilNumber} placeholder={PLACEHOLDERS.mciCouncilNumber || ""} isFilled={!!formData.mciCouncilNumber} onChange={updateField} />}
+                {wasInitiallyMissing("asiMembershipNo") && type?.requiresASI && <StableFieldInput field="asiMembershipNo" label="ASI Membership No" required value={formData.asiMembershipNo || ""} error={errors.asiMembershipNo} placeholder={PLACEHOLDERS.asiMembershipNo || ""} isFilled={!!formData.asiMembershipNo} onChange={updateField} />}
               </div>
             </CardContent>
           </Card>

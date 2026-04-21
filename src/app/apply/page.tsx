@@ -586,7 +586,7 @@ export default function ApplyPage() {
           referenceNumber: ref,
           email: formData.email,
           name: `${formData.firstName} ${formData.lastName}`.trim(),
-          membershipType: type?.name || formData.membershipType,
+          membershipType: formData.membershipType || type?.id || type?.name,
         }),
       })
       const orderData = await orderRes.json()
@@ -612,13 +612,19 @@ export default function ApplyPage() {
 
     // Load Razorpay script if not loaded
     if (!(window as any).Razorpay) {
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement("script")
-        script.src = "https://checkout.razorpay.com/v1/checkout.js"
-        script.onload = () => resolve()
-        script.onerror = () => reject()
-        document.body.appendChild(script)
-      })
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement("script")
+          script.src = "https://checkout.razorpay.com/v1/checkout.js"
+          script.onload = () => resolve()
+          script.onerror = () => reject(new Error("Failed to load payment gateway"))
+          document.body.appendChild(script)
+        })
+      } catch {
+        toast.error("Unable to load payment gateway. Please check your internet connection and try again.")
+        setSubmitting(false)
+        return
+      }
     }
 
     const rzp = new (window as any).Razorpay({

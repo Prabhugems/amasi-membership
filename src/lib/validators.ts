@@ -5,6 +5,7 @@ export function validatePersonalDetails(data: ApplicationFormData): Record<strin
   const errors: Record<string, string> = {}
 
   if (!data.firstName.trim()) errors.firstName = "Enter your first name as on MCI certificate"
+  else if (data.firstName.trim().length < 2) errors.firstName = "Name must be at least 2 characters"
   if (!data.dob) errors.dob = "Select your date of birth"
   if (!data.gender) errors.gender = "Select Male, Female, or Other"
   if (!data.email.trim()) errors.email = "Enter your email address"
@@ -24,13 +25,17 @@ export function validateEducation(data: ApplicationFormData): Record<string, str
   if (type.requiresPG) {
     if (!data.eduPostgradDegree.trim()) errors.eduPostgradDegree = "Select your PG degree (e.g. MS General Surgery)"
     if (!data.eduPostgradCollege.trim()) errors.eduPostgradCollege = "Enter your PG college name"
+    else if (data.eduPostgradCollege.trim().length < 3) errors.eduPostgradCollege = "College name must be at least 3 characters"
     if (!data.eduPostgradUniversity.trim()) errors.eduPostgradUniversity = "Enter the university name"
+    else if (data.eduPostgradUniversity.trim().length < 3) errors.eduPostgradUniversity = "University name must be at least 3 characters"
     if (!data.eduPostgradYear) errors.eduPostgradYear = "Select your PG completion year"
   }
 
   if (type.requiresMBBS) {
     if (!data.eduUndergradCollege.trim()) errors.eduUndergradCollege = "Enter your MBBS college name"
+    else if (data.eduUndergradCollege.trim().length < 3) errors.eduUndergradCollege = "College name must be at least 3 characters"
     if (!data.eduUndergradUniversity.trim()) errors.eduUndergradUniversity = "Enter the university name"
+    else if (data.eduUndergradUniversity.trim().length < 3) errors.eduUndergradUniversity = "University name must be at least 3 characters"
     if (!data.eduUndergradYear) errors.eduUndergradYear = "Select your MBBS completion year"
   }
 

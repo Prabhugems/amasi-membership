@@ -1827,13 +1827,13 @@ export default function ApplyPage() {
         </button>
 
         {/* Header with circular progress */}
-        <Card className={pct === 100 ? "border-green-400 bg-green-50/80" : "border-amber-300 bg-amber-50/80"}>
+        <Card className={pct === 100 ? "border-green-400 bg-green-50/80 dark:bg-green-500/10 dark:border-green-500/30" : "border-amber-300 bg-amber-50/80 dark:bg-amber-500/10 dark:border-amber-500/30"}>
           <CardContent className="p-5">
             <div className="flex items-center gap-4">
               {/* Circular progress indicator */}
               <div className="relative h-16 w-16 shrink-0">
                 <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
-                  <circle cx="32" cy="32" r="28" fill="none" strokeWidth="5" className="stroke-white/60" />
+                  <circle cx="32" cy="32" r="28" fill="none" strokeWidth="5" className="stroke-muted/40" />
                   <circle
                     cx="32" cy="32" r="28" fill="none" strokeWidth="5"
                     strokeLinecap="round"
@@ -1852,7 +1852,7 @@ export default function ApplyPage() {
                   {pct === 100 ? <CheckCircle className="h-5 w-5 text-green-600" /> : <Sparkles className="h-5 w-5 text-amber-600" />}
                   <span className="font-bold text-base">{pct === 100 ? "Ready to Submit!" : `${missingCount} field${missingCount !== 1 ? "s" : ""} needed`}</span>
                 </div>
-                <div className="w-full bg-white/60 rounded-full h-2">
+                <div className="w-full bg-muted/40 rounded-full h-2">
                   <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? "bg-green-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1.5">{filledCount} of {totalRequired} required fields complete</p>
@@ -1861,7 +1861,7 @@ export default function ApplyPage() {
             {filledSummary.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3">
                 {filledSummary.map((s, i) => (
-                  <span key={i} className="text-xs bg-white/80 text-foreground px-2.5 py-0.5 rounded-full border">{s}</span>
+                  <span key={i} className="text-xs bg-muted/60 text-foreground px-2.5 py-0.5 rounded-full border">{s}</span>
                 ))}
               </div>
             )}
@@ -1870,11 +1870,11 @@ export default function ApplyPage() {
 
         {/* Missing fields - compact inline form */}
         {missingCount > 0 && (
-          <Card className="border-amber-200 shadow-sm">
+          <Card className="border-amber-200 dark:border-amber-500/30 shadow-sm">
             <CardContent className="p-5 space-y-4">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                <p className="text-sm font-semibold text-amber-800">Fill these to complete your application</p>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Fill these to complete your application</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {!formData.firstName && <StableFieldInput field="firstName" label="First Name" required value={formData.firstName || ""} error={errors.firstName} placeholder={PLACEHOLDERS.firstName || ""} isFilled={!!formData.firstName} onChange={updateField} />}

@@ -235,8 +235,8 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
       </Card>
 
       {/* ===== Profile Completeness ===== */}
-      <Card className="hover:shadow-md transition-shadow duration-200">
-        <CardContent className="py-5 px-6">
+      <Card className="hover:shadow-md transition-shadow duration-200 bg-white">
+        <CardContent className="py-5 px-6 text-gray-900">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">Profile Completeness</span>
@@ -509,7 +509,7 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
                   </thead>
                   <tbody>
                     {experiences.map((exp, idx) => (
-                      <tr key={exp.id || idx} className="border-b last:border-0 hover:bg-white/60 transition-colors">
+                      <tr key={exp.id || idx} className="border-b last:border-0 hover:bg-gray-50 transition-colors">
                         <td className="py-2.5 pr-4 font-medium">{exp.position || "—"}</td>
                         <td className="py-2.5 pr-4">{exp.institution || "—"}</td>
                         <td className="py-2.5 pr-4 tabular-nums">{exp.from_year || "—"}</td>
@@ -530,7 +530,7 @@ export function ProfileView({ data, onEdit }: ProfileViewProps) {
             {clinics.length > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 {clinics.map((clinic, idx) => (
-                  <div key={clinic.id || idx} className="rounded-lg border p-4 bg-white/60 hover:bg-white/90 transition-colors duration-150 relative">
+                  <div key={clinic.id || idx} className="rounded-lg border border-gray-200 p-4 bg-white hover:bg-gray-50 transition-colors duration-150 relative">
                     {clinic.is_primary && (
                       <Badge className="absolute top-2 right-2 text-[10px] bg-teal-100 text-teal-700 border-teal-300">Primary</Badge>
                     )}
@@ -587,17 +587,17 @@ function SectionCard({
   return (
     <Card
       id={id}
-      className={`overflow-hidden border-l-4 ${theme.accent} ${theme.bg} hover:shadow-md transition-all duration-200 animate-in fade-in slide-in-from-bottom-2`}
+      className={`overflow-hidden border-l-4 ${theme.accent} bg-white hover:shadow-md transition-all duration-200 animate-in fade-in slide-in-from-bottom-2`}
     >
       <CardHeader className="pb-4">
-        <CardTitle className="text-lg flex items-center gap-2.5">
+        <CardTitle className="text-lg flex items-center gap-2.5 text-gray-900">
           <div className={`flex h-8 w-8 items-center justify-center rounded-full ${theme.iconBg} ${theme.iconText} shadow-sm`}>
             <Icon className="h-4 w-4" />
           </div>
           <span>{title}</span>
         </CardTitle>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="text-gray-900">{children}</CardContent>
     </Card>
   )
 }
@@ -613,7 +613,7 @@ function DocumentCard({ label, url }: { label: string; url: string | null | unde
       target={uploaded ? "_blank" : undefined}
       rel="noopener noreferrer"
       onClick={(e) => { if (!uploaded) e.preventDefault() }}
-      className={`flex items-center gap-3 rounded-xl border p-3.5 text-sm transition-all duration-200 group ${
+      className={`flex items-center gap-3 rounded-xl border border-gray-200 p-3.5 text-sm bg-white transition-all duration-200 group ${
         uploaded
           ? "hover:shadow-md hover:border-teal-200 hover:scale-[1.02] cursor-pointer"
           : "opacity-60 cursor-default"
@@ -653,9 +653,9 @@ function DocumentCard({ label, url }: { label: string; url: string | null | unde
    =================================================================== */
 function InfoRow({ label, value }: { label: string; value: string | undefined }) {
   return (
-    <div className="rounded-lg border p-3.5 bg-white/60 hover:bg-white/90 transition-colors duration-150">
-      <dt className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">{label}</dt>
-      <dd className="font-semibold mt-1 text-[15px] truncate">
+    <div className="rounded-lg border border-gray-200 p-3.5 bg-white hover:bg-gray-50 transition-colors duration-150">
+      <dt className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{label}</dt>
+      <dd className="font-semibold mt-1 text-[15px] truncate text-gray-900">
         {value || <span className="text-muted-foreground italic font-normal text-sm">N/A</span>}
       </dd>
     </div>
@@ -668,12 +668,12 @@ function InfoRow({ label, value }: { label: string; value: string | undefined })
 function VerifiedRow({ label, value, hasCert }: { label: string; value: string | undefined; hasCert: boolean }) {
   const hasValue = !!(value && value.trim())
   return (
-    <div className="rounded-lg border p-3.5 bg-white/60 hover:bg-white/90 transition-colors duration-150">
-      <dt className="text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">{label}</dt>
+    <div className="rounded-lg border border-gray-200 p-3.5 bg-white hover:bg-gray-50 transition-colors duration-150">
+      <dt className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{label}</dt>
       <dd className="mt-1">
         {hasValue ? (
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-[15px]">{value}</span>
+            <span className="font-semibold text-[15px] text-gray-900">{value}</span>
             {hasCert ? (
               <Badge variant="success" className="text-[10px] gap-1 px-2 py-0.5 bg-green-100 text-green-700 border-green-300">
                 <CheckCircle2 className="h-3 w-3" /> Verified

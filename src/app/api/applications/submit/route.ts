@@ -12,6 +12,70 @@ function getResend() {
   return new Resend(key)
 }
 
+async function notifyAdminsNewApplication(details: {
+  applicantName: string
+  email: string
+  membershipType: string
+  referenceNumber: string
+  applicationId: string
+  aiConfidence: string
+  needsManualReview: boolean
+}) {
+  const supabase = createAdminClient()
+  const { data: admins } = await supabase
+    .from("admin_users")
+    .select("email")
+    .eq("is_active", true)
+
+  const adminEmails = (admins || []).map((a) => a.email).filter(Boolean) as string[]
+  const envAdminEmail = (process.env.ADMIN_DEFAULT_EMAIL || "admin@amasi.org").trim().toLowerCase()
+  if (!adminEmails.includes(envAdminEmail)) adminEmails.push(envAdminEmail)
+
+  if (adminEmails.length === 0) return
+
+  const resend = getResend()
+  const statusBadge = details.needsManualReview
+    ? '<span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">Needs Manual Review</span>'
+    : '<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">AI Approved</span>'
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "https://amasi-membership.vercel.app"
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+      <div style="background:linear-gradient(135deg,#0d9488,#14b8a6);border-radius:12px 12px 0 0;padding:20px 24px;">
+        <h2 style="color:#fff;margin:0;font-size:18px;">New Membership Application</h2>
+      </div>
+      <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:24px;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;">
+          <tr><td style="padding:8px 0;color:#6b7280;width:140px;">Applicant</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(details.applicantName)}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">Email</td><td style="padding:8px 0;">${escapeHtml(details.email)}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">Membership Type</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(details.membershipType)}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">Reference</td><td style="padding:8px 0;font-family:monospace;">${escapeHtml(details.referenceNumber)}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">AI Confidence</td><td style="padding:8px 0;">${escapeHtml(details.aiConfidence)}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">Status</td><td style="padding:8px 0;">${statusBadge}</td></tr>
+        </table>
+        <div style="margin-top:20px;text-align:center;">
+          <a href="${baseUrl}/pending" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Review Application</a>
+        </div>
+        <p style="color:#9ca3af;font-size:11px;text-align:center;margin-top:16px;">AMASI Membership Management</p>
+      </div>
+    </div>
+  `
+
+  await Promise.allSettled(
+    adminEmails.map((email) =>
+      resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
+        to: email,
+        subject: `New Application: ${details.applicantName} (${details.membershipType})`,
+        html,
+      })
+    )
+  )
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -163,6 +227,17 @@ export async function POST(request: NextRequest) {
     }
 
     const applicationId: string | undefined = app?.id
+
+    // --- Notify admins of new application ---
+    notifyAdminsNewApplication({
+      applicantName: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),
+      email: formData.email,
+      membershipType: formData.membershipType,
+      referenceNumber,
+      applicationId: applicationId || "",
+      aiConfidence,
+      needsManualReview: hasPendingReview,
+    }).catch(err => console.error("Admin notification error:", err))
 
     // --- AI AUTO-APPROVAL ---
     if (allAiVerified && paymentId && applicationId) {

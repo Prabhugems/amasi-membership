@@ -8,6 +8,7 @@ import { useRouter, usePathname } from "next/navigation"
 import { useState } from "react"
 
 const PUBLIC_ROUTES = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
+const NO_SEARCH_ROUTES = ["/reports", "/admin", "/audit", "/notifications", "/upgrades"]
 
 export function Header() {
   const router = useRouter()
@@ -15,6 +16,8 @@ export function Header() {
   const [query, setQuery] = useState("")
 
   if (PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + "/"))) return null
+
+  const showSearch = !NO_SEARCH_ROUTES.some(r => pathname === r || pathname.startsWith(r + "/"))
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,15 +30,17 @@ export function Header() {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b bg-card px-6">
       <div className="flex-1">
-        <form onSubmit={handleSearch} className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search by email or phone..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </form>
+        {showSearch && (
+          <form onSubmit={handleSearch} className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search by email or phone..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </form>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <FocusToggle />

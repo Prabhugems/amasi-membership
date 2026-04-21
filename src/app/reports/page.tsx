@@ -342,6 +342,49 @@ export default function ReportsPage() {
     window.open(`/api/reports/pdf${params.toString() ? `?${params}` : ""}`, "_blank")
   }, [dateRange])
 
+  // Memoize all derived chart data (must be above early returns to satisfy Rules of Hooks)
+  const { zoneData, stateData, allStateData, typeData, pipeline, growth, revenue, tickets, zonePieData, typePieData, stateBarData, statusPieData, nmcPieData, nmcTotal } = useMemo(() => {
+    if (!data) return { zoneData: [], stateData: [], allStateData: [], typeData: [], pipeline: null, growth: null, revenue: null, tickets: null, zonePieData: [], typePieData: [], stateBarData: [], statusPieData: [], nmcPieData: [], nmcTotal: 1 }
+
+    const { zoneData: zd, stateData: sd, allStateData: asd, typeData: td, pipeline: pl, growth: gr, revenue: rv, tickets: tk } = data
+
+    const zoneTotal = zd.reduce((s: number, r: any) => s + r.count, 0) || 1
+    const typeTotal = td.reduce((s: number, r: any) => s + r.count, 0) || 1
+
+    const _zonePieData = zd.map((z: any) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
+    const _typePieData = td.map((t: any) => ({ name: t.membership_type, value: t.count, percent: t.count / typeTotal }))
+    const _stateBarData = sd.slice(0, 10).map((s: any) => ({ name: s.state, count: s.count }))
+
+    const _statusPieData = pl
+      ? pl.statusBreakdown.map((s: any) => ({
+          name: STATUS_LABELS[s.status] || s.status,
+          value: s.count,
+          color: STATUS_COLORS[s.status] || "#94a3b8",
+        }))
+      : []
+
+    const _nmcPieData = pl
+      ? [
+          { name: "Verified", value: pl.nmc.verified, color: "#10b981" },
+          { name: "Mismatch", value: pl.nmc.mismatch, color: "#f59e0b" },
+          { name: "Not Found", value: pl.nmc.notFound, color: "#ef4444" },
+          { name: "Skipped", value: pl.nmc.skipped, color: "#94a3b8" },
+        ].filter((d) => d.value > 0)
+      : []
+
+    const _nmcTotal = _nmcPieData.reduce((s: number, d: any) => s + d.value, 0) || 1
+
+    return {
+      zoneData: zd, stateData: sd, allStateData: asd, typeData: td, pipeline: pl, growth: gr, revenue: rv, tickets: tk,
+      zonePieData: _zonePieData,
+      typePieData: _typePieData,
+      stateBarData: _stateBarData,
+      statusPieData: _statusPieData,
+      nmcPieData: _nmcPieData,
+      nmcTotal: _nmcTotal,
+    }
+  }, [data])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -357,46 +400,6 @@ export default function ReportsPage() {
       </div>
     )
   }
-
-  const { zoneData, stateData, allStateData, typeData, pipeline, growth, revenue, tickets } = data
-
-  // Memoize all derived chart data
-  const { zonePieData, typePieData, stateBarData, statusPieData, nmcPieData, nmcTotal } = useMemo(() => {
-    const zoneTotal = zoneData.reduce((s, r) => s + r.count, 0) || 1
-    const typeTotal = typeData.reduce((s, r) => s + r.count, 0) || 1
-
-    const _zonePieData = zoneData.map((z) => ({ name: z.zone, value: z.count, percent: z.count / zoneTotal }))
-    const _typePieData = typeData.map((t) => ({ name: t.membership_type, value: t.count, percent: t.count / typeTotal }))
-    const _stateBarData = stateData.slice(0, 10).map((s) => ({ name: s.state, count: s.count }))
-
-    const _statusPieData = pipeline
-      ? pipeline.statusBreakdown.map((s) => ({
-          name: STATUS_LABELS[s.status] || s.status,
-          value: s.count,
-          color: STATUS_COLORS[s.status] || "#94a3b8",
-        }))
-      : []
-
-    const _nmcPieData = pipeline
-      ? [
-          { name: "Verified", value: pipeline.nmc.verified, color: "#10b981" },
-          { name: "Mismatch", value: pipeline.nmc.mismatch, color: "#f59e0b" },
-          { name: "Not Found", value: pipeline.nmc.notFound, color: "#ef4444" },
-          { name: "Skipped", value: pipeline.nmc.skipped, color: "#94a3b8" },
-        ].filter((d) => d.value > 0)
-      : []
-
-    const _nmcTotal = _nmcPieData.reduce((s, d) => s + d.value, 0) || 1
-
-    return {
-      zonePieData: _zonePieData,
-      typePieData: _typePieData,
-      stateBarData: _stateBarData,
-      statusPieData: _statusPieData,
-      nmcPieData: _nmcPieData,
-      nmcTotal: _nmcTotal,
-    }
-  }, [data])
 
   return (
     <div className="space-y-6 print:space-y-4" ref={reportRef}>

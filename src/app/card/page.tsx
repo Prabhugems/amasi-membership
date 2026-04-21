@@ -315,12 +315,18 @@ function CardBack({ card, theme }: { card: CardData; theme: ThemeData }) {
               <div className="flex items-center gap-1.5">
                 <MapPin className="h-3 w-3 text-white/40 flex-shrink-0" />
                 <p className="text-[9px] text-white/40 leading-relaxed">
-                  AMASI Secretariat, Sir Ganga Ram Hospital,<br />Rajinder Nagar, New Delhi - 110060
+                  45, Pankaja Mills Rd, Sowripalayam Pirivu, Coimbatore, Tamil Nadu 641045
                 </p>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Globe className="h-3 w-3 text-white/40 flex-shrink-0" />
-                <p className="text-[9px] text-white/40">www.amasi.org</p>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <Phone className="h-2.5 w-2.5 text-white/40 flex-shrink-0" />
+                  <span className="text-[9px] text-white/40">+91 7358105244</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <Mail className="h-2.5 w-2.5 text-white/40 flex-shrink-0" />
+                  <span className="text-[9px] text-white/40">amasi.india@gmail.com</span>
+                </span>
               </div>
             </div>
             <div className="text-right">

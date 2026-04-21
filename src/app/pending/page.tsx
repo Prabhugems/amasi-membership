@@ -926,16 +926,36 @@ export default function PendingPage() {
                           </div>
                         )}
 
-                        {/* Flag list */}
+                        {/* Flag list — cleaned up for admin readability */}
                         {aiFlags.length > 0 && (
-                          <div className="space-y-1 pt-2 border-t border-amber-200 dark:border-amber-400/30">
-                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1.5">Flagged Issues</p>
-                            {aiFlags.map((flag: string, i: number) => (
-                              <p key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                                <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
-                                {flag}
-                              </p>
-                            ))}
+                          <div className="space-y-1.5 pt-2 border-t border-amber-200 dark:border-amber-400/30">
+                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1.5">Review Notes</p>
+                            {aiFlags.map((flag: string, i: number) => {
+                              // Parse "Check: score% ✓/✗ — detail" format into structured display
+                              const match = flag.match(/^(.+?):\s*(\d+)%\s*(✓|✗)\s*—\s*(.+)$/)
+                              if (match) {
+                                const [, check, score, status, detail] = match
+                                const passed = status === "✓"
+                                return (
+                                  <div key={i} className="flex items-start gap-2 text-xs">
+                                    <span className={`shrink-0 mt-0.5 ${passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                                      {passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      <span className="font-medium text-foreground">{check}</span>
+                                      {" — "}{detail}
+                                    </span>
+                                  </div>
+                                )
+                              }
+                              // Fallback for non-structured flags
+                              return (
+                                <p key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                                  <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                                  {flag}
+                                </p>
+                              )
+                            })}
                           </div>
                         )}
                       </div>

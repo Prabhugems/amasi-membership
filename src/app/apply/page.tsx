@@ -1403,6 +1403,22 @@ export default function ApplyPage() {
                             const type = getMembershipType(mType)
                             if (type) setSelectedType(type)
                           }
+                          // Restore uploads state (without File objects — shows previously processed docs)
+                          if (stepData.uploads && typeof stepData.uploads === "object") {
+                            const restoredUploads: Record<string, UploadEntry> = {}
+                            for (const [k, v] of Object.entries(stepData.uploads as Record<string, any>)) {
+                              if (v && typeof v === "object") {
+                                restoredUploads[k] = {
+                                  file: null as any,
+                                  preview: "",
+                                  status: v.status || "uploaded",
+                                  extracted: v.extracted || {},
+                                  message: v.message || "Restored from previous session",
+                                }
+                              }
+                            }
+                            setUploads(restoredUploads)
+                          }
                           toast.success("Application restored. Continue where you left off.")
                         } catch {
                           toast.error("Could not restore application data. Please try again.")

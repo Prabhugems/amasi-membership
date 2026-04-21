@@ -116,6 +116,8 @@ export default function IncompletePage() {
   const [search, setSearch] = useState("")
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
+  const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
+  const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -130,7 +132,7 @@ export default function IncompletePage() {
   })
 
   // ─── Fetch drafts list ─────────────────────────────────────────────────
-  const { data: draftsData, isLoading, isError } = useQuery<{ data: IncompleteDraft[]; total: number }>({
+  const { data: draftsData, isLoading, isError } = useQuery<{ drafts: IncompleteDraft[] }>({
     queryKey: ["incomplete-drafts", tab],
     queryFn: async () => {
       const res = await fetch(`/api/applications/incomplete?status=${tab}`)
@@ -184,6 +186,7 @@ export default function IncompletePage() {
 
   const reminderMutation = useMutation({
     mutationFn: async (draftId: string) => {
+      setPendingReminderId(draftId)
       const res = await fetch("/api/applications/incomplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,14 +197,17 @@ export default function IncompletePage() {
     },
     onSuccess: () => {
       toast.success("Reminder email sent")
+      setPendingReminderId(null)
     },
     onError: () => {
       toast.error("Failed to send reminder")
+      setPendingReminderId(null)
     },
   })
 
   const resumeMutation = useMutation({
     mutationFn: async (draftId: string) => {
+      setPendingResumeId(draftId)
       const res = await fetch("/api/applications/incomplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -214,14 +220,16 @@ export default function IncompletePage() {
       toast.success("Application resumed for the applicant")
       queryClient.invalidateQueries({ queryKey: ["incomplete-drafts"] })
       queryClient.invalidateQueries({ queryKey: ["incomplete-counts"] })
+      setPendingResumeId(null)
     },
     onError: () => {
       toast.error("Failed to resume application")
+      setPendingResumeId(null)
     },
   })
 
   // ─── Filter by search ──────────────────────────────────────────────────
-  const drafts = (draftsData?.data || []).filter((draft) => {
+  const drafts = (draftsData?.drafts || []).filter((draft: IncompleteDraft) => {
     if (!search) return true
     const q = search.toLowerCase()
     return draft.email?.toLowerCase().includes(q)
@@ -260,9 +268,9 @@ export default function IncompletePage() {
             variant="outline"
             className="h-8 px-3 text-xs font-medium text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-400/30 hover:bg-blue-50 dark:hover:bg-blue-500/15 gap-1.5"
             onClick={() => reminderMutation.mutate(draft.id)}
-            disabled={reminderMutation.isPending}
+            disabled={pendingReminderId === draft.id}
           >
-            {reminderMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+            {pendingReminderId === draft.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
             Send Reminder
           </Button>
           <Button
@@ -286,9 +294,9 @@ export default function IncompletePage() {
             variant="outline"
             className="h-8 px-3 text-xs font-medium text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 gap-1.5"
             onClick={() => resumeMutation.mutate(draft.id)}
-            disabled={resumeMutation.isPending}
+            disabled={pendingResumeId === draft.id}
           >
-            {resumeMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+            {pendingResumeId === draft.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
             Resume Application
           </Button>
           <Button
@@ -314,7 +322,7 @@ export default function IncompletePage() {
     }
 
     return null
-  }, [reminderMutation, resumeMutation])
+  }, [reminderMutation, resumeMutation, pendingReminderId, pendingResumeId])
 
   return (
     <div className="space-y-6">
@@ -525,9 +533,9 @@ export default function IncompletePage() {
           })}
 
           {/* Total count */}
-          {draftsData && draftsData.total > 0 && (
+          {draftsData?.drafts && draftsData.drafts.length > 0 && (
             <p className="text-sm text-muted-foreground text-center pt-2">
-              Showing {drafts.length} of {draftsData.total} incomplete applications
+              Showing {drafts.length} of {draftsData.drafts.length} incomplete applications
             </p>
           )}
         </motion.div>

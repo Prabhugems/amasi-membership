@@ -242,11 +242,19 @@ export async function GET(request: Request) {
             }
           }
 
-          // Delete the draft row
-          await supabase
+          // Delete the draft row — guard against payment arriving between query and delete
+          const { count: deletedCount } = await supabase
             .from("draft_applications")
             .delete()
             .eq("id", draft.id)
+            .is("payment_order_id", null)
+            .eq("has_verified_payment", false)
+
+          if (!deletedCount || deletedCount === 0) {
+            // Payment arrived between query and delete — skip, Step 4 will handle it
+            console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
+            continue
+          }
 
           // Log to audit
           await supabase.from("membership_audit_log").insert({
@@ -435,9 +443,8 @@ export async function GET(request: Request) {
           if (!draft.payment_order_id) continue
 
           const order = await razorpay.orders.fetch(draft.payment_order_id)
-          const payments = (order as any).items || []
 
-          // Check if any payment has been refunded
+          // Check if the order or payment has been refunded
           let refunded = false
           if ((order as any).status === "refunded") {
             refunded = true

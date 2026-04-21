@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
 
       if (!claimed) {
         return Response.json(
-          { status: false, message: "Reminder already sent recently or draft not in stuck status" },
+          { status: false, message: "Cannot send reminder — either the draft is not in 'stuck' status, or a reminder was already sent within the last hour." },
           { status: 400 }
         )
       }

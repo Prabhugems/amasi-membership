@@ -21,6 +21,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json()
     const { email, current_step, step_data, payment_order_id, payment_id, lastUpdatedAt } = body
+    const membership_type = step_data?.membership_type || body.membership_type || null
 
     // Validate required fields
     if (!email || typeof email !== "string") {
@@ -44,7 +45,7 @@ export async function PUT(request: NextRequest) {
     // Check if draft exists
     const { data: existing } = await supabase
       .from("draft_applications")
-      .select("id, step_data, updated_at")
+      .select("id, step_data, updated_at, membership_type")
       .eq("email", normalizedEmail)
       .limit(1)
       .maybeSingle()
@@ -56,6 +57,7 @@ export async function PUT(request: NextRequest) {
       const updatePayload: Record<string, unknown> = {
         current_step,
         step_data: mergedStepData,
+        membership_type: membership_type ?? existing.membership_type,
         updated_at: new Date().toISOString(),
       }
       if (payment_order_id !== undefined) updatePayload.payment_order_id = payment_order_id
@@ -96,6 +98,7 @@ export async function PUT(request: NextRequest) {
       email: normalizedEmail,
       current_step,
       step_data: step_data || {},
+      membership_type,
       status: "in_progress",
     }
     if (payment_order_id !== undefined) insertPayload.payment_order_id = payment_order_id

@@ -7,6 +7,11 @@ export function validatePersonalDetails(data: ApplicationFormData): Record<strin
   if (!data.firstName.trim()) errors.firstName = "Enter your first name as on MCI certificate"
   else if (data.firstName.trim().length < 2) errors.firstName = "Name must be at least 2 characters"
   if (!data.dob) errors.dob = "Select your date of birth"
+  else {
+    const age = Math.floor((Date.now() - new Date(data.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    if (age < 22) errors.dob = "You must be at least 22 years old to apply"
+    if (age > 100) errors.dob = "Please check your date of birth"
+  }
   if (!data.gender) errors.gender = "Select Male, Female, or Other"
   if (!data.email.trim()) errors.email = "Enter your email address"
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) errors.email = "Enter a valid email (e.g. doctor@gmail.com)"

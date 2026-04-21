@@ -1535,7 +1535,7 @@ export default function ApplyPage() {
   if (phase === "upload") {
     const type = selectedType || getMembershipType(formData.membershipType)
     const requiredDocs = type?.requiredDocs.filter((d) => d !== "profile") || []
-    const allUploaded = requiredDocs.every((d) => uploads[d]?.file) && uploads.profile?.file
+    const allUploaded = requiredDocs.every((d) => uploads[d]?.file || uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded") && (uploads.profile?.file || uploads.profile?.status === "uploaded" || uploads.profile?.status === "extracted")
     const allVerified = requiredDocs.every((d) => uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded")
     const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked" || u.status === "rejected")
     const isProcessing = Object.values(uploads).some((u) => u.status === "processing")

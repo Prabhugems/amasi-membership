@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // Verify code
     if (otpRecord.code !== code.trim()) {
-      const remaining = 4 - (otpRecord.attempts + 1)
+      const remaining = 5 - (otpRecord.attempts + 1)
       return Response.json({
         status: false,
         message: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,

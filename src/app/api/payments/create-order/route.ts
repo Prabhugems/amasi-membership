@@ -7,7 +7,7 @@ const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
   LM:  { amount: 4230, currency: "INR" },
   ALM: { amount: 4230, currency: "INR" },
   ACM: { amount: 4230, currency: "INR" },
-  ILM: { amount: 400,  currency: "USD" },
+  ILM: { amount: 300,  currency: "USD" },
 }
 
 export async function POST(request: NextRequest) {

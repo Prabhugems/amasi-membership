@@ -21,7 +21,10 @@ export default function ApplyLayout({ children }: { children: React.ReactNode })
               <p className="text-[10px] text-muted-foreground">Membership Application</p>
             </div>
           </div>
-          <a href="https://www.amasi.org" target="_blank" className="text-xs text-muted-foreground hover:text-foreground">www.amasi.org</a>
+          <div className="flex items-center gap-4">
+            <a href="/login" className="text-xs text-muted-foreground hover:text-foreground font-medium">Admin Login</a>
+            <a href="https://www.amasi.org" target="_blank" className="text-xs text-muted-foreground hover:text-foreground">www.amasi.org</a>
+          </div>
         </div>
         {children}
       </div>

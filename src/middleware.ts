@@ -118,7 +118,11 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    // Pages redirect to login
+    // Root path → redirect to /apply (public landing) instead of login
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/apply", request.url))
+    }
+    // Other admin pages redirect to login
     const loginUrl = new URL("/login", request.url)
     const fullPath = pathname + (request.nextUrl.search || "")
     loginUrl.searchParams.set("redirect", fullPath)

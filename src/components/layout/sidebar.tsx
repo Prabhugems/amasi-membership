@@ -63,6 +63,8 @@ const sections: NavSection[] = [
     items: [
       { name: "Apply", href: "/apply", icon: UserPlus },
       { name: "Track Status", href: "/apply/status", icon: FileSearch },
+      { name: "Know Your Membership", href: "/membership", icon: Search },
+      { name: "Member Directory", href: "/directory", icon: Users },
       { name: "Member Login", href: "/member", icon: LogIn },
       { name: "Support", href: "/support", icon: Headphones },
     ],

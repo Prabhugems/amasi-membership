@@ -311,6 +311,100 @@ function Timeline({ steps }: { steps: TimelineStep[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Payment verifier component
+// ---------------------------------------------------------------------------
+
+function PaymentVerifier({ referenceNumber }: { referenceNumber: string }) {
+  const [paymentId, setPaymentId] = useState("")
+  const [verifying, setVerifying] = useState(false)
+  const [result, setResult] = useState<{ status: boolean; message: string; payment?: any } | null>(null)
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const id = paymentId.trim()
+    if (!id) return
+
+    setVerifying(true)
+    setResult(null)
+
+    try {
+      const res = await fetch("/api/payments/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: id }),
+      })
+      const data = await res.json()
+      setResult(data)
+    } catch {
+      setResult({ status: false, message: "Verification failed. Please try again." })
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-900/50 p-5">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+          <CreditCard className="h-4 w-4 text-amber-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Payment not confirmed?</p>
+          <p className="text-xs text-amber-700/80 dark:text-amber-300/70 mt-0.5">
+            If you&apos;ve already paid, enter your Razorpay payment ID below to verify and update your application.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleVerify} className="flex gap-2">
+        <Input
+          value={paymentId}
+          onChange={(e) => setPaymentId(e.target.value)}
+          placeholder="pay_xxxxxxxxxxxxxxx"
+          className="flex-1 text-sm font-mono bg-white dark:bg-slate-900"
+          disabled={verifying}
+        />
+        <Button type="submit" size="sm" disabled={verifying || !paymentId.trim()} className="shrink-0">
+          {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify"}
+        </Button>
+      </form>
+
+      {result && (
+        <div className={`mt-3 rounded-lg p-3 text-sm ${
+          result.status
+            ? "bg-green-50 border border-green-200 text-green-800"
+            : "bg-red-50 border border-red-200 text-red-800"
+        }`}>
+          <div className="flex items-start gap-2">
+            {result.status ? (
+              <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+            ) : (
+              <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <p className="font-medium">{result.message}</p>
+              {result.payment && (
+                <div className="mt-1.5 text-xs space-y-0.5 opacity-80">
+                  {result.payment.amount && <p>Amount: ₹{result.payment.amount.toLocaleString("en-IN")}</p>}
+                  {result.payment.email && <p>Email: {result.payment.email}</p>}
+                </div>
+              )}
+              {result.status && (
+                <p className="text-xs mt-2 font-medium">Refresh this page to see updated status.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[10px] text-amber-600/60 dark:text-amber-400/40 mt-2">
+        You can find your Razorpay payment ID in your payment confirmation email or bank statement.
+      </p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Application card component
 // ---------------------------------------------------------------------------
 
@@ -499,6 +593,11 @@ function ApplicationCard({
             </h3>
             <Timeline steps={steps} />
           </div>
+
+          {/* Payment verification — when payment not confirmed */}
+          {app.payment_status !== "paid" && (
+            <PaymentVerifier referenceNumber={app.reference_number} />
+          )}
 
           {/* Estimated time notice */}
           {(app.status === "pending_review" || app.status === "submitted") && (

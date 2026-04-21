@@ -403,15 +403,21 @@ function MemberPortalContent() {
     const profileData = getProfileCompleteness()
     const notifications = getNotifications()
 
-    const isALM = memberType.toUpperCase().includes("ALM") || memberType.toUpperCase().includes("ASSOCIATE LIFE")
+    const isACM = memberType.toUpperCase().includes("ACM") || memberType.toUpperCase().includes("CANDIDATE")
 
-    const sidebarItems: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
+    // Document counts for badge
+    const docFields = ["profile_photo", "mci_certificate", "pg_degree_certificate", "mbbs_degree_certificate", "asi_member_certificate", "active_license", "letter_hod"]
+    const docsUploaded = docFields.filter(k => member[k]).length
+    const docsRequired = member.membership_type?.toUpperCase() === "ACM" ? 4 : 3
+    const hasProfilePhoto = !!member.profile_photo
+
+    const sidebarItems: { id: Tab; label: string; icon: typeof LayoutDashboard; badge?: string }[] = [
       { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "card", label: "Membership Card", icon: CreditCard },
       { id: "certificate", label: "Certificate", icon: Award },
-      { id: "profile", label: "My Profile", icon: User },
-      { id: "documents", label: "Documents", icon: Upload },
-      ...(isALM ? [{ id: "upgrade" as Tab, label: "Upgrade to LM", icon: Star }] : []),
+      { id: "profile", label: "My Profile", icon: User, badge: profileData.percent < 100 ? `${profileData.percent}%` : undefined },
+      { id: "documents", label: "Documents", icon: Upload, badge: docsUploaded < docsRequired ? `${docsUploaded}/${docsRequired}` : undefined },
+      ...(isACM ? [{ id: "upgrade" as Tab, label: "Upgrade Membership", icon: Star }] : []),
       { id: "support", label: "Support", icon: Ticket },
     ]
 
@@ -499,6 +505,9 @@ function MemberPortalContent() {
               >
                 <item.icon className="h-4 w-4 shrink-0" />
                 {item.label}
+                {item.badge && activeTab !== item.id && (
+                  <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">{item.badge}</span>
+                )}
                 {activeTab === item.id && <ChevronRight className="h-3.5 w-3.5 ml-auto" />}
               </button>
             ))}
@@ -608,8 +617,11 @@ function MemberPortalContent() {
                           <div className="text-sm">
                             <p className="font-semibold text-red-900 dark:text-red-200 mb-1">Membership Expired</p>
                             <p className="text-red-800/80 dark:text-red-300/80 leading-relaxed">
-                              Your membership expired on {expiryStr}. Please renew to maintain your benefits.
+                              Your ACM membership expired on {expiryStr}. Upgrade to Life Member or Associate Life Member to continue.
                             </p>
+                            <Button size="sm" className="mt-2 h-7 text-xs bg-red-600 hover:bg-red-700 text-white" onClick={() => setActiveTab("upgrade")}>
+                              Upgrade Now <ArrowRight className="h-3 w-3 ml-1" />
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -624,8 +636,11 @@ function MemberPortalContent() {
                           <div className="text-sm">
                             <p className="font-semibold text-amber-900 dark:text-amber-200 mb-1">Membership Expiring Soon</p>
                             <p className="text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
-                              Your membership expires on {expiryStr}. Contact AMASI to renew.
+                              Your ACM membership expires on {expiryStr}. Upgrade to Life Member or Associate Life Member.
                             </p>
+                            <Button size="sm" variant="outline" className="mt-2 h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100" onClick={() => setActiveTab("upgrade")}>
+                              Upgrade Membership <ArrowRight className="h-3 w-3 ml-1" />
+                            </Button>
                           </div>
                         </div>
                       </div>
@@ -668,9 +683,9 @@ function MemberPortalContent() {
                             href={`/api/payments/receipt?ref=${encodeURIComponent(member.application_no)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
                           >
-                            <FileText className="h-3.5 w-3.5" />
+                            <Download className="h-3.5 w-3.5" />
                             Download Payment Receipt
                             <ExternalLink className="h-3 w-3" />
                           </a>
@@ -717,15 +732,18 @@ function MemberPortalContent() {
                     {[
                       { tab: "card" as Tab, icon: CreditCard, title: "Membership Card", desc: "View & download your digital card", colors: "hover:border-blue-300 hover:bg-blue-50/50", iconBg: "bg-blue-100 text-blue-600" },
                       { tab: "certificate" as Tab, icon: Award, title: "Certificate", desc: "Download membership certificate", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" },
-                      { tab: "profile" as Tab, icon: UserPen, title: "Edit Profile", desc: "Update your details & documents", colors: "hover:border-green-300 hover:bg-green-50/50", iconBg: "bg-green-100 text-green-600" },
-                      { tab: "documents" as Tab, icon: Upload, title: "Upload Documents", desc: "Manage your certificates & files", colors: "hover:border-purple-300 hover:bg-purple-50/50", iconBg: "bg-purple-100 text-purple-600" },
+                      { tab: "profile" as Tab, icon: UserPen, title: "Edit Profile", desc: profileData.percent < 100 ? `${profileData.percent}% complete — update your details` : "Update your details & documents", colors: "hover:border-green-300 hover:bg-green-50/50", iconBg: "bg-green-100 text-green-600", badge: profileData.percent < 100 ? `${profileData.percent}%` : undefined },
+                      { tab: "documents" as Tab, icon: Upload, title: "Upload Documents", desc: !hasProfilePhoto ? "Profile photo missing — upload now" : `${docsUploaded} documents uploaded`, colors: "hover:border-purple-300 hover:bg-purple-50/50", iconBg: "bg-purple-100 text-purple-600", badge: !hasProfilePhoto ? "Photo needed" : docsUploaded < docsRequired ? `${docsUploaded}/${docsRequired}` : undefined },
                       { tab: "support" as Tab, icon: Ticket, title: "Support Tickets", desc: "Get help from AMASI team", colors: "hover:border-rose-300 hover:bg-rose-50/50", iconBg: "bg-rose-100 text-rose-600" },
-                      ...(isALM ? [{ tab: "upgrade" as Tab, icon: Star, title: "Upgrade to LM", desc: "Upgrade to Life Member with ASI details", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" }] : []),
+                      ...(isACM ? [{ tab: "upgrade" as Tab, icon: Star, title: "Upgrade Membership", desc: "Upgrade to Life Member or Associate Life Member", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" }] : []),
                     ].map((action) => (
-                      <button key={action.tab} onClick={() => setActiveTab(action.tab)} className={`group p-5 rounded-xl border bg-card transition-all text-left ${action.colors}`}>
+                      <button key={action.tab} onClick={() => setActiveTab(action.tab)} className={`group p-5 rounded-xl border bg-card transition-all text-left relative ${action.colors}`}>
                         <div className={`p-2.5 rounded-lg w-fit mb-3 ${action.iconBg}`}><action.icon className="h-5 w-5" /></div>
                         <p className="font-semibold text-sm">{action.title}</p>
                         <p className="text-xs text-muted-foreground mt-1">{action.desc}</p>
+                        {(action as any).badge && (
+                          <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{(action as any).badge}</span>
+                        )}
                       </button>
                     ))}
                   </div>

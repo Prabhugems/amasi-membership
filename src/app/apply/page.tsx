@@ -627,11 +627,17 @@ export default function ApplyPage() {
       currency: fee?.currency === "$" ? "USD" : "INR",
       name: "AMASI",
       description: `${type?.name || "Membership"} Application — ${ref}`,
+      image: "/amasi-logo.png",
       order_id: orderId,
       prefill: {
         name: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),
         email: formData.email,
         contact: `${formData.mobileCode || "+91"}${formData.mobile}`,
+      },
+      notes: {
+        referenceNumber: ref,
+        membershipType: type?.name || formData.membershipType,
+        applicantName: `${formData.firstName} ${formData.lastName}`.trim(),
       },
       theme: { color: "#0f766e" },
       handler: async (response: any) => {

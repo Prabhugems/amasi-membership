@@ -398,7 +398,7 @@ export default function ApplyPage() {
         if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
           const [y, m, d] = dob.split("-").map(Number)
           const date = new Date(y, m - 1, d)
-          if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d && y >= 1940 && y <= 2010) {
+          if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d && y >= 1930 && y <= 2015) {
             updates.dob = dob
           }
         }
@@ -2102,7 +2102,7 @@ export default function ApplyPage() {
                 {wasInitiallyMissing("dob") && (
                   <div>
                     <Label className="text-xs flex items-center gap-1">Date of Birth <span className="text-destructive">*</span>{formData.dob && <CheckCircle className="h-3 w-3 text-green-500" />}</Label>
-                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} className={formData.dob ? "border-green-300" : ""} />
+                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} min="1930-01-01" max={new Date().toISOString().split("T")[0]} className={formData.dob ? "border-green-300" : ""} />
                   </div>
                 )}
                 {wasInitiallyMissing("gender") && (
@@ -2192,7 +2192,7 @@ export default function ApplyPage() {
                       Date of Birth <span className="text-destructive">*</span>
                       {calcAge(formData.dob) && <span className="text-muted-foreground ml-1">({calcAge(formData.dob)} yrs)</span>}
                     </Label>
-                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} max={new Date().toISOString().split("T")[0]} />
+                    <Input type="date" value={formData.dob} onChange={(e) => updateField("dob", e.target.value)} min="1930-01-01" max={new Date().toISOString().split("T")[0]} />
                   </div>
                   <div>
                     <Label className="text-xs">Gender <span className="text-destructive">*</span></Label>

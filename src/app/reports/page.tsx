@@ -490,7 +490,7 @@ export default function ReportsPage() {
       {pipeline && pipeline.total > 0 && (
         <>
           <div className="flex items-center gap-2 mt-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400">
               <GitPullRequest className="h-4 w-4" />
             </div>
             <h2 className="text-xl font-semibold tracking-tight">Application Pipeline</h2>
@@ -504,7 +504,7 @@ export default function ReportsPage() {
                 value={pipeline.aiAutoApproved.toLocaleString()}
                 sub={`${pipeline.aiAutoRate}% of total`}
                 icon={Bot}
-                iconBg="bg-cyan-100"
+                iconBg="bg-cyan-100 dark:bg-cyan-500/20"
                 iconColor="text-cyan-600"
               />
             </StaggerItem>
@@ -514,7 +514,7 @@ export default function ReportsPage() {
                 value={pipeline.manualReviewCount.toLocaleString()}
                 sub={`${pipeline.total > 0 ? Math.round((pipeline.manualReviewCount / pipeline.total) * 100) : 0}% flagged`}
                 icon={AlertTriangle}
-                iconBg="bg-orange-100"
+                iconBg="bg-orange-100 dark:bg-orange-500/20"
                 iconColor="text-orange-600"
               />
             </StaggerItem>
@@ -524,7 +524,7 @@ export default function ReportsPage() {
                 value={pipeline.rejected.toLocaleString()}
                 sub={`${pipeline.total > 0 ? Math.round((pipeline.rejected / pipeline.total) * 1000) / 10 : 0}% rejection rate`}
                 icon={XCircle}
-                iconBg="bg-red-100"
+                iconBg="bg-red-100 dark:bg-red-500/20"
                 iconColor="text-red-600"
               />
             </StaggerItem>
@@ -534,7 +534,7 @@ export default function ReportsPage() {
                 value={(pipeline.pending + pipeline.needClarification).toLocaleString()}
                 sub={pipeline.needClarification > 0 ? `${pipeline.needClarification} need clarification` : "In queue"}
                 icon={Clock}
-                iconBg="bg-amber-100"
+                iconBg="bg-amber-100 dark:bg-amber-500/20"
                 iconColor="text-amber-600"
               />
             </StaggerItem>
@@ -545,7 +545,7 @@ export default function ReportsPage() {
             <Card className="card-lift">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400">
                     <PieChart className="h-4 w-4" />
                   </div>
                   Application Status Breakdown
@@ -586,7 +586,7 @@ export default function ReportsPage() {
             <Card className="card-lift">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   NMC Verification Results
@@ -645,7 +645,7 @@ export default function ReportsPage() {
         <Card className="card-lift">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400">
                 <TrendingUp className="h-4 w-4" />
               </div>
               Year-over-Year Growth
@@ -678,7 +678,7 @@ export default function ReportsPage() {
         <Card className="card-lift">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400">
                 <Users className="h-4 w-4" />
               </div>
               Membership Growth Over Time
@@ -750,7 +750,7 @@ export default function ReportsPage() {
       {revenue && revenue.paidCount > 0 && (
         <>
           <div className="flex items-center gap-2 mt-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400">
               <IndianRupee className="h-4 w-4" />
             </div>
             <h2 className="text-xl font-semibold tracking-tight">Revenue</h2>
@@ -764,7 +764,7 @@ export default function ReportsPage() {
                 value={`₹${revenue.total.toLocaleString()}`}
                 sub={`${revenue.paidCount.toLocaleString()} paid transactions`}
                 icon={IndianRupee}
-                iconBg="bg-green-100"
+                iconBg="bg-green-100 dark:bg-green-500/20"
                 iconColor="text-green-600"
               />
             </StaggerItem>
@@ -774,7 +774,7 @@ export default function ReportsPage() {
                 value={`₹${revenue.avgAmount.toLocaleString()}`}
                 sub="Per transaction"
                 icon={IndianRupee}
-                iconBg="bg-emerald-100"
+                iconBg="bg-emerald-100 dark:bg-emerald-500/20"
                 iconColor="text-emerald-600"
               />
             </StaggerItem>
@@ -784,7 +784,7 @@ export default function ReportsPage() {
                 value={`${revenue.collectionRate}%`}
                 sub={`${revenue.failedCount} failed`}
                 icon={CheckCircle2}
-                iconBg="bg-teal-100"
+                iconBg="bg-teal-100 dark:bg-teal-500/20"
                 iconColor="text-teal-600"
               />
             </StaggerItem>
@@ -794,7 +794,7 @@ export default function ReportsPage() {
                 value={revenue.pendingPayments.toLocaleString()}
                 sub="Awaiting confirmation"
                 icon={Clock}
-                iconBg="bg-amber-100"
+                iconBg="bg-amber-100 dark:bg-amber-500/20"
                 iconColor="text-amber-600"
               />
             </StaggerItem>
@@ -804,7 +804,7 @@ export default function ReportsPage() {
             <Card className="card-lift">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400">
                     <TrendingUp className="h-4 w-4" />
                   </div>
                   Monthly Revenue Trend
@@ -862,7 +862,7 @@ export default function ReportsPage() {
       {tickets && tickets.total > 0 && (
         <>
           <div className="flex items-center gap-2 mt-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400">
               <Headphones className="h-4 w-4" />
             </div>
             <h2 className="text-xl font-semibold tracking-tight">Support Tickets</h2>
@@ -876,7 +876,7 @@ export default function ReportsPage() {
                 value={tickets.open.toLocaleString()}
                 sub={`${tickets.total.toLocaleString()} total`}
                 icon={Headphones}
-                iconBg="bg-violet-100"
+                iconBg="bg-violet-100 dark:bg-violet-500/20"
                 iconColor="text-violet-600"
               />
             </StaggerItem>
@@ -886,7 +886,7 @@ export default function ReportsPage() {
                 value={`${tickets.slaComplianceRate}%`}
                 sub={`${tickets.slaBreached} breached`}
                 icon={ShieldAlert}
-                iconBg={tickets.slaComplianceRate >= 90 ? "bg-green-100" : "bg-red-100"}
+                iconBg={tickets.slaComplianceRate >= 90 ? "bg-green-100 dark:bg-green-500/20" : "bg-red-100 dark:bg-red-500/20"}
                 iconColor={tickets.slaComplianceRate >= 90 ? "text-green-600" : "text-red-600"}
               />
             </StaggerItem>
@@ -896,7 +896,7 @@ export default function ReportsPage() {
                 value={formatHours(tickets.avgFirstResponseHours)}
                 sub="Time to first reply"
                 icon={Timer}
-                iconBg="bg-blue-100"
+                iconBg="bg-blue-100 dark:bg-blue-500/20"
                 iconColor="text-blue-600"
               />
             </StaggerItem>
@@ -906,7 +906,7 @@ export default function ReportsPage() {
                 value={formatHours(tickets.avgResolutionHours)}
                 sub={`${(tickets.closed + tickets.resolved).toLocaleString()} resolved`}
                 icon={CheckCircle2}
-                iconBg="bg-emerald-100"
+                iconBg="bg-emerald-100 dark:bg-emerald-500/20"
                 iconColor="text-emerald-600"
               />
             </StaggerItem>
@@ -918,7 +918,7 @@ export default function ReportsPage() {
               <Card className="card-lift">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400">
                       <BarChart3 className="h-4 w-4" />
                     </div>
                     Tickets by Category
@@ -945,7 +945,7 @@ export default function ReportsPage() {
               <Card className="card-lift">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400">
                       <AlertTriangle className="h-4 w-4" />
                     </div>
                     Tickets by Priority
@@ -992,7 +992,7 @@ export default function ReportsPage() {
       {renewals && (renewals.expiringSoon.length > 0 || renewals.expired.length > 0) && (
         <>
           <div className="flex items-center gap-2 mt-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
               <RefreshCw className="h-4 w-4" />
             </div>
             <h2 className="text-xl font-semibold tracking-tight">Membership Renewals</h2>
@@ -1008,7 +1008,7 @@ export default function ReportsPage() {
                 value={renewals.expiringSoon.length.toLocaleString()}
                 sub="Within 30 days"
                 icon={Clock}
-                iconBg="bg-amber-100"
+                iconBg="bg-amber-100 dark:bg-amber-500/20"
                 iconColor="text-amber-600"
               />
             </StaggerItem>
@@ -1018,7 +1018,7 @@ export default function ReportsPage() {
                 value={renewals.expired.length.toLocaleString()}
                 sub="Past expiry date"
                 icon={XCircle}
-                iconBg="bg-red-100"
+                iconBg="bg-red-100 dark:bg-red-500/20"
                 iconColor="text-red-600"
               />
             </StaggerItem>
@@ -1028,7 +1028,7 @@ export default function ReportsPage() {
                 value={renewals.totalActive.toLocaleString()}
                 sub="Currently valid"
                 icon={CheckCircle2}
-                iconBg="bg-green-100"
+                iconBg="bg-green-100 dark:bg-green-500/20"
                 iconColor="text-green-600"
               />
             </StaggerItem>
@@ -1037,7 +1037,7 @@ export default function ReportsPage() {
           <Card className="card-lift">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
                   <RefreshCw className="h-4 w-4" />
                 </div>
                 Members Needing Renewal
@@ -1069,7 +1069,7 @@ export default function ReportsPage() {
                                 Expired {Math.abs(m.daysUntilExpiry)}d ago
                               </Badge>
                             ) : (
-                              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs">
+                              <Badge className="bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20 text-xs">
                                 Expires in {m.daysUntilExpiry}d
                               </Badge>
                             )}
@@ -1097,7 +1097,7 @@ export default function ReportsPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400">
                   <PieChart className="h-4 w-4" />
                 </div>
                 Zone Distribution
@@ -1164,7 +1164,7 @@ export default function ReportsPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400">
                   <BarChart3 className="h-4 w-4" />
                 </div>
                 Membership Types
@@ -1235,7 +1235,7 @@ export default function ReportsPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                   <TrendingUp className="h-4 w-4" />
                 </div>
                 Members by Month
@@ -1287,7 +1287,7 @@ export default function ReportsPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
                   <MapPin className="h-4 w-4" />
                 </div>
                 Top 10 States
@@ -1356,7 +1356,7 @@ export default function ReportsPage() {
         <Card className="card-lift">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 text-green-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               Approval Breakdown
@@ -1408,7 +1408,7 @@ export default function ReportsPage() {
           <Card className="md:col-span-2 card-lift">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 text-teal-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400">
                   <MapPin className="h-4 w-4" />
                 </div>
                 Geographic Distribution

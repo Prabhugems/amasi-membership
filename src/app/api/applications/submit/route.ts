@@ -299,6 +299,10 @@ export async function POST(request: NextRequest) {
         asiMembershipNo: formData.asiMembershipNo,
         asiState: formData.asiState,
         reviewNotes,
+        profilePhoto: (() => {
+          const u = uploads || {}
+          return u.profile?.fileUrl || u.photo?.fileUrl || u.photo?.url || u.profile?.url || null
+        })(),
       })
 
       if (!result.success) {

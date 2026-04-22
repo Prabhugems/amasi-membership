@@ -90,6 +90,11 @@ export async function POST(request: NextRequest) {
       asi_membership_no: app.asi_membership_no,
       asi_state: app.asi_state,
       joining_date: new Date().toISOString().split("T")[0],
+      // Copy profile photo from application documents
+      profile_photo: (() => {
+        const docs = app.documents || {}
+        return docs.photo?.url || docs.photo?.fileUrl || docs.profile?.fileUrl || docs.profile?.url || null
+      })(),
     })
 
     if (insertError) {

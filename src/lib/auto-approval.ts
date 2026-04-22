@@ -58,6 +58,9 @@ export interface AutoApprovalInput {
   asiMembershipNo?: string | null
   asiState?: string | null
 
+  // Profile photo URL
+  profilePhoto?: string | null
+
   // Notes for review_notes on the application row
   reviewNotes: string
 }
@@ -160,6 +163,7 @@ export async function autoApproveApplication(
     asi_membership_no: input.asiMembershipNo,
     asi_state: input.asiState,
     joining_date: today,
+    profile_photo: input.profilePhoto || null,
   })
 
   if (memberInsertError) {

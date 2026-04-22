@@ -6,6 +6,7 @@ import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
@@ -206,6 +207,11 @@ export async function POST(request: NextRequest) {
       entityName: fullName,
       details: { amasiNumber: nextAmasiNumber, membershipType: app.membership_type },
     })
+
+    await updateAiDecisionOutcome(supabase, applicationId, {
+      finalStatus: "approved",
+      finalStatusBy: (session?.email as string) || "admin",
+    }).catch(err => console.error("[approve] decision outcome update failed:", err))
 
     return Response.json({
       status: true,

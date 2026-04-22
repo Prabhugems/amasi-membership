@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
+import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 
 /**
@@ -195,6 +196,11 @@ export async function autoApproveApplication(
     )
     // fall through; still attempt notifications and return success
   }
+
+  await updateAiDecisionOutcome(supabase, input.applicationId, {
+    finalStatus: "approved",
+    finalStatusBy: "ai",
+  }).catch(err => console.error("[auto-approval] decision outcome update failed:", err))
 
   // 4. Notifications — best-effort, never throw
   const displayName = [input.salutation, input.firstName].filter(Boolean).join(" ").trim()

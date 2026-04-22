@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
+import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
@@ -91,6 +92,11 @@ export async function POST(request: NextRequest) {
       entityName: fullName,
       details: { reason },
     })
+
+    await updateAiDecisionOutcome(supabase, applicationId, {
+      finalStatus: "rejected",
+      finalStatusBy: (session?.email as string) || "admin",
+    }).catch(err => console.error("[reject] decision outcome update failed:", err))
 
     return Response.json({ status: true, message: "Application rejected" })
   } catch (error: any) {

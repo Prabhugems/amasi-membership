@@ -5,6 +5,7 @@ import { Resend } from "resend"
 import { scoreApplication } from "@/lib/ai-approval"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
+import { logAiDecision, updateAiDecisionOutcome, type AiDecisionInput } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
@@ -146,7 +147,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Run AI scoring engine
+    const scoringStart = performance.now()
     const approval = await scoreApplication(formData, uploads || {}, !!paymentId)
+    const scoringDurationMs = Math.round(performance.now() - scoringStart)
     const allAiVerified = approval.autoApprove
     const hasPendingReview = !approval.autoApprove
     const aiFlags = approval.flags
@@ -227,6 +230,17 @@ export async function POST(request: NextRequest) {
     }
 
     const applicationId: string | undefined = app?.id
+
+    if (applicationId) {
+      await logAiDecision(supabase, {
+        applicationId,
+        applicationReference: referenceNumber,
+        membershipType: formData.membershipType,
+        formData,
+        uploads: uploads || {},
+        paymentPaid: !!paymentId,
+      }, approval, scoringDurationMs, null).catch(err => console.error("[submit] ai decision log failed:", err))
+    }
 
     // Clean up draft application on successful insert
     try {
@@ -328,6 +342,12 @@ export async function POST(request: NextRequest) {
           })
           .eq("id", applicationId)
 
+        await updateAiDecisionOutcome(supabase, applicationId, {
+          finalStatus: "auto_approve_failed",
+          finalStatusBy: "ai",
+          overrideReason: `member creation failed: ${result.reason}`,
+        }).catch(err => console.error("[submit] decision outcome update failed:", err))
+
         return Response.json({
           status: true,
           approved: false,
@@ -335,6 +355,11 @@ export async function POST(request: NextRequest) {
           message: "Application submitted. Requires manual review due to a processing issue.",
         })
       }
+
+      await updateAiDecisionOutcome(supabase, applicationId, {
+        finalStatus: "approved",
+        finalStatusBy: "ai",
+      }).catch(err => console.error("[submit] decision outcome update failed:", err))
 
       return Response.json({
         status: true,

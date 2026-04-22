@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
+import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
@@ -143,6 +144,12 @@ export async function POST(request: NextRequest) {
       entityName: fullName,
       details: { action, message },
     })
+
+    const clarificationStatus = action === "need_clarification" ? "clarification_requested" : "resubmit_requested"
+    await updateAiDecisionOutcome(supabase, applicationId, {
+      finalStatus: clarificationStatus,
+      finalStatusBy: (session?.email as string) || "admin",
+    }).catch(err => console.error("[clarification] decision outcome update failed:", err))
 
     const actionLabel = action === "need_clarification" ? "Clarification requested" : "Resubmission requested"
     return Response.json({ status: true, message: actionLabel })

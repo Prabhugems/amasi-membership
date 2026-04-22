@@ -347,6 +347,7 @@ function ResubmitContent() {
       const formDataObj = new FormData()
       formDataObj.append("data", JSON.stringify({
         applicationId: application.id,
+        email: application.email,
         updates,
       }))
 

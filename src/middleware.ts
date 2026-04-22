@@ -54,6 +54,7 @@ const PUBLIC_API_ROUTES = [
   "/api/nmc",
   "/api/webhooks/",
   "/api/zoho/callback",
+  "/api/member/refresh-token",
 ]
 
 export async function middleware(request: NextRequest) {

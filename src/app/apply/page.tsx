@@ -259,10 +259,10 @@ export default function ApplyPage() {
   }, [draftChecked])
 
   // Save draft to server after each step change (only after email is verified)
-  const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>) => {
-    if (!emailVerified || !formData.email) return
-    try {
-      // Sanitize extracted OCR data — strip non-JSON-safe values
+  const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>): Promise<{ ok: boolean; error: string | null }> => {
+    if (!emailVerified || !formData.email) return { ok: true, error: null }
+
+    const buildBody = () => {
       const safeUploads = Object.fromEntries(
         Object.entries(uploads).map(([k, v]) => {
           const safeExtracted: Record<string, any> = {}
@@ -271,7 +271,7 @@ export default function ApplyPage() {
               safeExtracted[ek] = ev
             }
           }
-          return [k, { status: v.status, extracted: safeExtracted, message: v.message }]
+          return [k, { status: v.status, extracted: safeExtracted, message: v.message, fileUrl: v.fileUrl || null }]
         })
       )
       const body: any = {
@@ -285,20 +285,52 @@ export default function ApplyPage() {
         },
       }
       if (draftUpdatedAt) body.lastUpdatedAt = draftUpdatedAt
-      const res = await fetch("/api/applications/save-draft", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.draft?.updated_at) setDraftUpdatedAt(data.draft.updated_at)
-      } else if (res.status === 409) {
-        toast.error("This application is being continued on another device. Please close this tab.")
-      }
-    } catch {
-      // Draft save failure is non-blocking
+      return body
     }
+
+    const attempt = async (): Promise<{ ok: boolean; error: string | null }> => {
+      try {
+        const res = await fetch("/api/applications/save-draft", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildBody()),
+          signal: AbortSignal.timeout(12000),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.draft?.updated_at) setDraftUpdatedAt(data.draft.updated_at)
+          return { ok: true, error: null }
+        }
+
+        if (res.status === 401) {
+          // Try to refresh token
+          try { await fetch("/api/member/refresh-token", { method: "POST" }) } catch {}
+          return { ok: false, error: "auth" }
+        }
+
+        if (res.status === 409) {
+          // Sync updated_at from server response
+          try {
+            const data = await res.json()
+            if (data.serverUpdatedAt) setDraftUpdatedAt(data.serverUpdatedAt)
+          } catch {}
+          return { ok: false, error: "conflict" }
+        }
+
+        return { ok: false, error: `HTTP ${res.status}` }
+      } catch (err: any) {
+        return { ok: false, error: err?.name === "TimeoutError" ? "timeout" : (err?.message || "network error") }
+      }
+    }
+
+    // First attempt
+    const first = await attempt()
+    if (first.ok) return first
+
+    // One automatic retry after 500ms
+    await new Promise(r => setTimeout(r, 500))
+    return await attempt()
   }, [emailVerified, formData, selectedType, uploads, draftUpdatedAt])
 
   // Auto-save draft every 30 seconds
@@ -312,6 +344,20 @@ export default function ApplyPage() {
     }, 30000)
     return () => clearInterval(interval)
   }, [formData, phase, selectedType])
+
+  // Auto-refresh member JWT every 45 min to prevent draft save 401s
+  useEffect(() => {
+    if (!emailVerified) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/member/refresh-token", { method: "POST" })
+        if (res.status === 401) {
+          toast.error("Your session has expired. Please re-verify your email to save progress.", { duration: 10000 })
+        }
+      } catch {}
+    }, 45 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [emailVerified])
 
   // Pre-warm Face Detection on mount
   useEffect(() => {
@@ -683,6 +729,19 @@ export default function ApplyPage() {
     const fee = type ? calculateFee(type) : null
     const totalAmount = fee ? fee.totalFee : 4230
 
+    // --- BLOCKING: ensure server has all form data before payment ---
+    let savedBeforePayment = false
+    for (let i = 0; i < 2; i++) {
+      const result = await saveDraftToServer(4, { pre_payment_checkpoint: true })
+      if (result.ok) { savedBeforePayment = true; break }
+      if (i < 1) await new Promise(r => setTimeout(r, 2000))
+    }
+    if (!savedBeforePayment) {
+      toast.error("Could not save your application data. Please check your connection and try again before paying.", { duration: 8000 })
+      setSubmitting(false)
+      return
+    }
+
     // Step 1: Create Razorpay order
     let orderId = ""
     try {
@@ -784,8 +843,13 @@ export default function ApplyPage() {
 
           toast.success("Payment successful!")
 
-          // Save draft immediately with payment info — safety net before submit
-          saveDraftToServer(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true })
+          // Blocking save with payment info — recovery safety net (8s cap)
+          try {
+            await Promise.race([
+              saveDraftToServer(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true }),
+              new Promise(r => setTimeout(r, 8000)),
+            ])
+          } catch {}
 
           // Step 4: Submit application with retry (up to 3 attempts)
           const uploadData = Object.fromEntries(

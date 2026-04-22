@@ -14,7 +14,7 @@ export async function PUT(request: NextRequest) {
   try {
     // Rate limit: 30 requests per 15 minutes per IP
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = await checkRateLimit(`save-draft:${ip}`, 30, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`save-draft:${ip}`, 60, 15 * 60 * 1000)
     if (!rl.allowed) {
       return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
     }
@@ -64,7 +64,10 @@ export async function PUT(request: NextRequest) {
         updated_at: new Date().toISOString(),
       }
       if (payment_order_id !== undefined) updatePayload.payment_order_id = payment_order_id
-      if (payment_id !== undefined) updatePayload.payment_id = payment_id
+      if (payment_id !== undefined) {
+        updatePayload.payment_id = payment_id
+        updatePayload.has_verified_payment = true
+      }
 
       const query = supabase
         .from("draft_applications")
@@ -84,7 +87,7 @@ export async function PUT(request: NextRequest) {
       // If no row returned, it's a conflict (optimistic lock failed)
       if (!updated) {
         return Response.json(
-          { status: false, message: "Draft was modified by another session. Please reload and try again." },
+          { status: false, code: "CONFLICT", message: "Draft was modified by another session.", serverUpdatedAt: existing.updated_at },
           { status: 409 }
         )
       }
@@ -101,7 +104,10 @@ export async function PUT(request: NextRequest) {
       status: "in_progress",
     }
     if (payment_order_id !== undefined) insertPayload.payment_order_id = payment_order_id
-    if (payment_id !== undefined) insertPayload.payment_id = payment_id
+    if (payment_id !== undefined) {
+      insertPayload.payment_id = payment_id
+      insertPayload.has_verified_payment = true
+    }
 
     const { data: inserted, error: insertError } = await supabase
       .from("draft_applications")

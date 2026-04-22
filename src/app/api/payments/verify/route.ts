@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
     const isILM = membershipType?.toUpperCase() === "ILM"
     const PROCESSING_FEE = isILM ? 0 : (Number(process.env.PROCESSING_FEE_INR) || 100)
 
+    // Transfer processing fee to Events 360 via Razorpay Route
+    let transferStatus: "success" | "failed" | "skipped" = "skipped"
+    let transferError: string | null = null
+
     if (PROCESSING_FEE > 0) {
       const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
       try {
@@ -64,9 +68,18 @@ export async function POST(request: NextRequest) {
             },
           }],
         })
+        transferStatus = "success"
+        console.log(`Route transfer SUCCESS: ₹${PROCESSING_FEE} to ${EVENTS360_ACCOUNT_ID} for ${referenceNumber}`)
       } catch (transferErr: any) {
-        // Log but don't block — payment is already collected
-        console.error("Route transfer error:", transferErr.message)
+        transferStatus = "failed"
+        transferError = transferErr?.error?.description || transferErr?.message || "Unknown error"
+        console.error(`Route transfer FAILED for ${referenceNumber}:`, JSON.stringify({
+          error: transferError,
+          code: transferErr?.error?.code,
+          paymentId: razorpay_payment_id,
+          account: EVENTS360_ACCOUNT_ID,
+          amount: PROCESSING_FEE,
+        }))
       }
     }
 
@@ -99,6 +112,8 @@ export async function POST(request: NextRequest) {
         membership_fee: (amount || 4230) - PROCESSING_FEE,
         processing_fee: PROCESSING_FEE,
         processing_fee_account: PROCESSING_FEE > 0 ? "events360" : null,
+        transfer_status: transferStatus,
+        transfer_error: transferError,
         note: PROCESSING_FEE > 0 ? "₹100 processing fee (incl GST) to be settled to Events 360" : "No processing fee for ILM",
         applicant_email: email || null,
       },

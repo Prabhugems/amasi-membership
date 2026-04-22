@@ -38,23 +38,61 @@ export async function POST(request: NextRequest) {
       key_secret: process.env.RAZORPAY_KEY_SECRET!.trim(),
     })
 
-    const order = await razorpay.orders.create({
-      amount: Math.round(amount * 100), // Razorpay expects paise
+    // Processing fee transfer to Events360 (INR only, skip for ILM)
+    const isILM = membershipType?.toUpperCase() === "ILM"
+    const PROCESSING_FEE = isILM ? 0 : (Number(process.env.PROCESSING_FEE_INR) || 100)
+    const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
+
+    const orderPayload: Record<string, any> = {
+      amount: Math.round(amount * 100), // Razorpay expects paise/cents
       currency: currency || "INR",
       receipt: referenceNumber,
+      partial_payment: false,
       notes: {
         reference_number: referenceNumber,
         email,
         name,
         membership_type: membershipType,
       },
-    })
+    }
+
+    // Include transfer at order creation (Razorpay recommended approach)
+    if (PROCESSING_FEE > 0) {
+      orderPayload.transfers = [{
+        account: EVENTS360_ACCOUNT_ID,
+        amount: PROCESSING_FEE * 100, // paise
+        currency: "INR",
+        notes: {
+          reference: referenceNumber,
+          purpose: "processing_fee",
+        },
+        on_hold: 0,
+      }]
+    }
+
+    let order: any
+    try {
+      order = await razorpay.orders.create(orderPayload as any)
+    } catch (orderErr: any) {
+      // If transfer fails, retry without transfer — don't block payment
+      const errMsg = orderErr?.error?.description || orderErr?.message || ""
+      console.error("Order with transfer failed:", errMsg)
+
+      if (PROCESSING_FEE > 0) {
+        console.log("Retrying order without transfer...")
+        delete orderPayload.transfers
+        order = await razorpay.orders.create(orderPayload as any)
+      } else {
+        throw orderErr
+      }
+    }
 
     return Response.json({
       status: true,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
+      transferIncluded: !!orderPayload.transfers,
     })
   } catch (error: any) {
     console.error("Razorpay order error:", error)

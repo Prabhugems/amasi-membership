@@ -40,16 +40,16 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Payment verification failed" }, { status: 400 })
     }
 
-    // Transfer processing fee to Events 360 via Razorpay Route (INR types only)
+    // Processing fee calculation
     const isILM = membershipType?.toUpperCase() === "ILM"
     const PROCESSING_FEE = isILM ? 0 : (Number(process.env.PROCESSING_FEE_INR) || 100)
 
-    // Transfer processing fee to Events 360 via Razorpay Route
+    // Transfer is now handled at order creation (create-order route).
+    // This verify route only logs the status — check the order for transfer details.
     let transferStatus: "success" | "failed" | "skipped" = "skipped"
     let transferError: string | null = null
 
     if (PROCESSING_FEE > 0) {
-      const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
       try {
         const Razorpay = (await import("razorpay")).default
         const razorpay = new Razorpay({
@@ -57,29 +57,40 @@ export async function POST(request: NextRequest) {
           key_secret: process.env.RAZORPAY_KEY_SECRET!.trim(),
         })
 
-        await (razorpay.payments as any).transfer(razorpay_payment_id, {
-          transfers: [{
-            account: EVENTS360_ACCOUNT_ID,
-            amount: PROCESSING_FEE * 100, // paise
-            currency: "INR",
-            notes: {
-              reference: referenceNumber,
-              purpose: "processing_fee",
-            },
-          }],
-        })
-        transferStatus = "success"
-        console.log(`Route transfer SUCCESS: ₹${PROCESSING_FEE} to ${EVENTS360_ACCOUNT_ID} for ${referenceNumber}`)
-      } catch (transferErr: any) {
+        // Check if transfer was included in the order
+        const order = await razorpay.orders.fetch(razorpay_order_id)
+        if ((order as any).transfers?.items?.length > 0) {
+          transferStatus = "success"
+          console.log(`Route transfer via order: ₹${PROCESSING_FEE} for ${referenceNumber}`)
+        } else {
+          // Fallback: try payment-level transfer
+          const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
+          try {
+            await (razorpay.payments as any).transfer(razorpay_payment_id, {
+              transfers: [{
+                account: EVENTS360_ACCOUNT_ID,
+                amount: PROCESSING_FEE * 100,
+                currency: "INR",
+                notes: { reference: referenceNumber, purpose: "processing_fee" },
+              }],
+            })
+            transferStatus = "success"
+            console.log(`Route transfer via payment fallback: ₹${PROCESSING_FEE} for ${referenceNumber}`)
+          } catch (fallbackErr: any) {
+            transferStatus = "failed"
+            transferError = fallbackErr?.error?.description || fallbackErr?.message || "Unknown error"
+            console.error(`Route transfer FAILED for ${referenceNumber}:`, JSON.stringify({
+              error: transferError,
+              code: fallbackErr?.error?.code,
+              paymentId: razorpay_payment_id,
+              amount: PROCESSING_FEE,
+            }))
+          }
+        }
+      } catch (checkErr: any) {
         transferStatus = "failed"
-        transferError = transferErr?.error?.description || transferErr?.message || "Unknown error"
-        console.error(`Route transfer FAILED for ${referenceNumber}:`, JSON.stringify({
-          error: transferError,
-          code: transferErr?.error?.code,
-          paymentId: razorpay_payment_id,
-          account: EVENTS360_ACCOUNT_ID,
-          amount: PROCESSING_FEE,
-        }))
+        transferError = checkErr?.message || "Could not verify transfer"
+        console.error(`Route transfer check error for ${referenceNumber}:`, checkErr.message)
       }
     }
 

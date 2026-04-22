@@ -32,7 +32,15 @@ export async function exchangeCode(code: string) {
     }),
   })
 
-  const data = await res.json()
+  const text = await res.text()
+  console.log("[zoho] Token exchange response:", res.status, text.substring(0, 300))
+
+  let data: any
+  try {
+    data = JSON.parse(text)
+  } catch {
+    throw new Error(`Zoho returned non-JSON (status ${res.status}): ${text.substring(0, 200)}`)
+  }
   if (data.error) throw new Error(`Zoho OAuth error: ${data.error}`)
 
   return {

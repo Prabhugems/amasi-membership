@@ -11,6 +11,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/admin?zoho=error&reason=no_code", request.url))
     }
 
+    // Debug: log env vars presence
+    console.log("[zoho/callback] CLIENT_ID exists:", !!process.env.ZOHO_CLIENT_ID)
+    console.log("[zoho/callback] CLIENT_SECRET exists:", !!process.env.ZOHO_CLIENT_SECRET)
+    console.log("[zoho/callback] REDIRECT_URI:", process.env.ZOHO_REDIRECT_URI)
+    console.log("[zoho/callback] Code:", code.substring(0, 20) + "...")
+
     const tokens = await exchangeCode(code)
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 

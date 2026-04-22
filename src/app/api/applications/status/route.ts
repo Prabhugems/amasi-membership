@@ -2,8 +2,8 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
-// Only return fields needed for status display — exclude sensitive PII
-const SELECT_FIELDS = "id, reference_number, name, first_name, last_name, salutation, membership_type, status, payment_status, ai_confidence, ai_verified, needs_manual_review, review_notes, assigned_amasi_number, created_at, reviewed_at, city, state, pg_degree, documents"
+// Return all fields needed for status display AND resubmit form
+const SELECT_FIELDS = "id, reference_number, name, first_name, middle_name, last_name, salutation, email, phone, mobile_code, membership_type, status, payment_status, ai_confidence, ai_verified, needs_manual_review, review_notes, assigned_amasi_number, created_at, reviewed_at, date_of_birth, gender, father_name, nationality, street_address_1, street_address_2, city, state, country, postal_code, zone, pg_degree, pg_college, pg_university, pg_year, ug_college, mci_council_number, mci_council_state, asi_membership_no, documents"
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("ref") || request.nextUrl.searchParams.get("q")

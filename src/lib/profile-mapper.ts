@@ -84,7 +84,7 @@ export function dbToFormData(row: Record<string, any>): ProfileFormData {
   const { first, middle, last } = splitName(row.name || "")
 
   return {
-    id: row.id || "",
+    id: row.id || row._id || "",
     email: row.email || "",
     phone: String(row.phone || ""),
     amasi_number: row.amasi_number || 0,

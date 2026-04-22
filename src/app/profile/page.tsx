@@ -59,6 +59,11 @@ function ProfileContent() {
       setError("No member found. Please check your email, phone, or membership number.")
       return
     }
+    if (!member.id && !member._id) {
+      console.error("Profile member record missing id", member)
+      setError("Profile data incomplete. Please refresh and try again, or contact support.")
+      return
+    }
     setError(null)
     setRawMember(member)
     // Convert the raw DB row (spread in API response) to form data
@@ -86,12 +91,17 @@ function ProfileContent() {
 
   const handleSave = async () => {
     if (!originalData || !formData) return
+    const memberId = formData.id
+    if (!memberId) {
+      console.error("Profile save blocked: missing member id", { formData })
+      setError("Profile data incomplete. Please refresh and try again, or contact support.")
+      return
+    }
     setIsSaving(true)
     setError(null)
 
     try {
       const dbChanges = formChangesToDb(originalData, formData)
-      const memberId = formData.id
 
       const res = await fetch(`/api/members/${encodeURIComponent(memberId)}/update`, {
         method: "PUT",

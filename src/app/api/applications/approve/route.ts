@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server"
+import { randomUUID } from "node:crypto"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
-    const memberId = crypto.randomUUID() // Bug 2: generate UUID to use as member_id
+    const memberId = randomUUID()
 
     // Get next AMASI number atomically via sequence
     const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
@@ -212,6 +214,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Approve error:", error)
-    return Response.json({ status: false, message: error.message }, { status: 500 })
+    Sentry.captureException(error, { tags: { flow: "application_approve" } })
+    return Response.json({ status: false, message: error.message || "Failed to approve application" }, { status: 500 })
   }
 }

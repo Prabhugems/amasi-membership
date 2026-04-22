@@ -1,0 +1,31 @@
+93b87a4 fix: approve route 500 — import randomUUID from node:crypto, add Sentry
+0683498 feat: add Sentry error monitoring with payment flow instrumentation
+54cc24e feat: bulletproof draft sync — 4-phase fix for payment-without-submission bug
+6f239ea feat: email campaigns page — send profile update emails, track responses
+4e8679e fix: profile photo never copied to member record on approval
+28bfee6 fix: 21 bugs from end-to-end data flow trace across all 5 user journeys
+de5e274 fix: 10 bugs in incomplete applications — data flow traced end-to-end
+b9bdd10 fix: status API missing fields needed by resubmit form
+2c01060 debug: use accounts-server from Zoho callback params, show full error
+fa4435d debug: add logging to Zoho token exchange
+e702911 debug: show JSON error on Zoho callback failure
+b788a3d fix: Zoho callback returns Unauthorized — remove admin session check, add to public routes
+3a3e8b5 feat: Zoho Campaigns integration — OAuth, contact sync, auto-add on approval
+e1465e3 fix: move Route transfer to order creation (Razorpay recommended)
+af44d99 fix: add detailed Route transfer logging to payment verify
+1bda3b9 fix: 14 bugs from final comprehensive audit
+4c472c2 fix: resubmit page missing email in request — all resubmits returned 403
+e0712ab feat: upload documents to Supabase Storage for admin review
+88aca55 fix: 5 bugs from 90% confidence audit + error glow UI
+4f60fd0 fix: 3 remaining bugs from final audit
+7adeff0 fix: 7 bugs found in full application form audit
+0b21cd3 fix: review form fields STILL disappearing — useRef inside conditional broke React hooks rules
+2d5409c fix: DOB issues — add min date, widen OCR acceptance range
+c86d724 fix: review form fields disappear after typing one character
+95df9b6 fix: don't show resume prompt for empty drafts created by OTP send
+da2faab fix: capture applicant from OTP send, add 3x submit retry after payment
+60275a1 fix: detect orphaned payments and skip payment step on recovery
+31b674d chore: add member data import, sync, and audit scripts
+b336b23 fix: address 7 issues from second audit of incomplete applications
+aafa1e0 fix: address 8 audit issues in incomplete applications feature
+8fcb75c feat: incomplete applications — resume stuck signups, admin dashboard, cron cleanup, refunds

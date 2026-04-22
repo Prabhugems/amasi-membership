@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
+import * as Sentry from "@sentry/nextjs"
 
 // Inline token verification — cannot import from @/lib/auth because it uses next/headers
 const ADMIN_COOKIE = "amasi_admin_token"
@@ -55,6 +56,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/",
   "/api/zoho/callback",
   "/api/member/refresh-token",
+  "/api/sentry-test",
 ]
 
 export async function middleware(request: NextRequest) {

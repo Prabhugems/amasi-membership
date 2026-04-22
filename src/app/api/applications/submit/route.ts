@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { Resend } from "resend"
 import { scoreApplication } from "@/lib/ai-approval"
@@ -383,6 +384,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Application submit error:", error)
+    Sentry.captureException(error, { tags: { flow: "application_submit" } })
     return Response.json({ status: false, message: "Failed to submit application" }, { status: 500 })
   }
 }

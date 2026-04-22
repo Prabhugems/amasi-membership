@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import crypto from "crypto"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Payment verify error:", error)
+    Sentry.captureException(error, { tags: { flow: "payment_verify" } })
     return Response.json({ status: false, message: "Payment verification failed" }, { status: 500 })
   }
 }

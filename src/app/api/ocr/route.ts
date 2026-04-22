@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import Anthropic from "@anthropic-ai/sdk"
+import * as Sentry from "@sentry/nextjs"
 import sharp from "sharp"
 import { checkRateLimit } from "@/lib/rate-limit"
 
@@ -623,6 +624,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("OCR API error:", error)
+    Sentry.captureException(error, { tags: { flow: "ocr_upload" } })
     return Response.json({ success: false, error: "Could not process this document. Please try a clearer image." }, { status: 500 })
   }
 }

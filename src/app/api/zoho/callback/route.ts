@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
 import { exchangeCode } from "@/lib/zoho"
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getAdminSession()
-    if (!session) {
-      return NextResponse.redirect(new URL("/admin/login", request.url))
-    }
-
+    // No admin session check — this is an OAuth redirect from Zoho
+    // Security is provided by the authorization code itself
     const code = request.nextUrl.searchParams.get("code")
     if (!code) {
       return NextResponse.redirect(new URL("/admin?zoho=error&reason=no_code", request.url))

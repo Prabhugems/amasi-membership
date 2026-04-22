@@ -53,6 +53,7 @@ const PUBLIC_API_ROUTES = [
   "/api/members/upload",
   "/api/nmc",
   "/api/webhooks/",
+  "/api/zoho/callback",
 ]
 
 export async function middleware(request: NextRequest) {

@@ -12,6 +12,16 @@ const nmcAgent = new https.Agent({
 function callNmcOnce(regNo: string, timeoutMs: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ registrationNo: regNo.trim(), smcId: "" })
+    const controller = new AbortController()
+    const deadline = setTimeout(() => controller.abort(), timeoutMs)
+    let settled = false
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      fn()
+    }
+
     const req = https.request(
       {
         hostname: "www.nmc.org.in",
@@ -22,29 +32,31 @@ function callNmcOnce(regNo: string, timeoutMs: number): Promise<unknown> {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body),
         },
-        timeout: timeoutMs,
+        signal: controller.signal,
       },
       (res) => {
         const chunks: Buffer[] = []
         res.on("data", (c) => chunks.push(c))
+        res.on("error", (err) => settle(() => reject(err)))
         res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8")
           if (!res.statusCode || res.statusCode >= 400) {
-            reject(new Error(`NMC HTTP ${res.statusCode}`))
+            settle(() => reject(new Error(`NMC HTTP ${res.statusCode}`)))
             return
           }
           try {
-            resolve(JSON.parse(text))
+            const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"))
+            settle(() => resolve(parsed))
           } catch {
-            reject(new Error("NMC returned non-JSON"))
+            settle(() => reject(new Error("NMC returned non-JSON")))
           }
         })
       }
     )
-    req.on("error", reject)
-    req.on("timeout", () => {
-      req.destroy(new Error(`NMC timeout after ${timeoutMs}ms`))
-    })
+    req.on("error", (err) =>
+      settle(() =>
+        reject(controller.signal.aborted ? new Error(`NMC timeout after ${timeoutMs}ms`) : err)
+      )
+    )
     req.end(body)
   })
 }

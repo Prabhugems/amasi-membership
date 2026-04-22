@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         .from("draft_applications")
         .select("*")
         .eq("email", email.toLowerCase())
-        .not("status", "in", '("completed","expired","refunded")')
+        .not("status", "in", "(completed,expired,refunded)")
         .limit(1)
         .maybeSingle()
       if (draftRow) {

@@ -51,6 +51,9 @@ export async function PUT(request: NextRequest) {
       .maybeSingle()
 
     if (existing) {
+      // Always use optimistic locking for existing drafts
+      const lockValue = lastUpdatedAt || existing.updated_at
+
       // Merge step_data with existing data
       const mergedStepData = { ...(existing.step_data || {}), ...(step_data || {}) }
 
@@ -63,15 +66,11 @@ export async function PUT(request: NextRequest) {
       if (payment_order_id !== undefined) updatePayload.payment_order_id = payment_order_id
       if (payment_id !== undefined) updatePayload.payment_id = payment_id
 
-      let query = supabase
+      const query = supabase
         .from("draft_applications")
         .update(updatePayload)
         .eq("id", existing.id)
-
-      // Optimistic locking: only update if updated_at matches
-      if (lastUpdatedAt) {
-        query = query.eq("updated_at", lastUpdatedAt)
-      }
+        .eq("updated_at", lockValue)
 
       const { data: updated, error: updateError } = await query
         .select("id, email, current_step, step_data, payment_order_id, payment_id, status, updated_at")
@@ -82,8 +81,8 @@ export async function PUT(request: NextRequest) {
         return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
       }
 
-      // If no row returned and we used optimistic locking, it's a conflict
-      if (!updated && lastUpdatedAt) {
+      // If no row returned, it's a conflict (optimistic lock failed)
+      if (!updated) {
         return Response.json(
           { status: false, message: "Draft was modified by another session. Please reload and try again." },
           { status: 409 }

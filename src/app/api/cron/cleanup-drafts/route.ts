@@ -228,20 +228,6 @@ export async function GET(request: Request) {
             html,
           })
 
-          // Delete document files from storage
-          const paths = extractStoragePaths(draft.step_data || {})
-          if (paths.length > 0) {
-            const { error: storageError } = await supabase.storage
-              .from("uploads")
-              .remove(paths)
-            if (storageError) {
-              console.error(
-                `[cleanup-drafts] storage cleanup ${draft.id}:`,
-                storageError.message,
-              )
-            }
-          }
-
           // Atomically mark for deletion — only succeeds if payment hasn't arrived
           const { data: markedForDelete } = await supabase
             .from("draft_applications")
@@ -255,6 +241,20 @@ export async function GET(request: Request) {
           if (!markedForDelete) {
             console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
             continue
+          }
+
+          // Delete document files from storage (safe — payment guard passed)
+          const paths = extractStoragePaths(draft.step_data || {})
+          if (paths.length > 0) {
+            const { error: storageError } = await supabase.storage
+              .from("uploads")
+              .remove(paths)
+            if (storageError) {
+              console.error(
+                `[cleanup-drafts] storage cleanup ${draft.id}:`,
+                storageError.message,
+              )
+            }
           }
 
           // Now safe to delete
@@ -379,6 +379,20 @@ export async function GET(request: Request) {
                 })
               } catch (emailErr) {
                 console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
+              }
+
+              // Atomically mark for deletion — only succeeds if payment hasn't been verified
+              const { data: markedForDelete } = await supabase
+                .from("draft_applications")
+                .update({ status: "expired" })
+                .eq("id", draft.id)
+                .eq("has_verified_payment", false)
+                .select("id")
+                .maybeSingle()
+
+              if (!markedForDelete) {
+                console.log(`[cleanup-drafts] skipped ${draft.id}: payment verified during expiry`)
+                continue
               }
 
               const paths = extractStoragePaths(draft.step_data || {})

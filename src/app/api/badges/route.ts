@@ -28,7 +28,7 @@ export async function GET() {
       supabase
         .from("draft_applications")
         .select("*", { count: "exact", head: true })
-        .in("status", ["stuck", "payment_on_hold"]),
+        .in("status", ["stuck", "payment_on_hold", "refund_initiated"]),
     ])
 
     return Response.json({

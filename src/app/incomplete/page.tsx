@@ -319,8 +319,8 @@ export default function IncompletePage() {
     if (draft.status === "refund_initiated") {
       return (
         <Button size="sm" variant="ghost" className="h-8 px-3 text-xs text-muted-foreground gap-1.5" disabled>
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Waiting for refund...
+          <RotateCcw className="h-3 w-3" />
+          Refund Pending
         </Button>
       )
     }

@@ -233,6 +233,7 @@ export async function POST(request: NextRequest) {
         .from("draft_applications")
         .delete()
         .eq("email", emailKey)
+        .in("status", ["in_progress", "stuck", "resumed", "completed"])
     } catch {
       // Draft cleanup failure is non-blocking
     }

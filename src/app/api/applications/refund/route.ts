@@ -99,6 +99,14 @@ export async function POST(request: NextRequest) {
 
     if (draftUpdateError) {
       console.error("Draft update error:", draftUpdateError)
+      return Response.json(
+        {
+          status: false,
+          message: `Refund initiated (ID: ${refund.id}) but failed to update draft status. Please reconcile manually.`,
+          refundId: refund.id,
+        },
+        { status: 500 }
+      )
     }
 
     // Update or insert membership_payments

@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
         return Response.json({ status: false, message: "Draft application not found" }, { status: 404 })
       }
 
-      if (draft.status !== "payment_on_hold" && draft.status !== "stuck") {
+      if (draft.status !== "payment_on_hold") {
         return Response.json(
           { status: false, message: `Cannot resume draft with status "${draft.status}".` },
           { status: 400 }

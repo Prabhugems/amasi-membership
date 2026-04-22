@@ -242,19 +242,23 @@ export async function GET(request: Request) {
             }
           }
 
-          // Delete the draft row — guard against payment arriving between query and delete
-          const { count: deletedCount } = await supabase
+          // Atomically mark for deletion — only succeeds if payment hasn't arrived
+          const { data: markedForDelete } = await supabase
             .from("draft_applications")
-            .delete()
+            .update({ status: "expired" })
             .eq("id", draft.id)
             .is("payment_order_id", null)
             .eq("has_verified_payment", false)
+            .select("id")
+            .maybeSingle()
 
-          if (!deletedCount || deletedCount === 0) {
-            // Payment arrived between query and delete — skip, Step 4 will handle it
+          if (!markedForDelete) {
             console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
             continue
           }
+
+          // Now safe to delete
+          await supabase.from("draft_applications").delete().eq("id", draft.id)
 
           // Log to audit
           await supabase.from("membership_audit_log").insert({
@@ -440,15 +444,19 @@ export async function GET(request: Request) {
 
       for (const draft of refundDrafts) {
         try {
-          if (!draft.payment_order_id) continue
-
-          const order = await razorpay.orders.fetch(draft.payment_order_id)
+          if (!draft.payment_order_id && !draft.payment_id) continue
 
           // Check if the order or payment has been refunded
           let refunded = false
-          if ((order as any).status === "refunded") {
-            refunded = true
-          } else if (draft.payment_id) {
+
+          if (draft.payment_order_id) {
+            const order = await razorpay.orders.fetch(draft.payment_order_id)
+            if ((order as any).status === "refunded") {
+              refunded = true
+            }
+          }
+
+          if (!refunded && draft.payment_id) {
             try {
               const paymentDetail = await razorpay.payments.fetch(
                 draft.payment_id,

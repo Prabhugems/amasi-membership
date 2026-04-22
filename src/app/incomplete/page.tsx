@@ -186,7 +186,6 @@ export default function IncompletePage() {
 
   const reminderMutation = useMutation({
     mutationFn: async (draftId: string) => {
-      setPendingReminderId(draftId)
       const res = await fetch("/api/applications/incomplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,6 +193,9 @@ export default function IncompletePage() {
       })
       if (!res.ok) throw new Error("Send reminder failed")
       return res.json()
+    },
+    onMutate: (draftId: string) => {
+      setPendingReminderId(draftId)
     },
     onSuccess: () => {
       toast.success("Reminder email sent")
@@ -207,7 +209,6 @@ export default function IncompletePage() {
 
   const resumeMutation = useMutation({
     mutationFn: async (draftId: string) => {
-      setPendingResumeId(draftId)
       const res = await fetch("/api/applications/incomplete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,6 +216,9 @@ export default function IncompletePage() {
       })
       if (!res.ok) throw new Error("Resume failed")
       return res.json()
+    },
+    onMutate: (draftId: string) => {
+      setPendingResumeId(draftId)
     },
     onSuccess: () => {
       toast.success("Application resumed for the applicant")

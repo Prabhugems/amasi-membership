@@ -543,7 +543,6 @@ function ResubmitContent() {
                 name="lastName"
                 value={form.lastName}
                 onChange={handleChange}
-                required
               />
               <FieldInput
                 label="Father's Name"

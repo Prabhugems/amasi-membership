@@ -237,6 +237,15 @@ export async function POST(request: NextRequest) {
       // Draft cleanup failure is non-blocking
     }
 
+    // Link payment record to this application
+    if (paymentId && applicationId) {
+      const { error: linkError } = await supabase
+        .from("membership_payments")
+        .update({ application_id: applicationId })
+        .eq("gateway_payment_id", paymentId)
+      if (linkError) console.error("Payment link error:", linkError.message)
+    }
+
     // --- Notify admins of new application ---
     notifyAdminsNewApplication({
       applicantName: `${formData.salutation} ${formData.firstName} ${formData.lastName}`.trim(),

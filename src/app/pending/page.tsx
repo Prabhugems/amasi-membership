@@ -226,6 +226,7 @@ export default function PendingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: id, notes }),
       })
+      if (!res.ok) throw new Error("Request failed")
       return res.json()
     },
     onSuccess: (data) => {
@@ -239,6 +240,9 @@ export default function PendingPage() {
         toast.error(data.message)
       }
     },
+    onError: (err: any) => {
+      toast.error(err?.message || "Something went wrong. Please try again.")
+    },
   })
 
   const rejectMutation = useMutation({
@@ -248,6 +252,7 @@ export default function PendingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: id, reason }),
       })
+      if (!res.ok) throw new Error("Request failed")
       return res.json()
     },
     onSuccess: (data) => {
@@ -263,6 +268,9 @@ export default function PendingPage() {
         toast.error(data.message)
       }
     },
+    onError: (err: any) => {
+      toast.error(err?.message || "Something went wrong. Please try again.")
+    },
   })
 
   const clarificationMutation = useMutation({
@@ -272,6 +280,7 @@ export default function PendingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId: id, action, message }),
       })
+      if (!res.ok) throw new Error("Request failed")
       return res.json()
     },
     onSuccess: (data) => {
@@ -286,6 +295,9 @@ export default function PendingPage() {
       } else {
         toast.error(data.message)
       }
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Something went wrong. Please try again.")
     },
   })
 
@@ -763,8 +775,8 @@ export default function PendingPage() {
                   )}
 
                   <Avatar className="h-12 w-12 shrink-0 border shadow-sm">
-                    {profileDoc?.url && (
-                      <AvatarImage src={profileDoc.url} alt={fullName} />
+                    {(profileDoc?.fileUrl || profileDoc?.url) && (
+                      <AvatarImage src={profileDoc?.fileUrl || profileDoc?.url} alt={fullName} />
                     )}
                     <AvatarFallback className="text-sm font-semibold bg-primary/5 text-primary">
                       {getInitials(fullName)}
@@ -970,9 +982,9 @@ export default function PendingPage() {
                           <User className="h-3.5 w-3.5" /> Personal Details
                         </p>
                         <div className="flex items-start gap-4">
-                          {profileDoc?.url && (
-                            <button onClick={() => setLightboxUrl(profileDoc.url)} className="shrink-0">
-                              <img src={profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
+                          {(profileDoc?.fileUrl || profileDoc?.url) && (
+                            <button onClick={() => setLightboxUrl(profileDoc?.fileUrl || profileDoc.url)} className="shrink-0">
+                              <img src={profileDoc?.fileUrl || profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
                             </button>
                           )}
                           <div className="grid grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">

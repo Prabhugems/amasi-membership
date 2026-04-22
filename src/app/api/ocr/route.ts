@@ -432,6 +432,26 @@ export async function POST(request: NextRequest) {
 
     const base64 = sendBuffer.toString("base64")
 
+    // Profile photos don't need OCR — just upload to storage
+    if (docType === "profile") {
+      let fileUrl = null
+      try {
+        const { createAdminClient } = await import("@/lib/supabase")
+        const supabase = createAdminClient()
+        const ext = isPDF ? "pdf" : isPNG ? "png" : "jpg"
+        const fileName = `profile/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+        const { error: uploadError } = await supabase.storage.from("uploads").upload(fileName, buffer, {
+          contentType: file.type || "image/jpeg",
+          upsert: false,
+        })
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
+          fileUrl = urlData?.publicUrl || null
+        }
+      } catch {}
+      return Response.json({ success: true, extracted: {}, docType: "profile", fileUrl })
+    }
+
     let extracted: Record<string, any> = {}
     let usedClaude = false
 

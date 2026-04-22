@@ -294,8 +294,13 @@ export async function scoreApplication(
   const formMci = normalize(formData.mciCouncilNumber || "")
   const ocrMci = normalize(uploads.mci_certificate?.extracted?.registration_number || "")
   let mciScore = 0
+  let mciWeight = 15
 
-  if (formMci && ocrMci) {
+  // ILM applicants don't need MCI registration — skip this check
+  if (formData.membershipType === "ILM") {
+    mciScore = 0
+    mciWeight = 0
+  } else if (formMci && ocrMci) {
     const mciSim = formMci === ocrMci ? 100 : similarity(formMci, ocrMci) * 100
     mciScore = mciSim
     if (mciSim < 80) flags.push(`MCI number mismatch: Form "${formData.mciCouncilNumber}" vs Certificate "${uploads.mci_certificate?.extracted?.registration_number}"`)
@@ -309,10 +314,12 @@ export async function scoreApplication(
     check: "MCI/Council registration verification",
     passed: mciScore >= 60,
     score: Math.round(mciScore),
-    weight: 15,
-    detail: formMci && ocrMci
-      ? `Form: "${formData.mciCouncilNumber}" vs Certificate: "${uploads.mci_certificate?.extracted?.registration_number}" — ${Math.round(mciScore)}%`
-      : formMci ? "Number provided, no OCR verification" : "No MCI number",
+    weight: mciWeight,
+    detail: formData.membershipType === "ILM"
+      ? "Skipped for ILM applicants"
+      : formMci && ocrMci
+        ? `Form: "${formData.mciCouncilNumber}" vs Certificate: "${uploads.mci_certificate?.extracted?.registration_number}" — ${Math.round(mciScore)}%`
+        : formMci ? "Number provided, no OCR verification" : "No MCI number",
   })
 
   // --- 5. Document Verification Status (weight: 10) ---
@@ -342,7 +349,13 @@ export async function scoreApplication(
   let nmcDetail = "Not checked"
   let nmcVerification: NmcVerification | null = null
 
-  if (formMciNumber) {
+  // ILM applicants don't have NMC registration — skip entirely
+  if (formData.membershipType === "ILM") {
+    nmcWeight = 0
+    nmcPassed = true
+    nmcScore = 0
+    nmcDetail = "Skipped for ILM applicants (international members)"
+  } else if (formMciNumber) {
     const nmcResult = await verifyWithNmc(formMciNumber, formMciState)
     const checkedAt = new Date().toISOString()
 

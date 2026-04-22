@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     // Record payment
     const { error: insertError } = await supabase.from("membership_payments").insert({
       application_id: applicationId || null,
-      member_email: referenceNumber, // using as reference tracker
+      member_email: email || referenceNumber, // using as reference tracker
       gateway_order_id: razorpay_order_id,
       gateway_payment_id: razorpay_payment_id,
       gateway_signature: razorpay_signature,

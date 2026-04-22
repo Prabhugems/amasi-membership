@@ -200,7 +200,7 @@ function UpgradesContent() {
           Membership Upgrades
         </h1>
         <p className="text-muted-foreground mt-1">
-          Review ALM to LM upgrade requests
+          Review membership upgrade requests (ACM → LM / ALM)
         </p>
       </div>
 

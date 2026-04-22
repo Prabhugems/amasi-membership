@@ -1,18 +1,52 @@
 import { NextRequest } from "next/server"
+import https from "node:https"
+import tls from "node:tls"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { SECTIGO_R36_PEM } from "@/lib/certs/sectigo-r36"
 
-async function callNmcOnce(regNo: string, timeoutMs: number) {
-  const res = await fetch(
-    "https://www.nmc.org.in/MCIRest/open/getDataFromService?service=searchDoctor",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ registrationNo: regNo.trim(), smcId: "" }),
-      signal: AbortSignal.timeout(timeoutMs),
-    }
-  )
-  if (!res.ok) throw new Error(`NMC HTTP ${res.status}`)
-  return res.json()
+const nmcAgent = new https.Agent({
+  ca: [...tls.rootCertificates, SECTIGO_R36_PEM],
+  keepAlive: true,
+})
+
+function callNmcOnce(regNo: string, timeoutMs: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ registrationNo: regNo.trim(), smcId: "" })
+    const req = https.request(
+      {
+        hostname: "www.nmc.org.in",
+        path: "/MCIRest/open/getDataFromService?service=searchDoctor",
+        method: "POST",
+        agent: nmcAgent,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on("data", (c) => chunks.push(c))
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8")
+          if (!res.statusCode || res.statusCode >= 400) {
+            reject(new Error(`NMC HTTP ${res.statusCode}`))
+            return
+          }
+          try {
+            resolve(JSON.parse(text))
+          } catch {
+            reject(new Error("NMC returned non-JSON"))
+          }
+        })
+      }
+    )
+    req.on("error", reject)
+    req.on("timeout", () => {
+      req.destroy(new Error(`NMC timeout after ${timeoutMs}ms`))
+    })
+    req.end(body)
+  })
 }
 
 export async function GET(request: NextRequest) {
@@ -34,22 +68,27 @@ export async function GET(request: NextRequest) {
   }
 
   // Gov API: either answers <2s or is down. Short non-additive retry.
-  let data: any
+  let data: unknown
   try {
     data = await callNmcOnce(regNo, 5000)
   } catch (err1) {
-    console.warn("NMC attempt 1 failed:", (err1 as Error)?.message)
+    const msg1 = (err1 as Error)?.message
+    const code1 = (err1 as NodeJS.ErrnoException)?.code
+    console.warn("NMC attempt 1 failed:", code1 || "", msg1)
     await new Promise((r) => setTimeout(r, 2000))
     try {
       data = await callNmcOnce(regNo, 3000)
     } catch (err2) {
-      console.warn("NMC attempt 2 failed:", (err2 as Error)?.message)
+      const msg2 = (err2 as Error)?.message
+      const code2 = (err2 as NodeJS.ErrnoException)?.code
+      console.warn("NMC attempt 2 failed:", code2 || "", msg2)
       return Response.json({
         status: true,
         reachable: false,
         verified: false,
         doctors: [],
         message: "NMC service is temporarily unavailable. Please try again later.",
+        debug: process.env.NODE_ENV !== "production" ? `${code2 || ""} ${msg2}`.trim() : undefined,
       })
     }
   }
@@ -64,22 +103,22 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  let doctors = data.map((d: any) => ({
-    name: (d.firstName || "").trim(),
+  let doctors = data.map((d: Record<string, unknown>) => ({
+    name: ((d.firstName as string) || "").trim(),
     registrationNo: d.registrationNo,
-    council: d.smcName || "",
-    degree: d.doctorDegree || "",
-    university: d.university || "",
-    yearOfPassing: d.yearOfPassing || "",
-    parentName: d.parentName || "",
-    dob: d.birthDateStr || "",
-    address: d.address || d.addressLine1 || "",
-    regDate: d.regDate || "",
+    council: (d.smcName as string) || "",
+    degree: (d.doctorDegree as string) || "",
+    university: (d.university as string) || "",
+    yearOfPassing: (d.yearOfPassing as string) || "",
+    parentName: (d.parentName as string) || "",
+    dob: (d.birthDateStr as string) || "",
+    address: (d.address as string) || (d.addressLine1 as string) || "",
+    regDate: (d.regDate as string) || "",
   }))
 
   if (state) {
     const stateLower = state.toLowerCase()
-    const filtered = doctors.filter((d: any) => d.council.toLowerCase().includes(stateLower))
+    const filtered = doctors.filter((d) => d.council.toLowerCase().includes(stateLower))
     if (filtered.length > 0) doctors = filtered
   }
 

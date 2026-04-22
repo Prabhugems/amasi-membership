@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create member record with retry loop for AMASI number race condition (Bug 1)
-    const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
+    const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
     const memberId = crypto.randomUUID() // Bug 2: generate UUID to use as member_id
 
     let nextAmasiNumber: number | null = null

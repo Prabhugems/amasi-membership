@@ -661,7 +661,7 @@ export default function MembersPage() {
                 )}
                 {members.map((m: any, idx: number) => (
                   <tr
-                    key={m.amasi_number}
+                    key={m.id || m.amasi_number}
                     className={`row-glow hover:bg-primary/5 transition-colors group cursor-default ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
                     onMouseEnter={(e) => handleRowMouseEnter(e, m)}
                     onMouseLeave={handleRowMouseLeave}
@@ -751,7 +751,7 @@ export default function MembersPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {members.map((m: any) => (
-                <MemberCard key={m.amasi_number} m={m} />
+                <MemberCard key={m.id || m.amasi_number} m={m} />
               ))}
             </div>
           )}

@@ -184,6 +184,29 @@ export async function POST(request: NextRequest) {
       ).catch(err => console.error("WhatsApp approve error:", err))
     }
 
+    // Auto-add to Zoho Campaigns
+    try {
+      const { getAccessToken, zohoApi } = await import("@/lib/zoho")
+      const token = await getAccessToken()
+      if (token) {
+        const listKey = process.env.ZOHO_DEFAULT_LIST_KEY
+        if (listKey) {
+          await zohoApi(`/json/listsubscribe`, {
+            method: "POST",
+            body: new URLSearchParams({
+              listkey: listKey,
+              resfmt: "JSON",
+              contactinfo: JSON.stringify({
+                "Contact Email": app.email,
+                "First Name": app.first_name || "",
+                "Last Name": app.last_name || "",
+              }),
+            }),
+          })
+        }
+      }
+    } catch { /* non-blocking */ }
+
     // Audit log
     await logAdminAction({
       adminEmail: (session?.email as string) || "unknown",

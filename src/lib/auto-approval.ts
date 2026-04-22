@@ -239,5 +239,28 @@ export async function autoApproveApplication(
     ).catch((err) => console.error("[auto-approval] WhatsApp approve error:", err))
   }
 
+  // Auto-add to Zoho Campaigns
+  try {
+    const { getAccessToken, zohoApi } = await import("@/lib/zoho")
+    const token = await getAccessToken()
+    if (token) {
+      const listKey = process.env.ZOHO_DEFAULT_LIST_KEY
+      if (listKey) {
+        await zohoApi(`/json/listsubscribe`, {
+          method: "POST",
+          body: new URLSearchParams({
+            listkey: listKey,
+            resfmt: "JSON",
+            contactinfo: JSON.stringify({
+              "Contact Email": input.email,
+              "First Name": input.firstName || "",
+              "Last Name": input.lastName || "",
+            }),
+          }),
+        })
+      }
+    }
+  } catch { /* non-blocking */ }
+
   return { success: true, amasiNumber }
 }

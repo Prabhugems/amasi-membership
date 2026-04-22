@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
               gateway_order_id: payment.gateway_order_id,
               amount: payment.amount,
               currency: payment.currency,
-              reference_number: payment.member_email,
+              reference_number: (order.notes as any)?.reference_number || (order.notes as any)?.referenceNumber || payment.member_email,
               created_at: payment.created_at,
             },
           })

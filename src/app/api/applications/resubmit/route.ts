@@ -56,9 +56,25 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "This application cannot be edited" }, { status: 400 })
     }
 
+    // Verify caller has a recently verified OTP for this email
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    const { data: otpCheck } = await supabase
+      .from("otp_codes")
+      .select("id")
+      .eq("email", app.email.toLowerCase())
+      .eq("verified", true)
+      .gte("created_at", twoHoursAgo)
+      .limit(1)
+      .maybeSingle()
+
+    if (!otpCheck) {
+      return Response.json({ status: false, message: "Please verify your email via OTP before resubmitting" }, { status: 401 })
+    }
+
     // Handle file uploads to Supabase Storage
     const documents = app.documents || {}
     const fileFields = ["photo", "pg_certificate", "mci_certificate"]
+    const uploadWarnings: string[] = []
 
     for (const fieldName of fileFields) {
       const file = formData.get(fieldName) as File | null
@@ -82,7 +98,10 @@ export async function POST(request: NextRequest) {
           .from("uploads")
           .upload(path, file, { upsert: true })
 
-        if (!uploadError) {
+        if (uploadError) {
+          console.error(`File upload failed for ${fieldName}:`, uploadError.message)
+          uploadWarnings.push(`${fieldName} upload failed — please try again`)
+        } else {
           const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(path)
           documents[fieldName] = {
             url: urlData.publicUrl,
@@ -150,6 +169,22 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Failed to update application" }, { status: 500 })
     }
 
+    // Re-run AI scoring on resubmitted application
+    try {
+      const { scoreApplication } = await import("@/lib/ai-approval")
+      const updatedApp = { ...app, ...updateFields }
+      const approval = await scoreApplication(updatedApp, updatedApp.documents || {}, true)
+      const aiConfidence = `${approval.totalScore}% — ${approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"}`
+      await supabase.from("membership_applications").update({
+        ai_confidence: aiConfidence,
+        ai_verified: approval.autoApprove,
+        needs_manual_review: !approval.autoApprove,
+        ai_flags: [...approval.flags, ...approval.checks.map(c => `${c.check}: ${c.score}% ${c.passed ? "✓" : "✗"} — ${c.detail}`)],
+      }).eq("id", applicationId)
+    } catch (aiErr) {
+      console.error("AI re-scoring error:", aiErr)
+    }
+
     // Send confirmation email
     try {
       const resend = getResend()
@@ -176,7 +211,7 @@ export async function POST(request: NextRequest) {
       console.error("Resubmit email error:", emailErr)
     }
 
-    return Response.json({ status: true, message: "Application resubmitted successfully" })
+    return Response.json({ status: true, message: "Application resubmitted successfully", warnings: uploadWarnings })
   } catch (error: any) {
     console.error("Resubmit error:", error)
     return Response.json({ status: false, message: "Failed to resubmit application" }, { status: 500 })

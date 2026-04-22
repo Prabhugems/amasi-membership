@@ -34,6 +34,10 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Application not found" }, { status: 404 })
     }
 
+    if (app.status === "approved" || app.status === "ai_approved") {
+      return Response.json({ status: false, message: "Cannot reject an approved application. Please contact the admin." }, { status: 400 })
+    }
+
     // Update application
     const { error: updateError } = await supabase
       .from("membership_applications")

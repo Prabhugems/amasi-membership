@@ -44,6 +44,10 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Application not found" }, { status: 404 })
     }
 
+    if (["approved", "ai_approved", "rejected"].includes(app.status)) {
+      return Response.json({ status: false, message: `Cannot request clarification on an application with status "${app.status}"` }, { status: 400 })
+    }
+
     // Handle internal notes — no status change, no email
     if (action === "internal_note") {
       const existingNotes = Array.isArray(app.internal_notes) ? app.internal_notes : []
@@ -72,6 +76,7 @@ export async function POST(request: NextRequest) {
       .update({
         status: newStatus,
         review_notes: message,
+        reviewed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)

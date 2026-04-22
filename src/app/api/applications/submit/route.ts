@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Auth gate 2: verify OTP completion (email and/or mobile) within last 60 min ---
-    const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000).toISOString()
     const emailKey = (formData.email || "").toLowerCase()
     const mobileKey = formData.mobile ? `sms:${formData.mobile}` : null
 
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("email", emailKey)
         .eq("verified", true)
-        .gte("created_at", sixtyMinAgo)
+        .gte("created_at", twoHoursAgo)
         .limit(1)
         .maybeSingle()
       emailVerified = !!emailOtp
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("email", mobileKey)
         .eq("verified", true)
-        .gte("created_at", sixtyMinAgo)
+        .gte("created_at", twoHoursAgo)
         .limit(1)
         .maybeSingle()
       mobileVerified = !!mobileOtp

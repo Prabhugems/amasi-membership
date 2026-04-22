@@ -398,6 +398,13 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: false, error: "Too many requests. Try again later." }, { status: 429 })
     }
 
+    // Verify caller has a valid member session
+    const { getMemberSession } = await import("@/lib/auth")
+    const session = await getMemberSession()
+    if (!session) {
+      return Response.json({ success: false, error: "Please verify your email first" }, { status: 401 })
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const docType = formData.get("docType") as string

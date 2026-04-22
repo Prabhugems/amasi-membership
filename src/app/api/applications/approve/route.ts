@@ -44,80 +44,57 @@ export async function POST(request: NextRequest) {
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
     const memberId = crypto.randomUUID() // Bug 2: generate UUID to use as member_id
 
-    let nextAmasiNumber: number | null = null
-    const MAX_RETRIES = 3
+    // Get next AMASI number atomically via sequence
+    const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
+    if (seqError || !seqNum) {
+      return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
+    }
+    const nextAmasiNumber = seqNum
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      // Get next AMASI number
-      const { data: maxNum } = await supabase
-        .from("members")
-        .select("amasi_number")
-        .order("amasi_number", { ascending: false })
-        .limit(1)
-        .single()
+    const { error: insertError } = await supabase.from("members").insert({
+      id: memberId,
+      amasi_number: nextAmasiNumber,
+      name: fullName,
+      email: app.email,
+      phone: app.phone || null,
+      mobile_code: app.mobile_code,
+      membership_type: app.membership_type,
+      status: "active",
+      voting_eligible: app.membership_type === "LM",
+      salutation: app.salutation,
+      father_name: app.father_name,
+      date_of_birth: app.date_of_birth,
+      nationality: app.nationality,
+      gender: app.gender,
+      application_no: app.reference_number || app.application_number,
+      application_date: new Date().toISOString().split("T")[0],
+      street_address_1: app.street_address_1,
+      street_address_2: app.street_address_2,
+      city: app.city,
+      state: app.state,
+      country: app.country || "India",
+      postal_code: app.postal_code,
+      zone: app.zone,
+      edu_undergrad_degree: app.ug_degree,
+      ug_college: app.ug_college,
+      ug_university: app.ug_university,
+      ug_year: app.ug_year,
+      pg_degree: app.pg_degree,
+      pg_college: app.pg_college,
+      pg_university: app.pg_university,
+      pg_year: app.pg_year,
+      edu_superspecialty_degree: app.ss_degree,
+      mci_council_number: app.mci_council_number,
+      mci_council_state: app.mci_council_state,
+      imr_registration_no: app.imr_registration_no,
+      asi_membership_no: app.asi_membership_no,
+      asi_state: app.asi_state,
+      joining_date: new Date().toISOString().split("T")[0],
+    })
 
-      const candidateNumber = (maxNum?.amasi_number || 18135) + 1
-
-      // Bug 3: check insert error; Bug 4: store phone as string
-      const { error: insertError } = await supabase.from("members").insert({
-        id: memberId,
-        amasi_number: candidateNumber,
-        name: fullName,
-        email: app.email,
-        phone: app.phone || null,
-        mobile_code: app.mobile_code,
-        membership_type: app.membership_type,
-        status: "active",
-        voting_eligible: app.membership_type === "LM",
-        salutation: app.salutation,
-        father_name: app.father_name,
-        date_of_birth: app.date_of_birth,
-        nationality: app.nationality,
-        gender: app.gender,
-        application_no: app.reference_number || app.application_number,
-        application_date: new Date().toISOString().split("T")[0],
-        street_address_1: app.street_address_1,
-        street_address_2: app.street_address_2,
-        city: app.city,
-        state: app.state,
-        country: app.country,
-        postal_code: app.postal_code,
-        zone: app.zone,
-        edu_undergrad_degree: app.ug_degree,
-        ug_college: app.ug_college,
-        ug_university: app.ug_university,
-        ug_year: app.ug_year,
-        pg_degree: app.pg_degree,
-        pg_college: app.pg_college,
-        pg_university: app.pg_university,
-        pg_year: app.pg_year,
-        edu_superspecialty_degree: app.ss_degree,
-        mci_council_number: app.mci_council_number,
-        mci_council_state: app.mci_council_state,
-        imr_registration_no: app.imr_registration_no,
-        asi_membership_no: app.asi_membership_no,
-        asi_state: app.asi_state,
-        joining_date: new Date().toISOString().split("T")[0],
-      })
-
-      if (!insertError) {
-        nextAmasiNumber = candidateNumber
-        break
-      }
-
-      // If duplicate AMASI number, retry
-      if (insertError.message?.includes("duplicate") || insertError.code === "23505") {
-        console.warn(`AMASI number ${candidateNumber} conflict, retrying (attempt ${attempt + 1})`)
-        continue
-      }
-
-      // Non-duplicate error: fail immediately
+    if (insertError) {
       console.error("Member insert error:", insertError)
       return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
-    }
-
-    if (nextAmasiNumber === null) {
-      return Response.json({ status: false, message: "Failed to assign AMASI number after retries" }, { status: 500 })
     }
 
     // Update application — Bug 2: use memberId UUID, Bug 5: check update error
@@ -134,8 +111,10 @@ export async function POST(request: NextRequest) {
       .eq("id", applicationId)
 
     if (updateError) {
-      console.error("Application update error:", updateError)
-      return Response.json({ status: false, message: "Member created but failed to update application" }, { status: 500 })
+      // Rollback: delete the member we just created
+      await supabase.from("members").delete().eq("amasi_number", nextAmasiNumber)
+      console.error("Application update failed, member rolled back:", updateError)
+      return Response.json({ status: false, message: "Failed to update application status. Please try again." }, { status: 500 })
     }
 
     // Send welcome email
@@ -162,6 +141,9 @@ export async function POST(request: NextRequest) {
               <p style="font-size: 36px; font-weight: bold; color: #0f766e; margin: 0; font-family: monospace;">${nextAmasiNumber}</p>
               <p style="color: #666; font-size: 13px; margin: 8px 0 0;">${memberType}</p>
             </div>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;margin:0 0 24px;">
+              <tr><td style="padding:8px 0;color:#6b7280;">Reference</td><td style="padding:8px 0;">${escapeHtml(app.reference_number)}</td></tr>
+            </table>
             <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
             <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
           </div>

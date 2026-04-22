@@ -49,7 +49,7 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
     const { data: byMobile } = await supabase
       .from("membership_applications")
       .select("id, reference_number, status, created_at")
-      .eq("mobile", mobile)
+      .eq("phone", mobile)
       .order("created_at", { ascending: false })
       .limit(1)
     if (byMobile) appRows.push(...byMobile)

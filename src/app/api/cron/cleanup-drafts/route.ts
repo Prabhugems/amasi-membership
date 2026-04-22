@@ -127,8 +127,16 @@ export async function GET(request: Request) {
           })
           .eq("id", draft.id)
 
-        if (!error) summary.marked_stale++
-        else console.error(`[cleanup-drafts] mark stale ${draft.id}:`, error.message)
+        if (!error) {
+          summary.marked_stale++
+          await supabase.from("membership_audit_log").insert({
+            action: "draft_marked_stale",
+            target_type: "draft_application",
+            target_id: draft.id,
+            details: { step: draft.current_step, reason: "Inactive for 2+ hours" },
+            performed_by: "system",
+          })
+        } else console.error(`[cleanup-drafts] mark stale ${draft.id}:`, error.message)
       }
     }
 
@@ -204,7 +212,22 @@ export async function GET(request: Request) {
     if (expiredDrafts && expiredDrafts.length > 0) {
       for (const draft of expiredDrafts) {
         try {
-          // Send expiry email
+          // Atomically mark for deletion — only succeeds if payment hasn't arrived
+          const { data: markedForDelete } = await supabase
+            .from("draft_applications")
+            .update({ status: "expired" })
+            .eq("id", draft.id)
+            .is("payment_order_id", null)
+            .eq("has_verified_payment", false)
+            .select("id")
+            .maybeSingle()
+
+          if (!markedForDelete) {
+            console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
+            continue
+          }
+
+          // Send expiry email (after atomic guard succeeds)
           const html = emailWrapper(
             "Application Expired",
             `
@@ -227,21 +250,6 @@ export async function GET(request: Request) {
             subject: "Your AMASI membership application has expired",
             html,
           })
-
-          // Atomically mark for deletion — only succeeds if payment hasn't arrived
-          const { data: markedForDelete } = await supabase
-            .from("draft_applications")
-            .update({ status: "expired" })
-            .eq("id", draft.id)
-            .is("payment_order_id", null)
-            .eq("has_verified_payment", false)
-            .select("id")
-            .maybeSingle()
-
-          if (!markedForDelete) {
-            console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
-            continue
-          }
 
           // Delete document files from storage (safe — payment guard passed)
           const paths = extractStoragePaths(draft.step_data || {})
@@ -351,8 +359,22 @@ export async function GET(request: Request) {
                 )
               }
 
+              await supabase.from("membership_audit_log").insert({
+                action: "draft_payment_on_hold",
+                target_type: "draft_application",
+                target_id: draft.id,
+                details: { email: draft.email, payment_order_id: draft.payment_order_id },
+                performed_by: "system",
+              })
+
               summary.payment_holds++
             } else {
+              // Payment in "attempted" state may complete later — skip
+              if (status === "attempted") {
+                console.log(`[cleanup-drafts] skipped ${draft.id}: payment in "attempted" state, may complete later`)
+                continue
+              }
+
               // Payment not captured — treat as unpaid, expire and delete
               // Send expiry notification email
               try {
@@ -428,6 +450,14 @@ export async function GET(request: Request) {
                 updated_at: new Date().toISOString(),
               })
               .eq("id", draft.id)
+
+            await supabase.from("membership_audit_log").insert({
+              action: "draft_payment_on_hold",
+              target_type: "draft_application",
+              target_id: draft.id,
+              details: { email: draft.email, payment_order_id: draft.payment_order_id },
+              performed_by: "system",
+            })
 
             summary.payment_holds++
           }
@@ -521,7 +551,7 @@ export async function GET(request: Request) {
 
             // Audit log
             await supabase.from("membership_audit_log").insert({
-              action: "draft_expired",
+              action: "draft_refunded",
               target_type: "draft_application",
               target_id: draft.id,
               details: {

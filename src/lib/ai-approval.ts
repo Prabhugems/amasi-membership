@@ -177,8 +177,9 @@ export async function scoreApplication(
   const docNames: { doc: string; name: string }[] = []
 
   for (const [docType, upload] of Object.entries(uploads)) {
-    if (upload.extracted?.name) {
-      docNames.push({ doc: docType, name: upload.extracted.name })
+    const extractedName = upload.extracted?.full_name || upload.extracted?.name || upload.extracted?.applicant_name
+    if (extractedName) {
+      docNames.push({ doc: docType, name: extractedName })
     }
   }
 

@@ -33,6 +33,11 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: `Invalid amount for ${membershipType} membership. Expected ${expectedFee.amount}` }, { status: 400 })
     }
 
+    const expectedCurrency = expectedFee.currency
+    if (currency && currency !== expectedCurrency) {
+      return Response.json({ status: false, message: `Invalid currency for ${membershipType}. Expected ${expectedCurrency}` }, { status: 400 })
+    }
+
     const razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID!.trim(),
       key_secret: process.env.RAZORPAY_KEY_SECRET!.trim(),

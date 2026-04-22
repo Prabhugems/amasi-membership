@@ -1471,6 +1471,13 @@ export default function ApplyPage() {
                         try {
                           const draftRes = await fetch(`/api/applications/save-draft?email=${encodeURIComponent(formData.email)}`)
                           const draftData = await draftRes.json()
+                          if (!draftData?.data) {
+                            toast.error("Your application data is no longer available. Please start a new application.")
+                            setResumingDraft(false)
+                            setServerDraft(null)
+                            setPhase("landing")
+                            return
+                          }
                           const stepData = draftData?.data?.step_data || {}
                           if (stepData.formData) {
                             setFormData((prev: ApplicationFormData) => ({ ...prev, ...stepData.formData }))
@@ -1495,6 +1502,13 @@ export default function ApplyPage() {
                               }
                             }
                             setUploads(restoredUploads)
+                          }
+                          // Set existing payment if draft had a verified payment
+                          if (serverDraft.has_verified_payment && draftData?.data?.payment_id) {
+                            setExistingPayment({
+                              gateway_payment_id: draftData.data.payment_id,
+                              reference_number: draftData.data.payment_order_id || "",
+                            })
                           }
                           toast.success("Application restored. Continue where you left off.")
                         } catch {

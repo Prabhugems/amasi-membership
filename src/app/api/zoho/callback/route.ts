@@ -28,8 +28,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin?zoho=connected", request.url))
   } catch (error: any) {
     console.error("[zoho/callback] Error:", error)
-    return NextResponse.redirect(
-      new URL(`/admin?zoho=error&reason=${encodeURIComponent(error.message || "unknown")}`, request.url),
-    )
+    // Return JSON error for debugging — change to redirect once working
+    return Response.json({
+      error: error.message || "Unknown error",
+      hint: "Check ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REDIRECT_URI env vars on Vercel",
+    }, { status: 500 })
   }
 }

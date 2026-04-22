@@ -148,6 +148,7 @@ type UploadEntry = {
   extracted: Record<string, any>
   eligibility?: { eligible: boolean; reason: string } | null
   message?: string
+  fileUrl?: string | null
 }
 
 // Auto-capitalize first letter of each word
@@ -520,6 +521,7 @@ export default function ApplyPage() {
           extracted,
           eligibility: result.eligibility,
           message: nameWarning || (fieldCount > 0 ? `Extracted ${fieldCount} fields` : "Document verified"),
+          fileUrl: result.fileUrl || null,
         },
       }))
 
@@ -618,7 +620,7 @@ export default function ApplyPage() {
       if (!refNumber) setRefNumber(ref)
 
       const uploadData = Object.fromEntries(
-        Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
+        Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
       )
 
       try {
@@ -787,7 +789,7 @@ export default function ApplyPage() {
 
           // Step 4: Submit application with retry (up to 3 attempts)
           const uploadData = Object.fromEntries(
-            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message }])
+            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
           )
 
           const submitPayload = {

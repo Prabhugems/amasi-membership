@@ -559,6 +559,32 @@ export async function POST(request: NextRequest) {
     // Eligibility check
     const eligibility = checkEligibility(docType, extracted)
 
+    // Upload file to Supabase Storage for admin review
+    let fileUrl: string | null = null
+    try {
+      const { createAdminClient } = await import("@/lib/supabase")
+      const supabase = createAdminClient()
+      const ext = isPDF ? "pdf" : isPNG ? "png" : "jpg"
+      const fileName = `${docType}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("uploads")
+        .upload(fileName, buffer, {
+          contentType: file.type || (isPDF ? "application/pdf" : isPNG ? "image/png" : "image/jpeg"),
+          upsert: false,
+        })
+
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
+        fileUrl = urlData?.publicUrl || null
+      } else {
+        console.error("Document upload error:", uploadError.message)
+      }
+    } catch (uploadErr: any) {
+      // Non-blocking — OCR result still returned even if storage fails
+      console.error("Document storage error:", uploadErr.message)
+    }
+
     return Response.json({
       success: true,
       extracted,
@@ -566,6 +592,7 @@ export async function POST(request: NextRequest) {
       expiryWarnings: expiryWarnings.length > 0 ? expiryWarnings : undefined,
       docType,
       engine: usedClaude ? "claude-vision" : "tesseract",
+      fileUrl,
     })
   } catch (error: any) {
     console.error("OCR API error:", error)

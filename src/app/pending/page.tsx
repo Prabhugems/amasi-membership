@@ -124,7 +124,8 @@ function ApplicationTimeline({ app }: { app: any }) {
 // ─── Document thumbnail component ───────────────────────────────────────────
 function DocThumbnail({ docKey, doc, onView }: { docKey: string; doc: any; onView: () => void }) {
   const label = DOC_LABELS[docKey as DocType] || docKey.replace(/_/g, " ")
-  const isImage = doc.url && /\.(jpg|jpeg|png|webp|gif)/i.test(doc.url)
+  const url = doc.fileUrl || doc.url || null
+  const isImage = url && /\.(jpg|jpeg|png|webp|gif)/i.test(url)
 
   return (
     <button
@@ -132,9 +133,9 @@ function DocThumbnail({ docKey, doc, onView }: { docKey: string; doc: any; onVie
       className="group relative flex flex-col items-center gap-2 p-3 rounded-xl border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all w-28 text-center"
     >
       <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
-        {isImage && doc.url ? (
-          <img src={doc.url} alt={label} className="w-full h-full object-cover" />
-        ) : doc.url ? (
+        {isImage && url ? (
+          <img src={url} alt={label} className="w-full h-full object-cover" />
+        ) : url ? (
           <FileText className="h-6 w-6 text-muted-foreground" />
         ) : (
           <Camera className="h-6 w-6 text-muted-foreground/40" />
@@ -1192,7 +1193,8 @@ export default function PendingPage() {
                               docKey={key}
                               doc={doc}
                               onView={() => {
-                                if (doc.url) setLightboxUrl(doc.url)
+                                const url = doc.fileUrl || doc.url
+                                if (url) setLightboxUrl(url)
                                 else toast.error("No document URL available")
                               }}
                             />

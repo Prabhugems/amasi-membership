@@ -4,6 +4,8 @@
  * Auto-approves if score >= 80% and payment is paid.
  */
 
+import { EXTRACTION_SKIPPED_KEYS, normalizeDocumentKey } from "@/lib/document-keys"
+
 const BLOCKED_DEGREES = [
   "bams", "bums", "bhms", "bds", "bpt", "bot", "bnys",
   "md ayurveda", "md homeopathy", "md unani", "md siddha",
@@ -172,11 +174,17 @@ export async function scoreApplication(
   const checks: ApprovalCheck[] = []
   const flags: string[] = []
 
+  // Normalize upload keys so legacy keys (pg_certificate) resolve correctly
+  const normalizedUploads: typeof uploads = {}
+  for (const [key, value] of Object.entries(uploads)) {
+    normalizedUploads[normalizeDocumentKey(key)] = value
+  }
+
   // --- 1. Name Match Across Documents (weight: 20) ---
   const formName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ")
   const docNames: { doc: string; name: string }[] = []
 
-  for (const [docType, upload] of Object.entries(uploads)) {
+  for (const [docType, upload] of Object.entries(normalizedUploads)) {
     const extractedName = upload.extracted?.full_name || upload.extracted?.name || upload.extracted?.applicant_name
     if (extractedName) {
       docNames.push({ doc: docType, name: extractedName })
@@ -226,7 +234,13 @@ export async function scoreApplication(
   const isSurgical = VALID_SURGICAL_DEGREES.some(d => pgDegree.includes(d))
 
   // Check degree from OCR matches form
-  const ocrDegree = normalize(uploads.pg_degree_certificate?.extracted?.degree || "")
+  // Claude Vision returns degree_name + specialisation; fallback OCR returns degree — check both
+  const pgExtracted = normalizedUploads.pg_degree_certificate?.extracted
+  const rawOcrDegree = pgExtracted?.degree_name || pgExtracted?.degree || ""
+  const ocrSpecialisation = pgExtracted?.specialisation || ""
+  // Build the full OCR degree string for display and comparison
+  const fullOcrDegree = ocrSpecialisation ? `${rawOcrDegree} (${ocrSpecialisation})` : rawOcrDegree
+  const ocrDegree = normalize(fullOcrDegree)
   let degreeMatchScore = 0
 
   if (isBlocked) {
@@ -236,10 +250,13 @@ export async function scoreApplication(
     degreeMatchScore = 0
     flags.push("No PG degree specified")
   } else if (ocrDegree) {
-    const degreeSim = similarity(pgDegree, ocrDegree)
+    // Pass RAW strings to similarity() — it normalizes internally.
+    // Pre-normalized strings get double-normalized, stripping "ms" prefix
+    // (intended for "Ms." honorific but matching "M.S." degree).
+    const degreeSim = similarity(formData.eduPostgradDegree || "", fullOcrDegree)
     degreeMatchScore = degreeSim * 100
     if (degreeSim < 0.5) {
-      flags.push(`Degree mismatch: Form says "${formData.eduPostgradDegree}" but certificate shows "${uploads.pg_degree_certificate?.extracted?.degree}"`)
+      flags.push(`Degree mismatch: Form says "${formData.eduPostgradDegree}" but certificate shows "${fullOcrDegree}"`)
     }
   } else if (isSurgical) {
     degreeMatchScore = 70 // Surgical degree but no OCR to cross-check
@@ -256,21 +273,23 @@ export async function scoreApplication(
     detail: isBlocked
       ? `BLOCKED: ${formData.eduPostgradDegree}`
       : ocrDegree
-        ? `Form: "${formData.eduPostgradDegree}" vs Certificate: "${uploads.pg_degree_certificate?.extracted?.degree}" — ${Math.round(degreeMatchScore)}%`
+        ? `Form: "${formData.eduPostgradDegree}" vs Certificate: "${fullOcrDegree}" — ${Math.round(degreeMatchScore)}%`
         : `${formData.eduPostgradDegree} — ${isSurgical ? "valid surgical" : "unverified"}`,
   })
 
   // --- 3. College/University Match (weight: 15) ---
   const formCollege = normalize(formData.eduPostgradCollege || "")
-  const ocrCollege = normalize(uploads.pg_degree_certificate?.extracted?.college || "")
+  // Claude Vision returns institution_name; fallback OCR returns college — check both
+  const ocrCollege = normalize(pgExtracted?.institution_name || pgExtracted?.college || "")
   const formUni = normalize(formData.eduPostgradUniversity || "")
-  const ocrUni = normalize(uploads.pg_degree_certificate?.extracted?.university || "")
+  // Claude Vision returns university_name; fallback OCR returns university — check both
+  const ocrUni = normalize(pgExtracted?.university_name || pgExtracted?.university || "")
 
   let collegeScore = 0
   if (formCollege && ocrCollege) {
     const collegeSim = similarity(formCollege, ocrCollege)
     collegeScore += collegeSim * 50
-    if (collegeSim < 0.5) flags.push(`College mismatch: Form "${formData.eduPostgradCollege}" vs Certificate "${uploads.pg_degree_certificate?.extracted?.college}"`)
+    if (collegeSim < 0.5) flags.push(`College mismatch: Form "${formData.eduPostgradCollege}" vs Certificate "${pgExtracted?.institution_name || pgExtracted?.college}"`)
   } else if (formCollege) {
     collegeScore += 30 // Has college but no OCR to verify
   }
@@ -278,7 +297,7 @@ export async function scoreApplication(
   if (formUni && ocrUni) {
     const uniSim = similarity(formUni, ocrUni)
     collegeScore += uniSim * 50
-    if (uniSim < 0.5) flags.push(`University mismatch: Form "${formData.eduPostgradUniversity}" vs Certificate "${uploads.pg_degree_certificate?.extracted?.university}"`)
+    if (uniSim < 0.5) flags.push(`University mismatch: Form "${formData.eduPostgradUniversity}" vs Certificate "${pgExtracted?.university_name || pgExtracted?.university}"`)
   } else if (formUni) {
     collegeScore += 30
   }
@@ -293,7 +312,7 @@ export async function scoreApplication(
 
   // --- 4. MCI/Registration Match (weight: 15) ---
   const formMci = normalize(formData.mciCouncilNumber || "")
-  const ocrMci = normalize(uploads.mci_certificate?.extracted?.registration_number || "")
+  const ocrMci = normalize(normalizedUploads.mci_certificate?.extracted?.registration_number || "")
   let mciScore = 0
   let mciWeight = 15
 
@@ -304,7 +323,7 @@ export async function scoreApplication(
   } else if (formMci && ocrMci) {
     const mciSim = formMci === ocrMci ? 100 : similarity(formMci, ocrMci) * 100
     mciScore = mciSim
-    if (mciSim < 80) flags.push(`MCI number mismatch: Form "${formData.mciCouncilNumber}" vs Certificate "${uploads.mci_certificate?.extracted?.registration_number}"`)
+    if (mciSim < 80) flags.push(`MCI number mismatch: Form "${formData.mciCouncilNumber}" vs Certificate "${normalizedUploads.mci_certificate?.extracted?.registration_number}"`)
   } else if (formMci) {
     mciScore = 50 // Has number but no OCR verification
   } else {
@@ -319,15 +338,20 @@ export async function scoreApplication(
     detail: formData.membershipType === "ILM"
       ? "Skipped for ILM applicants"
       : formMci && ocrMci
-        ? `Form: "${formData.mciCouncilNumber}" vs Certificate: "${uploads.mci_certificate?.extracted?.registration_number}" — ${Math.round(mciScore)}%`
+        ? `Form: "${formData.mciCouncilNumber}" vs Certificate: "${normalizedUploads.mci_certificate?.extracted?.registration_number}" — ${Math.round(mciScore)}%`
         : formMci ? "Number provided, no OCR verification" : "No MCI number",
   })
 
   // --- 5. Document Verification Status (weight: 10) ---
-  const totalDocs = Object.keys(uploads).length
-  const verifiedDocs = Object.values(uploads).filter(u => u.status === "extracted").length
-  const pendingDocs = Object.values(uploads).filter(u => u.status === "uploaded").length
-  const rejectedDocs = Object.values(uploads).filter(u => u.status === "rejected" || u.status === "blocked").length
+  // Filter out photo/profile uploads — they skip OCR by design.
+  // Derived from DOCUMENT_TYPES metadata (single source of truth in document-keys.ts).
+  const ocrEntries = Object.entries(normalizedUploads).filter(
+    ([key]) => !EXTRACTION_SKIPPED_KEYS.includes(normalizeDocumentKey(key))
+  )
+  const totalDocs = ocrEntries.length
+  const verifiedDocs = ocrEntries.filter(([, u]) => u.status === "extracted").length
+  const pendingDocs = ocrEntries.filter(([, u]) => u.status === "uploaded").length
+  const rejectedDocs = ocrEntries.filter(([, u]) => u.status === "rejected" || u.status === "blocked").length
 
   const docScore = totalDocs > 0 ? (verifiedDocs / totalDocs) * 100 : 0
   if (pendingDocs > 0) flags.push(`${pendingDocs} document(s) pending manual verification`)

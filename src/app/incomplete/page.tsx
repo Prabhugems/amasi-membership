@@ -14,17 +14,18 @@ import { formatDate } from "@/lib/utils"
 import {
   Search, Loader2, Inbox, Eye, Trash2, Send, Clock,
   AlertTriangle, CreditCard, RotateCcw, FileX, PauseCircle,
-  XCircle, AlertCircle, ChevronDown, Mail,
+  XCircle, AlertCircle, Mail, MessageCircle,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type TabFilter = "all" | "in_progress" | "stuck" | "payment_on_hold" | "refund_initiated"
+type StageFilter = "all" | 1 | 2 | 3 | 4 | 5 | 6
 
 interface IncompleteDraft {
   id: string
   email: string
-  phone: string
+  phone: string | number | null
   membership_type: string
   current_step: number
   status: string
@@ -37,21 +38,25 @@ interface IncompleteDraft {
 
 interface IncompleteCounts {
   total: number
+  in_progress?: number
   stuck: number
   payment_on_hold: number
   refund_initiated: number
+  by_step?: Record<number, number>
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const STEP_LABELS: Record<number, string> = {
   1: "Select Type",
-  2: "Email Verification",
-  3: "Document Upload",
+  2: "Email/OTP Verification",
+  3: "Upload Docs",
   4: "Review Details",
   5: "Payment",
   6: "Submission",
 }
+
+const STAGE_ORDER: number[] = [1, 2, 3, 4, 5, 6]
 
 const MEMBERSHIP_TYPE_LABELS: Record<string, string> = {
   LM: "Life Member",
@@ -76,6 +81,35 @@ function timeAgo(date: string) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   return `${Math.floor(seconds / 86400)}d ago`
+}
+
+/**
+ * Normalize a phone value (bigint/string) to a plain 10-digit Indian number.
+ * Strips non-digits, a leading 91 country code, and any leading zero.
+ * Returns null if the result is empty / too short to be usable.
+ */
+function normalizeIndianPhone(raw: string | number | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null
+  let digits = String(raw).replace(/\D/g, "")
+  if (!digits) return null
+  if (digits.startsWith("91") && digits.length > 10) {
+    digits = digits.slice(2)
+  }
+  digits = digits.replace(/^0+/, "")
+  if (digits.length < 10) return null
+  // Collapse to the last 10 digits (defensive — mobile numbers are always 10 locally).
+  return digits.slice(-10)
+}
+
+function buildWhatsappUrl(phone10: string, stageLabel: string): string {
+  const text = `Hi from AMASI — we noticed your membership application is incomplete at the ${stageLabel} step. Can I help you complete it?`
+  return `https://wa.me/91${phone10}?text=${encodeURIComponent(text)}`
+}
+
+function buildMailtoUrl(email: string, stageLabel: string): string {
+  const subject = "Your AMASI application"
+  const body = `Hi,\n\nWe noticed your membership application is still incomplete at the ${stageLabel} step. Let us know if we can help you finish it.\n\n— AMASI`
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 
 function getPaymentBadge(paymentStatus: string | null) {
@@ -110,6 +144,45 @@ function LoadingSkeleton() {
   )
 }
 
+// ─── Stage Breadcrumb (per-row) ─────────────────────────────────────────────
+
+function StageBreadcrumb({ currentStep }: { currentStep: number }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap" aria-label={`Stuck at step ${currentStep}: ${STEP_LABELS[currentStep] ?? ""}`}>
+      {STAGE_ORDER.map((step, idx) => {
+        const isCurrent = step === currentStep
+        const isPast = step < currentStep
+        const label = STEP_LABELS[step]
+        const base = "inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11px] font-medium border transition-colors"
+        const stateClass = isCurrent
+          ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+          : isPast
+            ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30"
+            : "bg-muted/50 text-muted-foreground border-border/60"
+        return (
+          <span key={step} className="inline-flex items-center gap-1">
+            <span className={`${base} ${stateClass}`}>
+              <span className={`inline-flex items-center justify-center h-4 w-4 rounded-full text-[10px] font-bold ${
+                isCurrent
+                  ? "bg-white/25 text-white"
+                  : isPast
+                    ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                    : "bg-muted text-muted-foreground"
+              }`}>
+                {step}
+              </span>
+              <span className="whitespace-nowrap">{label}</span>
+            </span>
+            {idx < STAGE_ORDER.length - 1 && (
+              <span className="text-muted-foreground/40 text-[10px]">›</span>
+            )}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated"]
@@ -121,6 +194,7 @@ function IncompletePageInner() {
     return fromUrl && VALID_TABS.includes(fromUrl) ? fromUrl : "all"
   })()
   const [tab, setTab] = useState<TabFilter>(initialTab)
+  const [stage, setStage] = useState<StageFilter>("all")
   const [search, setSearch] = useState("")
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
@@ -283,8 +357,9 @@ function IncompletePageInner() {
     },
   })
 
-  // ─── Filter by search ──────────────────────────────────────────────────
+  // ─── Filter by search + stage ──────────────────────────────────────────
   const drafts = (draftsData?.drafts || []).filter((draft: IncompleteDraft) => {
+    if (stage !== "all" && draft.current_step !== stage) return false
     if (!search) return true
     const q = search.toLowerCase()
     return draft.email?.toLowerCase().includes(q)
@@ -300,10 +375,25 @@ function IncompletePageInner() {
 
   const tabCountMap: Record<string, number | undefined> = {
     all: counts?.total,
+    in_progress: counts?.in_progress,
     stuck: counts?.stuck,
     payment_on_hold: counts?.payment_on_hold,
     refund_initiated: counts?.refund_initiated,
   }
+
+  // Counts for the stage chips. Fall back to computing from the currently
+  // loaded draft list when the server hasn't returned `by_step` yet.
+  const stageCountMap: Record<number, number> = (() => {
+    if (counts?.by_step) return counts.by_step
+    const map: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
+    for (const d of draftsData?.drafts || []) {
+      if (d.current_step >= 1 && d.current_step <= 6) {
+        map[d.current_step] = (map[d.current_step] || 0) + 1
+      }
+    }
+    return map
+  })()
+  const stageTotalCount = STAGE_ORDER.reduce((sum, s) => sum + (stageCountMap[s] || 0), 0)
 
   // ─── Render action buttons based on status ─────────────────────────────
   const renderActions = useCallback((draft: IncompleteDraft) => {
@@ -522,6 +612,56 @@ function IncompletePageInner() {
         })}
       </div>
 
+      {/* ─── Stage Chips (filter by current_step) ───────────────────── */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          key="stage-all"
+          onClick={() => setStage("all")}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+            stage === "all"
+              ? "bg-teal-600 border-teal-600 text-white shadow-sm"
+              : "bg-card border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+          }`}
+          aria-pressed={stage === "all"}
+        >
+          All stages
+          <span className={`inline-flex items-center justify-center h-4 min-w-4 px-1 text-[10px] font-bold rounded-full ${
+            stage === "all" ? "bg-white/20 text-inherit" : "bg-muted text-muted-foreground"
+          }`}>
+            {stageTotalCount}
+          </span>
+        </button>
+        {STAGE_ORDER.map((s) => {
+          const isActive = stage === s
+          const label = STEP_LABELS[s]
+          const n = stageCountMap[s] ?? 0
+          return (
+            <button
+              key={`stage-${s}`}
+              onClick={() => setStage(s as StageFilter)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                isActive
+                  ? "bg-teal-600 border-teal-600 text-white shadow-sm"
+                  : "bg-card border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+              }`}
+              aria-pressed={isActive}
+            >
+              <span className={`inline-flex items-center justify-center h-4 w-4 rounded-full text-[10px] font-bold ${
+                isActive ? "bg-white/20 text-inherit" : "bg-muted text-muted-foreground"
+              }`}>
+                {s}
+              </span>
+              <span className="whitespace-nowrap">{label}</span>
+              <span className={`inline-flex items-center justify-center h-4 min-w-4 px-1 text-[10px] font-bold rounded-full ${
+                isActive ? "bg-white/20 text-inherit" : "bg-muted text-muted-foreground"
+              }`}>
+                {n}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* ─── Search Bar ───────────────────────────────────────────────── */}
       <div className="relative max-w-md">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -570,6 +710,7 @@ function IncompletePageInner() {
           {!isLoading && !isError && drafts.map((draft) => {
             const stepLabel = STEP_LABELS[draft.current_step] || `Step ${draft.current_step}`
             const membershipLabel = MEMBERSHIP_TYPE_LABELS[draft.membership_type] || draft.membership_type || "N/A"
+            const phone10 = normalizeIndianPhone(draft.phone)
 
             const borderClass =
               draft.status === "stuck" ? "border-l-4 border-l-red-400" :
@@ -586,27 +727,25 @@ function IncompletePageInner() {
                 <CardContent className="p-5">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     {/* Left: Info */}
-                    <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex-1 min-w-0 space-y-2.5">
                       {/* Top row: email + badges */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-bold text-sm truncate">{draft.email}</p>
-                        {draft.phone && (
+                        {phone10 && (
                           <>
                             <span className="text-border hidden sm:inline">|</span>
-                            <span className="text-xs text-muted-foreground">{draft.phone}</span>
+                            <span className="text-xs text-muted-foreground">+91 {phone10}</span>
                           </>
                         )}
                         <span className="text-border hidden sm:inline">|</span>
                         <span className="text-xs font-semibold text-muted-foreground">{membershipLabel}</span>
                       </div>
 
-                      {/* Second row: step, payment, time */}
+                      {/* Stage breadcrumb */}
+                      <StageBreadcrumb currentStep={draft.current_step} />
+
+                      {/* Secondary row: payment, time */}
                       <div className="flex items-center gap-3 flex-wrap text-xs">
-                        <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
-                          <AlertTriangle className="h-3 w-3" />
-                          Stuck at: <span className="font-semibold text-foreground">{stepLabel}</span>
-                        </span>
-                        <span className="text-border">|</span>
                         {getPaymentBadge(draft.payment_status)}
                         <span className="text-border">|</span>
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -624,8 +763,30 @@ function IncompletePageInner() {
                       )}
                     </div>
 
-                    {/* Right: Actions */}
-                    <div className="shrink-0">
+                    {/* Right: Contact + Actions */}
+                    <div className="shrink-0 flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {phone10 && (
+                          <a
+                            href={buildWhatsappUrl(phone10, stepLabel)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="WhatsApp"
+                            aria-label={`WhatsApp ${draft.email}`}
+                            className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border text-emerald-600 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 hover:border-emerald-200 dark:hover:border-emerald-400/30 transition-colors"
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                          </a>
+                        )}
+                        <a
+                          href={buildMailtoUrl(draft.email, stepLabel)}
+                          title="Email"
+                          aria-label={`Email ${draft.email}`}
+                          className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:border-blue-200 dark:hover:border-blue-400/30 transition-colors"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </a>
+                      </div>
                       {renderActions(draft)}
                     </div>
                   </div>

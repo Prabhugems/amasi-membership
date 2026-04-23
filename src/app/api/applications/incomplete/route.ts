@@ -39,21 +39,30 @@ export async function GET(request: NextRequest) {
     if (action === "counts") {
       const { data, error } = await supabase
         .from("draft_applications")
-        .select("status")
+        .select("status, current_step")
+        .not("status", "in", '("completed","expired")')
 
       if (error) {
         console.error("Draft counts error:", error)
         return Response.json({ status: false, message: "Failed to fetch counts" }, { status: 500 })
       }
 
-      const rows = data || []
+      const rows = (data || []) as { status: string | null; current_step: number | null }[]
       const total = rows.length
       const in_progress = rows.filter((r) => r.status === "in_progress").length
       const stuck = rows.filter((r) => r.status === "stuck").length
       const payment_on_hold = rows.filter((r) => r.status === "payment_on_hold").length
       const refund_initiated = rows.filter((r) => r.status === "refund_initiated").length
 
-      return Response.json({ total, in_progress, stuck, payment_on_hold, refund_initiated })
+      const by_step: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
+      for (const r of rows) {
+        const step = r.current_step
+        if (step && step >= 1 && step <= 6) {
+          by_step[step] = (by_step[step] || 0) + 1
+        }
+      }
+
+      return Response.json({ total, in_progress, stuck, payment_on_hold, refund_initiated, by_step })
     }
 
     // --- List mode ---

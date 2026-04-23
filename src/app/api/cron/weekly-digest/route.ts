@@ -23,6 +23,21 @@ interface WeeklyMetrics {
   revenueLastWeek: number
   slaBreachesThisWeek: number
   slaBreachesLastWeek: number
+
+  // Draft funnel (last 7 days)
+  draftsStartedThisWeek: number
+  submissionsThisWeek: number
+  conversionPct: number
+  dropoffByStep: Array<{ step: number; label: string; count: number }>
+}
+
+const DRAFT_STEP_LABELS: Record<number, string> = {
+  1: "Select Membership Type",
+  2: "Email/OTP Verification",
+  3: "Document Upload",
+  4: "Review Details",
+  5: "Payment",
+  6: "Submission",
 }
 
 function formatCurrency(amount: number): string {
@@ -115,10 +130,41 @@ function buildEmailHtml(metrics: WeeklyMetrics, weekOfDate: string): string {
         </tbody>
       </table>
 
+      <!-- Draft Funnel (drop-off visibility) -->
+      <div style="padding:20px 24px 8px;border-top:1px solid #e5e7eb;">
+        <h3 style="margin:0 0 4px;color:#0f766e;font-size:15px;">Draft Funnel — Last 7 Days</h3>
+        <p style="margin:0 0 14px;color:#6b7280;font-size:12px;">Where applicants are dropping off before submission.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:6px;">
+          <tr>
+            <td style="padding:8px 0;color:#374151;font-size:13px;">Drafts Started</td>
+            <td style="padding:8px 0;text-align:right;font-weight:700;font-size:15px;color:#1e293b;">${metrics.draftsStartedThisWeek}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#374151;font-size:13px;">Submitted (New Applications)</td>
+            <td style="padding:8px 0;text-align:right;font-weight:700;font-size:15px;color:#0f766e;">${metrics.submissionsThisWeek}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#374151;font-size:13px;">Conversion Rate</td>
+            <td style="padding:8px 0;text-align:right;font-weight:700;font-size:15px;color:${metrics.conversionPct >= 50 ? "#0f766e" : metrics.conversionPct >= 25 ? "#f59e0b" : "#dc2626"};">${metrics.conversionPct}%</td>
+          </tr>
+        </table>
+
+        ${metrics.dropoffByStep.length > 0 ? `
+        <p style="margin:14px 0 6px;color:#374151;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Drop-off by last step reached</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          ${metrics.dropoffByStep.map((s) => `
+          <tr>
+            <td style="padding:6px 0;color:#1e293b;font-size:13px;">Step ${s.step}: ${escapeHtml(s.label)}</td>
+            <td style="padding:6px 0;text-align:right;font-weight:600;font-size:13px;color:#1e293b;">${s.count}</td>
+          </tr>`).join("")}
+        </table>
+        ` : '<p style="color:#9ca3af;font-size:12px;margin:8px 0 0;">No abandoned drafts in the last 7 days.</p>'}
+      </div>
+
       <!-- CTA buttons -->
       <div style="padding:24px;text-align:center;">
         <a href="${baseUrl}/" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;margin:0 6px;">View Dashboard</a>
-        <a href="${baseUrl}/reports" style="display:inline-block;background:#f1f5f9;color:#0f766e;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;margin:0 6px;">Full Reports</a>
+        <a href="${baseUrl}/incomplete" style="display:inline-block;background:#f1f5f9;color:#0f766e;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;margin:0 6px;">Incomplete Drafts</a>
       </div>
     </div>
 
@@ -211,8 +257,47 @@ async function fetchMetrics(supabase: ReturnType<typeof createAdminClient>): Pro
       .lt("updated_at", oneWeekAgoISO),
   ])
 
+  // Draft funnel queries (separate Promise.all — independent of above)
+  const [draftsStartedRes, submissionsRes, abandonedByStepRes] = await Promise.all([
+    // Drafts created in last 7d (regardless of current status)
+    supabase
+      .from("draft_applications")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", oneWeekAgoISO),
+
+    // Submissions in last 7d — full membership_applications rows created
+    supabase
+      .from("membership_applications")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", oneWeekAgoISO),
+
+    // Drafts created in last 7d NOT yet submitted (status in incomplete states)
+    // Will be grouped by current_step client-side.
+    supabase
+      .from("draft_applications")
+      .select("current_step")
+      .gte("created_at", oneWeekAgoISO)
+      .in("status", ["in_progress", "stuck", "payment_on_hold", "refund_initiated", "expired"]),
+  ])
+
   const sumAmount = (rows: { amount: number }[] | null) =>
     (rows || []).reduce((acc, r) => acc + (r.amount || 0), 0)
+
+  const draftsStartedThisWeek = draftsStartedRes.count || 0
+  const submissionsThisWeek = submissionsRes.count || 0
+  const conversionPct = draftsStartedThisWeek > 0
+    ? Math.round((submissionsThisWeek / draftsStartedThisWeek) * 1000) / 10
+    : 0
+
+  // Group abandoned drafts by current_step
+  const stepCounts = new Map<number, number>()
+  for (const row of (abandonedByStepRes.data || []) as { current_step: number | null }[]) {
+    const step = row.current_step ?? 1
+    stepCounts.set(step, (stepCounts.get(step) || 0) + 1)
+  }
+  const dropoffByStep = Array.from(stepCounts.entries())
+    .map(([step, count]) => ({ step, label: DRAFT_STEP_LABELS[step] || `Step ${step}`, count }))
+    .sort((a, b) => b.count - a.count)
 
   return {
     totalMembers: totalMembersRes.count || 0,
@@ -224,6 +309,10 @@ async function fetchMetrics(supabase: ReturnType<typeof createAdminClient>): Pro
     revenueLastWeek: sumAmount(revenueLastWeekRes.data as { amount: number }[] | null),
     slaBreachesThisWeek: slaThisWeekRes.count || 0,
     slaBreachesLastWeek: slaLastWeekRes.count || 0,
+    draftsStartedThisWeek,
+    submissionsThisWeek,
+    conversionPct,
+    dropoffByStep,
   }
 }
 

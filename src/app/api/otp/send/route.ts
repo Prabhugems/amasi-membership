@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
     try {
       const { data: existingDraft } = await supabase
         .from("draft_applications")
-        .select("id")
+        .select("id, membership_type")
         .eq("email", email.toLowerCase())
         .maybeSingle()
 
@@ -139,8 +139,16 @@ export async function POST(request: NextRequest) {
           step_data: { otp_sent: true, otp_sent_at: new Date().toISOString() },
         })
       } else {
+        // Backfill membership_type if the draft is a null-type zombie from
+        // the old bypass bug and the caller now provides a type. Without this,
+        // victims returning through the reminder email would complete the
+        // entire flow with a null membership_type on their draft.
+        const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (membershipType && !existingDraft.membership_type) {
+          update.membership_type = membershipType.toUpperCase()
+        }
         await supabase.from("draft_applications")
-          .update({ updated_at: new Date().toISOString() })
+          .update(update)
           .eq("id", existingDraft.id)
       }
     } catch {

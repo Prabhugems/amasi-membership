@@ -265,7 +265,12 @@ export default function ApplyPage() {
 
   // Save draft to server after each step change (only after email is verified)
   const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>): Promise<{ ok: boolean; error: string | null }> => {
-    if (!emailVerified || !formData.email) return { ok: true, error: null }
+    // The initial post-OTP-verify save fires on the same tick as setEmailVerified(true);
+    // the closure here still sees the stale `false`. Trust the caller when they pass
+    // { email_verified: true } so the save actually runs.
+    const isInitialPostVerifySave = extraData?.email_verified === true
+    if (!formData.email) return { ok: true, error: null }
+    if (!isInitialPostVerifySave && !emailVerified) return { ok: true, error: null }
 
     const buildBody = () => {
       const safeUploads = Object.fromEntries(

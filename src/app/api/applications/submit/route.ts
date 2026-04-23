@@ -344,6 +344,12 @@ export async function POST(request: NextRequest) {
           const u = uploads || {}
           return u.profile?.fileUrl || u.photo?.fileUrl || u.photo?.url || u.profile?.url || null
         })(),
+        mciCertificateUrl: (uploads || {}).mci_certificate?.fileUrl || (uploads || {}).mci_certificate?.url || null,
+        pgDegreeCertificateUrl: (uploads || {}).pg_degree_certificate?.fileUrl || (uploads || {}).pg_degree_certificate?.url || null,
+        asiMemberCertificateUrl: (uploads || {}).asi_member_certificate?.fileUrl || (uploads || {}).asi_member_certificate?.url || null,
+        mbbsDegreeCertificateUrl: (uploads || {}).mbbs_degree_certificate?.fileUrl || (uploads || {}).mbbs_degree_certificate?.url || null,
+        letterHodUrl: (uploads || {}).letter_hod?.fileUrl || (uploads || {}).letter_hod?.url || null,
+        activeLicenseUrl: (uploads || {}).active_license?.fileUrl || (uploads || {}).active_license?.url || null,
       })
 
       if (!result.success) {

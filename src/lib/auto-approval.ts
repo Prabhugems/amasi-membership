@@ -62,6 +62,14 @@ export interface AutoApprovalInput {
   // Profile photo URL
   profilePhoto?: string | null
 
+  // Document URLs (from application uploads)
+  mciCertificateUrl?: string | null
+  pgDegreeCertificateUrl?: string | null
+  asiMemberCertificateUrl?: string | null
+  mbbsDegreeCertificateUrl?: string | null
+  letterHodUrl?: string | null
+  activeLicenseUrl?: string | null
+
   // Notes for review_notes on the application row
   reviewNotes: string
 }
@@ -165,6 +173,12 @@ export async function autoApproveApplication(
     asi_state: input.asiState,
     joining_date: today,
     profile_photo: input.profilePhoto || null,
+    mci_certificate: input.mciCertificateUrl || null,
+    pg_degree_certificate: input.pgDegreeCertificateUrl || null,
+    asi_member_certificate: input.asiMemberCertificateUrl || null,
+    mbbs_degree_certificate: input.mbbsDegreeCertificateUrl || null,
+    letter_hod: input.letterHodUrl || null,
+    active_license: input.activeLicenseUrl || null,
   })
 
   if (memberInsertError) {

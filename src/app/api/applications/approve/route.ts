@@ -93,10 +93,34 @@ export async function POST(request: NextRequest) {
       asi_membership_no: app.asi_membership_no,
       asi_state: app.asi_state,
       joining_date: new Date().toISOString().split("T")[0],
-      // Copy profile photo from application documents
+      // Copy document URLs from application
       profile_photo: (() => {
         const docs = app.documents || {}
         return docs.photo?.url || docs.photo?.fileUrl || docs.profile?.fileUrl || docs.profile?.url || null
+      })(),
+      mci_certificate: (() => {
+        const d = (app.documents || {}).mci_certificate
+        return d?.fileUrl || d?.url || null
+      })(),
+      pg_degree_certificate: (() => {
+        const d = (app.documents || {}).pg_degree_certificate || (app.documents || {}).pg_certificate
+        return d?.fileUrl || d?.url || null
+      })(),
+      asi_member_certificate: (() => {
+        const d = (app.documents || {}).asi_member_certificate
+        return d?.fileUrl || d?.url || null
+      })(),
+      mbbs_degree_certificate: (() => {
+        const d = (app.documents || {}).mbbs_degree_certificate
+        return d?.fileUrl || d?.url || null
+      })(),
+      letter_hod: (() => {
+        const d = (app.documents || {}).letter_hod
+        return d?.fileUrl || d?.url || null
+      })(),
+      active_license: (() => {
+        const d = (app.documents || {}).active_license
+        return d?.fileUrl || d?.url || null
       })(),
     })
 

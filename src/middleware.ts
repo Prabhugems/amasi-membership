@@ -43,6 +43,10 @@ const PUBLIC_API_ROUTES = [
   "/api/applications/status",
   "/api/applications/check-duplicate",
   "/api/applications/resubmit",
+  // save-draft handles its own member-JWT check via verifyMemberSession;
+  // without this line, middleware blocked every client-side draft save
+  // with a generic 401 since 2026-04-04.
+  "/api/applications/save-draft",
   "/api/otp/",
   "/api/payments/",
   "/api/pincode",

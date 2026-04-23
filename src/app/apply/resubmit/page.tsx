@@ -14,6 +14,7 @@ import {
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { INDIAN_STATES } from "@/lib/membership-types"
+import { ProfileOtp } from "@/components/profile/profile-otp"
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -56,7 +57,7 @@ interface ApplicationData {
   documents?: Record<string, { url?: string; status?: string }>
 }
 
-type Phase = "loading" | "form" | "submitting" | "success" | "error"
+type Phase = "loading" | "form" | "submitting" | "otp_verify" | "success" | "error"
 
 interface FormState {
   salutation: string
@@ -307,15 +308,8 @@ function ResubmitContent() {
   }
 
   /* ---- Submit handler ---- */
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const performSubmit = async () => {
     if (!application) return
-
-    // Client-side validation for required fields
-    if (!form.firstName.trim() || !form.salutation.trim() || !form.mciCouncilNumber.trim()) {
-      toast.error("Please fill in all required fields")
-      return
-    }
 
     setPhase("submitting")
 
@@ -363,6 +357,13 @@ function ResubmitContent() {
 
       const json = await res.json()
 
+      // OTP gate: the API requires a verified OTP within 2 hours. If missing,
+      // transition to OTP verify; after verify, performSubmit() runs again.
+      if (res.status === 401 && typeof json.message === "string" && json.message.toLowerCase().includes("otp")) {
+        setPhase("otp_verify")
+        return
+      }
+
       if (!res.ok || !json.status) {
         throw new Error(json.message || "Failed to resubmit application")
       }
@@ -374,6 +375,18 @@ function ResubmitContent() {
       setErrorMessage(msg)
       setPhase("error")
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!application) return
+
+    if (!form.firstName.trim() || !form.salutation.trim() || !form.mciCouncilNumber.trim()) {
+      toast.error("Please fill in all required fields")
+      return
+    }
+
+    await performSubmit()
   }
 
   /* ---- Loading state ---- */
@@ -413,6 +426,30 @@ function ResubmitContent() {
             </div>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  /* ---- OTP verify state ---- */
+  if (phase === "otp_verify" && application) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6 py-8">
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="pt-5 pb-5">
+            <div className="flex items-start gap-3">
+              <Info className="h-5 w-5 mt-0.5 shrink-0 text-blue-600" />
+              <div className="text-sm text-blue-800">
+                <p className="font-semibold mb-0.5">One quick step before we resubmit</p>
+                <p>For security, please verify your email with a one-time code. Your edits and uploaded files are saved — we will submit them automatically once you verify.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <ProfileOtp
+          email={application.email}
+          onVerified={() => { void performSubmit() }}
+          onBack={() => setPhase("form")}
+        />
       </div>
     )
   }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion, AnimatePresence } from "framer-motion"
@@ -114,7 +114,7 @@ function LoadingSkeleton() {
 
 const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated"]
 
-export default function IncompletePage() {
+function IncompletePageInner() {
   const searchParams = useSearchParams()
   const initialTab = (() => {
     const fromUrl = searchParams.get("status") as TabFilter | null
@@ -737,5 +737,20 @@ export default function IncompletePage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function IncompletePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center text-sm text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+          Loading incomplete applications…
+        </div>
+      }
+    >
+      <IncompletePageInner />
+    </Suspense>
   )
 }

@@ -13,7 +13,7 @@ import { formatDate } from "@/lib/utils"
 import {
   Search, Loader2, Inbox, Eye, Trash2, Send, Clock,
   AlertTriangle, CreditCard, RotateCcw, FileX, PauseCircle,
-  XCircle, AlertCircle, ChevronDown,
+  XCircle, AlertCircle, ChevronDown, Mail,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -118,6 +118,7 @@ export default function IncompletePage() {
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
   const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -204,6 +205,38 @@ export default function IncompletePage() {
     onError: () => {
       toast.error("Failed to send reminder")
       setPendingReminderId(null)
+    },
+  })
+
+  // ─── Bulk reminders preview (eligible count) ─────────────────────────────
+  const { data: bulkPreview } = useQuery<{ eligible_count: number; min_hours_idle: number }>({
+    queryKey: ["bulk-reminders-preview"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/bulk-draft-reminders")
+      if (!res.ok) throw new Error("Preview failed")
+      return res.json()
+    },
+    refetchInterval: 60_000,
+  })
+
+  const bulkRemindersMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/bulk-draft-reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      if (!res.ok) throw new Error("Bulk send failed")
+      return res.json() as Promise<{ sent: number; skipped: number; skippedDetails: { email: string; reason: string }[] }>
+    },
+    onSuccess: (data) => {
+      toast.success(`Sent ${data.sent} reminder${data.sent === 1 ? "" : "s"}${data.skipped ? `, skipped ${data.skipped}` : ""}`)
+      setBulkDialogOpen(false)
+      queryClient.invalidateQueries({ queryKey: ["bulk-reminders-preview"] })
+      queryClient.invalidateQueries({ queryKey: ["incomplete-drafts"] })
+    },
+    onError: () => {
+      toast.error("Bulk reminder send failed")
     },
   })
 
@@ -331,12 +364,59 @@ export default function IncompletePage() {
   return (
     <div className="space-y-6">
       {/* ─── Page Header ──────────────────────────────────────────────── */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Incomplete Applications</h1>
-        <p className="text-muted-foreground mt-1">
-          Track and manage draft applications that were not submitted
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Incomplete Applications</h1>
+          <p className="text-muted-foreground mt-1">
+            Track and manage draft applications that were not submitted
+          </p>
+        </div>
+        <Button
+          onClick={() => setBulkDialogOpen(true)}
+          disabled={!bulkPreview || bulkPreview.eligible_count === 0}
+          size="sm"
+          className="gap-2"
+        >
+          <Mail className="h-4 w-4" />
+          Send Reminders
+          {bulkPreview && (
+            <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 text-xs font-bold rounded-full bg-primary-foreground/20">
+              {bulkPreview.eligible_count}
+            </span>
+          )}
+        </Button>
       </div>
+
+      {/* ─── Bulk reminder confirm dialog ───────────────────────────────── */}
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send reminder emails?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              This will email <strong className="text-foreground">{bulkPreview?.eligible_count ?? 0}</strong> applicants
+              whose drafts are idle for at least <strong className="text-foreground">{bulkPreview?.min_hours_idle ?? 24} hours</strong>.
+            </p>
+            <p>
+              Applicants who already submitted a full application, or whose email matches a test/internal pattern, are skipped automatically.
+              A second reminder to the same applicant is suppressed for 48 hours.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setBulkDialogOpen(false)} disabled={bulkRemindersMutation.isPending}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => bulkRemindersMutation.mutate()} disabled={bulkRemindersMutation.isPending}>
+              {bulkRemindersMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Sending…</>
+              ) : (
+                <><Send className="h-4 w-4 mr-1.5" />Send Now</>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Stats Bar ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

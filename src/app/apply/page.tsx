@@ -1017,7 +1017,10 @@ export default function ApplyPage() {
         setExistingMember(data.data[0])
         setPhase("existing")
       } else {
-        // Not found — prefill email/phone and proceed to verify
+        // Not found — prefill email/phone and send them to landing to pick a
+        // membership type first. Previously this jumped straight to verify,
+        // bypassing type selection and creating zombie drafts with
+        // membership_type: null.
         const isEmail = checkQuery.includes("@")
         const isPhone = /^\d{10}$/.test(checkQuery.trim())
         setFormData((prev) => ({
@@ -1025,7 +1028,7 @@ export default function ApplyPage() {
           email: isEmail ? checkQuery.trim() : prev.email,
           mobile: isPhone ? checkQuery.trim() : prev.mobile,
         }))
-        setPhase("verify")
+        setPhase("landing")
       }
     } catch {
       toast.error("Could not check membership. Please try again.")
@@ -1428,9 +1431,19 @@ export default function ApplyPage() {
                 // Non-blocking — proceed normally if check fails
               }
               setVerifyStep("done")
-              // Save initial draft to server
-              saveDraftToServer(2, { email_verified: true })
-              setTimeout(() => setPhase(selectedType ? "upload" : "landing"), 500)
+              // Defence-in-depth: reaching OTP verify without selectedType means
+              // the upstream check-page redirect trapped a user in the bypass.
+              // That path is now closed; log loudly if it ever fires again and
+              // send them to landing so the bug is visible, not silent.
+              if (!selectedType) {
+                console.error("[apply:verify] OTP verified without selectedType — upstream bypass regression", { email: formData.email })
+                toast.error("Please select a membership type to continue.")
+                setTimeout(() => setPhase("landing"), 500)
+              } else {
+                // Save initial draft to server
+                saveDraftToServer(2, { email_verified: true })
+                setTimeout(() => setPhase("upload"), 500)
+              }
             }
           } else {
             toast.error(data.message || "Invalid OTP")

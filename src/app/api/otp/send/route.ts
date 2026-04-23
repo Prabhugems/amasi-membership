@@ -33,6 +33,42 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
+    // Zombie-draft guard: if the caller did not pass a membership_type,
+    // require that the email already has a draft with a type OR a submitted
+    // membership_applications row (profile OTP / resubmit flows are legitimate
+    // null-type callers). Otherwise the /apply flow slipped past type
+    // selection and we would create a draft with membership_type: null that
+    // never progresses.
+    if (!membershipType) {
+      const emailKey = email.toLowerCase()
+      const [{ data: typedDraft }, { data: submittedApp }] = await Promise.all([
+        supabase
+          .from("draft_applications")
+          .select("id")
+          .eq("email", emailKey)
+          .not("membership_type", "is", null)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("membership_applications")
+          .select("id")
+          .eq("email", emailKey)
+          .limit(1)
+          .maybeSingle(),
+      ])
+
+      if (!typedDraft && !submittedApp) {
+        return Response.json(
+          {
+            status: false,
+            code: "MEMBERSHIP_TYPE_REQUIRED",
+            message: "Please select a membership type before verifying your email.",
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     // Rate limit: max 3 OTPs per email per 10 minutes
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
     const { count } = await supabase

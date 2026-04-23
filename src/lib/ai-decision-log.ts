@@ -70,20 +70,10 @@ export async function logAiDecision(
       decision = "manual_review"
     }
 
-    // Determine blocking_reason when score >= 80 but NOT auto-approved
-    let blockingReason: string | null = null
-    if (result && result.totalScore >= 80 && !result.autoApprove) {
-      if (result.nmcVerification?.status === "name_mismatch") {
-        blockingReason = "nmc_name_mismatch"
-      } else if (!input.paymentPaid) {
-        blockingReason = "payment_pending"
-      } else {
-        const failedCritical = result.checks.find(c => c.weight >= 20 && !c.passed)
-        if (failedCritical) {
-          blockingReason = `critical_check_failed: ${failedCritical.check}`
-        }
-      }
-    }
+    // Use blockingReasons from the 4-check auto-approval gate
+    const blockingReason = result && !result.autoApprove && result.blockingReasons.length > 0
+      ? result.blockingReasons.join(", ")
+      : null
 
     // Use granular NMC status from scoring result (set by nmc-cache.ts)
     const nmcApiStatus = result?.nmcApiStatus || null

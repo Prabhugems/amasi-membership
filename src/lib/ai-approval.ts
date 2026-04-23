@@ -109,6 +109,7 @@ export interface NmcVerification {
 export interface ApprovalResult {
   totalScore: number        // 0-100
   autoApprove: boolean
+  blockingReasons: string[] // which of the 4 checks failed (empty if auto-approved)
   checks: ApprovalCheck[]
   flags: string[]
   nmcVerification: NmcVerification | null
@@ -421,22 +422,64 @@ export async function scoreApplication(
   const weightedScore = checks.reduce((sum, c) => sum + (c.score * c.weight / 100), 0)
   const totalScore = totalWeight > 0 ? Math.round((weightedScore / totalWeight) * 100) : 0
 
-  // --- Auto-approve decision ---
-  // Critical checks = weight >= 20. NMC skipped (weight 0) drops out naturally.
-  // NMC name_mismatch forces manual review regardless of total score (the 60-point
-  // scoring is intentional, but a flagged name must never auto-approve).
-  const hasBlockedDegree = isBlocked
-  const allCriticalPassed = checks.filter(c => c.weight >= 20).every(c => c.passed)
-  const autoApprove =
-    totalScore >= 80 &&
-    paymentPaid &&
-    !hasBlockedDegree &&
-    allCriticalPassed &&
-    nmcVerification?.status !== "name_mismatch"
+  // --- Auto-approve decision: strict 4-check rule ---
+  // Each core check must pass independently. Total score is still shown to admins
+  // but no longer determines auto-approval.
+  const nameCheck = checks.find(c => c.check.startsWith("Name"))
+  const degreeCheck = checks.find(c => c.check === "PG Degree validation")
+  const collegeCheck = checks.find(c => c.check === "College & University match")
+  const mciCheck = checks.find(c => c.check === "MCI/Council registration verification")
+  const docCheck = checks.find(c => c.check === "Document AI verification")
+
+  // Build list of blocking reasons for ai_decisions logging
+  const blockingReasons: string[] = []
+
+  // Check 1: Name consistency >= 80%
+  if (!nameCheck || nameCheck.score < 80) {
+    blockingReasons.push("name_similarity_below_80")
+  }
+
+  // Check 2: College/University >= 85%
+  if (!collegeCheck || collegeCheck.score < 85) {
+    blockingReasons.push("college_match_below_85")
+  }
+
+  // Check 3: PG Degree must pass AND score >= 80%
+  if (!degreeCheck || !degreeCheck.passed || degreeCheck.score < 80) {
+    blockingReasons.push("degree_check_failed")
+  }
+
+  // Check 4: MCI registration >= 95% (skipped for ILM — mciCheck.weight === 0)
+  if (mciCheck && mciCheck.weight > 0 && mciCheck.score < 95) {
+    blockingReasons.push("mci_mismatch")
+  }
+
+  // All required documents must be extracted (not "uploaded" or missing)
+  if (!docCheck || docCheck.score < 100) {
+    blockingReasons.push("missing_required_documents")
+  }
+
+  // Blocked degree is a hard stop
+  if (isBlocked) {
+    blockingReasons.push("blocked_degree")
+  }
+
+  // NMC name mismatch is a blocking flag (NMC being down is NOT blocking)
+  if (nmcVerification?.status === "name_mismatch") {
+    blockingReasons.push("nmc_name_mismatch")
+  }
+
+  // Payment must be confirmed
+  if (!paymentPaid) {
+    blockingReasons.push("payment_pending")
+  }
+
+  const autoApprove = paymentPaid && blockingReasons.length === 0
 
   return {
     totalScore,
     autoApprove,
+    blockingReasons,
     checks,
     flags,
     nmcVerification,

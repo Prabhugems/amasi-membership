@@ -174,7 +174,12 @@ export default function ApplyPage() {
   const [phase, setPhase] = useState<Phase>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("amasi_apply_phase")
-      if (saved && ["check", "landing", "upload", "review"].includes(saved)) return saved as Phase
+      if (saved && ["check", "landing", "upload", "review"].includes(saved)) {
+        // "review" phase requires uploads in state, but File objects can't be serialized
+        // to localStorage. Cap at "upload" so user must re-upload before submitting.
+        if (saved === "review") return "upload"
+        return saved as Phase
+      }
     }
     return "check"
   })
@@ -651,6 +656,19 @@ export default function ApplyPage() {
       setErrors(allSubmitErrors)
       toast.error("Please fill in the required fields highlighted in red")
       return
+    }
+
+    // Check required documents are uploaded
+    const submitType = selectedType || getMembershipType(formData.membershipType)
+    if (submitType) {
+      const requiredDocs = submitType.requiredDocs.filter((d: string) => d !== "profile")
+      const missingDocs = requiredDocs.filter((d: string) => !uploads[d]?.file && uploads[d]?.status !== "extracted" && uploads[d]?.status !== "uploaded")
+      if (missingDocs.length > 0) {
+        const labels = missingDocs.map((d: string) => DOC_LABELS[d as DocType] || d)
+        toast.error(`Missing documents: ${labels.join(", ")}. Please go back and upload them.`)
+        setPhase("upload")
+        return
+      }
     }
 
     if (!termsAccepted) {
@@ -1580,9 +1598,10 @@ export default function ApplyPage() {
                           return
                         }
                         setResumingDraft(false)
-                        // Navigate to the step they were on
+                        // Navigate to the step they were on, but validate uploads exist
                         const stepToPhase: Record<number, Phase> = { 1: "landing", 2: "verify", 3: "upload", 4: "review", 5: "review", 6: "review" }
-                        setPhase(stepToPhase[serverDraft.current_step] || "upload")
+                        let targetPhase = stepToPhase[serverDraft.current_step] || "upload"
+                        setPhase(targetPhase)
                       }}
                     >
                       Resume Application
@@ -2083,9 +2102,15 @@ export default function ApplyPage() {
       pin: "e.g. 411001",
     }
 
+    // Check if required documents are missing (catches localStorage resume with no uploads)
+    const reviewRequiredDocs = type?.requiredDocs.filter((d: string) => d !== "profile") || []
+    const missingDocuments = reviewRequiredDocs.filter((d: string) =>
+      !uploads[d]?.file && uploads[d]?.status !== "extracted" && uploads[d]?.status !== "uploaded"
+    )
+
     // Collect ALL missing required fields into one flat list
     const allErrors = { ...validatePersonalDetails(formData), ...validateEducation(formData), ...validateRegistration(formData) }
-    const missingCount = Object.keys(allErrors).length
+    const missingCount = Object.keys(allErrors).length + missingDocuments.length
 
     const wasInitiallyMissing = (field: string) => reviewMissingFields?.has(field) ?? Object.keys(allErrors).includes(field)
 
@@ -2560,7 +2585,21 @@ export default function ApplyPage() {
         </label>
 
         {/* Show what's blocking submission */}
-        {missingCount > 0 && (
+        {missingDocuments.length > 0 && (
+          <div className="text-center text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="font-semibold">Documents required</p>
+            <p className="text-xs mt-1.5 text-red-600">
+              Missing: {missingDocuments.map((d: string) => DOC_LABELS[d as DocType] || d).join(", ")}
+            </p>
+            <button
+              onClick={() => setPhase("upload")}
+              className="mt-3 text-xs font-semibold text-red-700 underline underline-offset-2 hover:text-red-900"
+            >
+              Go back to upload documents
+            </button>
+          </div>
+        )}
+        {missingCount > 0 && missingDocuments.length === 0 && (
           <div className="text-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
             <p className="font-semibold">Cannot submit yet — {missingCount} required field{missingCount !== 1 ? "s" : ""} missing</p>
             <p className="text-xs mt-1.5 text-amber-600">{Object.values(allErrors).join(" &bull; ")}</p>

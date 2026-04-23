@@ -7,6 +7,7 @@ export interface DocumentTypeConfig {
   canonical: string
   aliases: string[]
   requires_extraction: boolean
+  label: string
 }
 
 export const DOCUMENT_TYPES: Record<string, DocumentTypeConfig> = {
@@ -14,36 +15,43 @@ export const DOCUMENT_TYPES: Record<string, DocumentTypeConfig> = {
     canonical: "mci_certificate",
     aliases: [],
     requires_extraction: true,
+    label: "MCI/SMC Certificate",
   },
   pg_degree_certificate: {
     canonical: "pg_degree_certificate",
     aliases: ["pg_certificate"],
     requires_extraction: true,
+    label: "PG Degree Certificate",
   },
   mbbs_degree_certificate: {
     canonical: "mbbs_degree_certificate",
     aliases: [],
     requires_extraction: true,
+    label: "MBBS Degree Certificate",
   },
   asi_member_certificate: {
     canonical: "asi_member_certificate",
     aliases: ["asi_certificate"],
     requires_extraction: true,
+    label: "ASI Membership Certificate",
   },
   letter_hod: {
     canonical: "letter_hod",
     aliases: ["hod_letter"],
     requires_extraction: true,
+    label: "HOD Letter",
   },
   active_license: {
     canonical: "active_license",
     aliases: [],
     requires_extraction: true,
+    label: "Active Medical License",
   },
   photo: {
     canonical: "photo",
     aliases: ["profile", "profile_photo", "applicant_photo"],
     requires_extraction: false,
+    label: "Profile Photo",
   },
 }
 
@@ -92,4 +100,33 @@ export function requiresExtraction(key: string): boolean {
   const canonical = normalizeDocumentKey(key)
   const config = DOCUMENT_TYPES[canonical]
   return config ? config.requires_extraction : true
+}
+
+/**
+ * Validate that uploads contain all required document types for a membership type.
+ * Uses the requiredDocs list from MembershipType (defined in membership-types.ts).
+ * Returns { valid: true } or { valid: false, missing: [...labels] }.
+ */
+export function validateRequiredDocuments(
+  uploads: Record<string, any>,
+  requiredDocTypes: string[],
+): { valid: true } | { valid: false; missing: string[] } {
+  // Normalize all upload keys
+  const uploadedKeys = new Set(
+    Object.keys(uploads || {}).map(normalizeDocumentKey)
+  )
+
+  const missing: string[] = []
+  for (const docType of requiredDocTypes) {
+    const canonical = normalizeDocumentKey(docType)
+    // Skip photo — it's required for UI but not for scoring/verification
+    if (canonical === "photo") continue
+    if (!uploadedKeys.has(canonical)) {
+      const config = DOCUMENT_TYPES[canonical]
+      missing.push(config?.label || canonical)
+    }
+  }
+
+  if (missing.length > 0) return { valid: false, missing }
+  return { valid: true }
 }

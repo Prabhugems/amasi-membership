@@ -6,6 +6,8 @@ import { scoreApplication } from "@/lib/ai-approval"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
 import { logAiDecision, updateAiDecisionOutcome, type AiDecisionInput } from "@/lib/ai-decision-log"
+import { validateRequiredDocuments } from "@/lib/document-keys"
+import { getMembershipType } from "@/lib/membership-types"
 import { escapeHtml } from "@/lib/html-escape"
 
 function getResend() {
@@ -144,6 +146,30 @@ export async function POST(request: NextRequest) {
 
     if (!emailVerified && !mobileVerified) {
       return Response.json({ status: false, message: "Email/mobile not verified" }, { status: 401 })
+    }
+
+    // --- Auth gate 3: verify required documents are present ---
+    const membershipType = getMembershipType(formData.membershipType)
+    if (membershipType) {
+      const docValidation = validateRequiredDocuments(uploads || {}, membershipType.requiredDocs)
+      if (!docValidation.valid) {
+        // Log to ai_decisions for tracking
+        try {
+          await logAiDecision(supabase, {
+            applicationId: "rejected-pre-scoring",
+            applicationReference: referenceNumber,
+            membershipType: formData.membershipType,
+            formData,
+            uploads: uploads || {},
+            paymentPaid: true,
+          }, null, 0, { message: `Missing documents: ${docValidation.missing.join(", ")}` })
+        } catch {}
+        return Response.json({
+          status: false,
+          missingDocuments: docValidation.missing,
+          message: `Application submission requires the following documents: ${docValidation.missing.join(", ")}. Please upload them and try again.`,
+        }, { status: 400 })
+      }
     }
 
     // Run AI scoring engine

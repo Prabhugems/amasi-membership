@@ -27,6 +27,7 @@ import {
   Shield,
   ScrollText,
   Clock,
+  KeyRound,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -60,6 +61,7 @@ const sections: NavSection[] = [
       { name: "Campaigns", href: "/campaigns", icon: Send },
       { name: "Activity Log", href: "/audit", icon: ScrollText },
       { name: "Admin Users", href: "/admin", icon: Shield, superAdminOnly: true },
+      { name: "API Keys", href: "/admin/api-keys", icon: KeyRound, superAdminOnly: true },
     ],
   },
   {

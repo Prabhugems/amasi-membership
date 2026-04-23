@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // Run AI scoring engine
     const scoringStart = performance.now()
-    const approval = await scoreApplication(formData, uploads || {}, !!paymentId)
+    const approval = await scoreApplication(formData, uploads || {}, !!paymentId, supabase)
     const scoringDurationMs = Math.round(performance.now() - scoringStart)
     const allAiVerified = approval.autoApprove
     const hasPendingReview = !approval.autoApprove

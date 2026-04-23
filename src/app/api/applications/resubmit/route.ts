@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
       const { scoreApplication } = await import("@/lib/ai-approval")
       const updatedApp = { ...app, ...updateFields }
       const scoringStart = performance.now()
-      const approval = await scoreApplication(updatedApp, updatedApp.documents || {}, true)
+      const approval = await scoreApplication(updatedApp, updatedApp.documents || {}, true, supabase)
       const scoringDurationMs = Math.round(performance.now() - scoringStart)
       const aiConfidence = `${approval.totalScore}% — ${approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"}`
       await supabase.from("membership_applications").update({

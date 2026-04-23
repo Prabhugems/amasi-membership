@@ -85,16 +85,8 @@ export async function logAiDecision(
       }
     }
 
-    // Determine nmc_api_status
-    let nmcApiStatus: string | null = null
-    if (input.membershipType === "ILM") {
-      nmcApiStatus = "skipped_ilm"
-    } else if (result?.nmcVerification) {
-      const st = result.nmcVerification.status
-      if (st === "skipped") nmcApiStatus = "unreachable"
-      else if (st === "verified") nmcApiStatus = "success"
-      else nmcApiStatus = st
-    }
+    // Use granular NMC status from scoring result (set by nmc-cache.ts)
+    const nmcApiStatus = result?.nmcApiStatus || null
 
     // Build input_snapshot
     const formName = [
@@ -166,7 +158,7 @@ export async function logAiDecision(
         blocking_reason: blockingReason,
         check_results: checkResults,
         nmc_api_status: nmcApiStatus,
-        nmc_api_response_time_ms: null,
+        nmc_api_response_time_ms: result?.nmcResponseTimeMs ?? null,
         input_snapshot: inputSnapshot,
         scoring_duration_ms: durationMs,
         error: errorJson,

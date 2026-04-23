@@ -4,7 +4,9 @@
  * Auto-approves if score >= 80% and payment is paid.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXTRACTION_SKIPPED_KEYS, normalizeDocumentKey } from "@/lib/document-keys"
+import { verifyWithNmcCached, type NmcCacheSource } from "@/lib/nmc-cache"
 
 const BLOCKED_DEGREES = [
   "bams", "bums", "bhms", "bds", "bpt", "bot", "bnys",
@@ -110,66 +112,15 @@ export interface ApprovalResult {
   checks: ApprovalCheck[]
   flags: string[]
   nmcVerification: NmcVerification | null
-}
-
-type NmcResult =
-  | { reachable: true; found: true; name: string; council: string; degree: string }
-  | { reachable: true; found: false }
-  | { reachable: false }
-
-// Gov API SLA: either answers <2s or is down. Short, non-additive retry.
-async function callNmcOnce(regNo: string, timeoutMs: number): Promise<any> {
-  const res = await fetch("https://www.nmc.org.in/MCIRest/open/getDataFromService?service=searchDoctor", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ registrationNo: regNo.trim(), smcId: "" }),
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!res.ok) throw new Error(`NMC HTTP ${res.status}`)
-  return res.json()
-}
-
-/** Call NMC API to verify doctor registration. Retries once with shorter timeout. */
-async function verifyWithNmc(regNo: string, state?: string): Promise<NmcResult> {
-  if (!regNo) return { reachable: true, found: false }
-
-  let data: any
-  try {
-    data = await callNmcOnce(regNo, 5000)
-  } catch (err1) {
-    console.warn("NMC attempt 1 failed:", (err1 as Error)?.message)
-    await new Promise((r) => setTimeout(r, 2000))
-    try {
-      data = await callNmcOnce(regNo, 3000)
-    } catch (err2) {
-      console.warn("NMC attempt 2 failed:", (err2 as Error)?.message)
-      return { reachable: false }
-    }
-  }
-
-  if (!Array.isArray(data) || data.length === 0) return { reachable: true, found: false }
-
-  let match = data
-  if (state) {
-    const stateLower = state.toLowerCase()
-    const filtered = data.filter((d: any) => (d.smcName || "").toLowerCase().includes(stateLower))
-    if (filtered.length > 0) match = filtered
-  }
-
-  const doc = match[0]
-  return {
-    reachable: true,
-    found: true,
-    name: doc.firstName || "",
-    council: doc.smcName || "",
-    degree: doc.doctorDegree || "",
-  }
+  nmcApiStatus: string | null
+  nmcResponseTimeMs: number | null
 }
 
 export async function scoreApplication(
   formData: Record<string, any>,
   uploads: Record<string, { status: string; extracted: Record<string, any>; message?: string }>,
-  paymentPaid: boolean
+  paymentPaid: boolean,
+  supabase?: SupabaseClient,
 ): Promise<ApprovalResult> {
   const checks: ApprovalCheck[] = []
   const flags: string[] = []
@@ -365,7 +316,7 @@ export async function scoreApplication(
     detail: `${verifiedDocs}/${totalDocs} verified by AI${pendingDocs > 0 ? `, ${pendingDocs} pending` : ""}${rejectedDocs > 0 ? `, ${rejectedDocs} rejected` : ""}`,
   })
 
-  // --- 6. NMC Live Verification (weight: 20, or 0 when skipped) ---
+  // --- 6. NMC Verification with Cache (weight: 20, or 0 when skipped) ---
   const formMciNumber = (formData.mciCouncilNumber || "").trim()
   const formMciState = formData.mciCouncilState || ""
   let nmcScore = 0
@@ -373,6 +324,8 @@ export async function scoreApplication(
   let nmcPassed = false
   let nmcDetail = "Not checked"
   let nmcVerification: NmcVerification | null = null
+  let nmcApiStatus: NmcCacheSource | null = null
+  let nmcResponseTimeMs: number | null = null
 
   // ILM applicants don't have NMC registration — skip entirely
   if (formData.membershipType === "ILM") {
@@ -380,12 +333,15 @@ export async function scoreApplication(
     nmcPassed = true
     nmcScore = 0
     nmcDetail = "Skipped for ILM applicants (international members)"
-  } else if (formMciNumber) {
-    const nmcResult = await verifyWithNmc(formMciNumber, formMciState)
+    nmcApiStatus = "skipped_ilm"
+  } else if (formMciNumber && supabase) {
+    const nmcResult = await verifyWithNmcCached(supabase, formMciNumber, formMciState)
     const checkedAt = new Date().toISOString()
+    nmcApiStatus = nmcResult.source
+    nmcResponseTimeMs = nmcResult.responseTimeMs
 
     if (!nmcResult.reachable) {
-      // Gov API down — skip, don't penalize. Weight 0 renormalizes totalScore to /80.
+      // Gov API down AND no cache — skip, don't penalize. Weight 0 renormalizes totalScore to /80.
       nmcScore = 0
       nmcWeight = 0
       nmcPassed = true
@@ -411,11 +367,13 @@ export async function scoreApplication(
         returned_degree: null,
       }
     } else {
+      const staleNote = nmcResult.stale ? " (stale cache — NMC API was down)" : ""
+      const sourceNote = nmcResult.source === "live_cache_hit" ? " (cached)" : nmcResult.source === "stale_cache_hit" ? " (stale cache)" : ""
       const nmcNameSim = similarity(formName, nmcResult.name)
       if (nmcNameSim < 0.5) {
         nmcScore = 60
         nmcPassed = true
-        nmcDetail = `NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}" — ${nmcResult.council} (${nmcResult.degree})`
+        nmcDetail = `NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}" — ${nmcResult.council} (${nmcResult.degree})${sourceNote}`
         flags.push(`NMC name mismatch: Form "${formName}" vs NMC "${nmcResult.name}"`)
         nmcVerification = {
           status: "name_mismatch",
@@ -427,7 +385,10 @@ export async function scoreApplication(
       } else {
         nmcScore = 100
         nmcPassed = true
-        nmcDetail = `NMC Verified: ${nmcResult.name} — ${nmcResult.council} (${nmcResult.degree})`
+        nmcDetail = `NMC Verified: ${nmcResult.name} — ${nmcResult.council} (${nmcResult.degree})${sourceNote}`
+        if (nmcResult.stale) {
+          flags.push("NMC verification from stale cache — data may not reflect current registration status")
+        }
         nmcVerification = {
           status: "verified",
           checked_at: checkedAt,
@@ -437,6 +398,12 @@ export async function scoreApplication(
         }
       }
     }
+  } else if (formMciNumber && !supabase) {
+    // No supabase client — fall back to "not checked" (e.g. standalone test scripts)
+    nmcDetail = "NMC verification skipped (no database connection)"
+    nmcWeight = 0
+    nmcPassed = true
+    nmcApiStatus = "unreachable_no_cache"
   } else {
     nmcDetail = "No MCI number provided"
   }
@@ -473,5 +440,7 @@ export async function scoreApplication(
     checks,
     flags,
     nmcVerification,
+    nmcApiStatus,
+    nmcResponseTimeMs,
   }
 }

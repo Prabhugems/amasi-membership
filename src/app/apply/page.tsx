@@ -1924,7 +1924,21 @@ export default function ApplyPage() {
                         return
                       }
 
-                      setUploads((prev) => ({ ...prev, profile: { file, preview, status: "uploaded", extracted: {} } }))
+                      // Upload to server storage via /api/ocr (handles photo storage, returns fileUrl)
+                      try {
+                        const uploadData = new FormData()
+                        uploadData.append("file", file)
+                        uploadData.append("docType", "profile")
+                        const uploadRes = await fetch("/api/ocr", { method: "POST", body: uploadData })
+                        const uploadResult = await uploadRes.json()
+                        setUploads((prev) => ({
+                          ...prev,
+                          profile: { file, preview, status: "uploaded", extracted: {}, fileUrl: uploadResult.fileUrl || null },
+                        }))
+                      } catch {
+                        // Storage upload failed — still keep the local file for submission
+                        setUploads((prev) => ({ ...prev, profile: { file, preview, status: "uploaded", extracted: {} } }))
+                      }
                       toast.success("Profile photo verified — face detected")
                     }
                     img.onerror = () => {

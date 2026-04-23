@@ -156,6 +156,7 @@ export async function GET(request: Request) {
       pendingApplicationsRes,
       oldestPendingRes,
       incompleteProfilesRes,
+      paymentOnHoldRes,
       totalPaymentsAllRes,
       paymentsThisMonthRes,
       paymentsLastMonthRes,
@@ -223,6 +224,13 @@ export async function GET(request: Request) {
         .or(
           "pg_degree.is.null,mci_council_number.is.null,date_of_birth.is.null,gender.is.null"
         ),
+
+      // Drafts where Razorpay captured the money but the applicant never submitted.
+      // These are loud-surface items — money exists with no member record to back it.
+      supabase
+        .from("draft_applications")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "payment_on_hold"),
 
       // All-time payments — bounded to last 365 days
       // Note: uses .range() to handle >1000 rows (Supabase default row limit)
@@ -671,6 +679,9 @@ export async function GET(request: Request) {
 
         // System health
         systemHealth,
+
+        // Payment-on-hold: money captured, no application submitted
+        paymentOnHoldCount: paymentOnHoldRes.count ?? 0,
 
         // Legacy fields (backward compat)
         incompleteProfilesCount: incompleteProfilesRes.count ?? 0,

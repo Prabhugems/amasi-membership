@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import Razorpay from "razorpay"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { createAdminClient } from "@/lib/supabase"
 
 // Server-side fee lookup — source of truth for membership fees
 const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
@@ -36,6 +37,59 @@ export async function POST(request: NextRequest) {
     const expectedCurrency = expectedFee.currency
     if (currency && currency !== expectedCurrency) {
       return Response.json({ status: false, message: `Invalid currency for ${membershipType}. Expected ${expectedCurrency}` }, { status: 400 })
+    }
+
+    // Duplicate-payment guard: a user whose phone died post-payment could return
+    // and pay a second time if we don't check. Block new orders when the same
+    // email already has a paid draft OR a submitted-and-not-rejected application
+    // for the same membership type.
+    if (email) {
+      const supabase = createAdminClient()
+      const emailKey = email.toLowerCase().trim()
+      const typeKey = membershipType.toUpperCase()
+
+      const { data: paidDraft } = await supabase
+        .from("draft_applications")
+        .select("id, current_step")
+        .eq("email", emailKey)
+        .eq("membership_type", typeKey)
+        .eq("has_verified_payment", true)
+        .limit(1)
+        .maybeSingle()
+
+      if (paidDraft) {
+        return Response.json(
+          {
+            status: false,
+            code: "DUPLICATE_PAYMENT",
+            message: "You have already paid for this application. Please refresh the page and complete your submission instead of paying again.",
+            draftId: paidDraft.id,
+          },
+          { status: 409 }
+        )
+      }
+
+      const { data: existingApp } = await supabase
+        .from("membership_applications")
+        .select("id, reference_number, status")
+        .eq("email", emailKey)
+        .eq("membership_type", typeKey)
+        .eq("payment_status", "paid")
+        .not("status", "in", '("rejected")')
+        .limit(1)
+        .maybeSingle()
+
+      if (existingApp) {
+        return Response.json(
+          {
+            status: false,
+            code: "DUPLICATE_PAYMENT",
+            message: `You have already submitted and paid for a ${typeKey} application (${existingApp.reference_number}). Please check your application status instead.`,
+            referenceNumber: existingApp.reference_number,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     const razorpay = new Razorpay({

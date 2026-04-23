@@ -30,6 +30,7 @@ import { RecentRoutes } from "@/components/dashboard/recent-routes"
 import { TimeRangeTabs, type TimeRange } from "@/components/dashboard/time-range-tabs"
 import { ApplicationsChart } from "@/components/dashboard/applications-chart"
 import { ApprovalFunnel } from "@/components/dashboard/approval-funnel"
+import { PaymentOnHoldStrip } from "@/components/dashboard/payment-on-hold-strip"
 import { MembershipMix } from "@/components/dashboard/membership-mix"
 import { RecentApplicationsTable, type AppRow } from "@/components/dashboard/recent-applications-table"
 import { ActivityTimeline, type ActivityEvent, type ActivityEventType } from "@/components/dashboard/activity-timeline"
@@ -84,6 +85,8 @@ interface DashboardData {
     razorpay: HealthStatus
     webhooks: HealthStatus
   }
+
+  paymentOnHoldCount: number
 }
 
 function formatHours(h: number): string {
@@ -316,6 +319,13 @@ export default function DashboardPage() {
             oldestHours={stats.pendingOldestHours}
             href="/pending"
           />
+        </div>
+      )}
+
+      {/* Payment-on-hold strip: money captured, no application — LOUD */}
+      {stats && stats.paymentOnHoldCount > 0 && (
+        <div className="dash-reveal dash-reveal-2">
+          <PaymentOnHoldStrip count={stats.paymentOnHoldCount} />
         </div>
       )}
 

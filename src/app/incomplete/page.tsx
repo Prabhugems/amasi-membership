@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
@@ -111,14 +112,31 @@ function LoadingSkeleton() {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
+const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated"]
+
 export default function IncompletePage() {
-  const [tab, setTab] = useState<TabFilter>("all")
+  const searchParams = useSearchParams()
+  const initialTab = (() => {
+    const fromUrl = searchParams.get("status") as TabFilter | null
+    return fromUrl && VALID_TABS.includes(fromUrl) ? fromUrl : "all"
+  })()
+  const [tab, setTab] = useState<TabFilter>(initialTab)
   const [search, setSearch] = useState("")
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
   const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+
+  // If the URL ?status param changes (e.g., nav from dashboard widget),
+  // sync the active tab.
+  useEffect(() => {
+    const fromUrl = searchParams.get("status") as TabFilter | null
+    if (fromUrl && VALID_TABS.includes(fromUrl) && fromUrl !== tab) {
+      setTab(fromUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const queryClient = useQueryClient()
 

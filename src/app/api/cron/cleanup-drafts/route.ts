@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { Resend } from "resend"
 
 // ---------------------------------------------------------------------------
@@ -129,13 +130,13 @@ export async function GET(request: Request) {
 
         if (!error) {
           summary.marked_stale++
-          await supabase.from("membership_audit_log").insert({
+          await logMembershipAuditEvent({
             action: "draft_marked_stale",
-            target_type: "draft_application",
-            target_id: draft.id,
-            details: { step: draft.current_step, reason: "Inactive for 2+ hours" },
-            performed_by: "system",
-          })
+            entityType: "draft_application",
+            entityId: draft.id,
+            newData: { step: draft.current_step, reason: "Inactive for 2+ hours" },
+            performedBy: "system",
+          }, supabase)
         } else console.error(`[cleanup-drafts] mark stale ${draft.id}:`, error.message)
       }
     }
@@ -269,17 +270,17 @@ export async function GET(request: Request) {
           await supabase.from("draft_applications").delete().eq("id", draft.id)
 
           // Log to audit
-          await supabase.from("membership_audit_log").insert({
+          await logMembershipAuditEvent({
             action: "draft_expired",
-            target_type: "draft_application",
-            target_id: draft.id,
-            details: {
+            entityType: "draft_application",
+            entityId: draft.id,
+            newData: {
               email: draft.email,
               step: draft.current_step,
               reason: "Expired after 24h inactivity",
             },
-            performed_by: "system",
-          })
+            performedBy: "system",
+          }, supabase)
 
           summary.expired++
         } catch (err: any) {
@@ -359,13 +360,13 @@ export async function GET(request: Request) {
                 )
               }
 
-              await supabase.from("membership_audit_log").insert({
+              await logMembershipAuditEvent({
                 action: "draft_payment_on_hold",
-                target_type: "draft_application",
-                target_id: draft.id,
-                details: { email: draft.email, payment_order_id: draft.payment_order_id },
-                performed_by: "system",
-              })
+                entityType: "draft_application",
+                entityId: draft.id,
+                newData: { email: draft.email, payment_order_id: draft.payment_order_id },
+                performedBy: "system",
+              }, supabase)
 
               summary.payment_holds++
             } else {
@@ -427,17 +428,17 @@ export async function GET(request: Request) {
                 .delete()
                 .eq("id", draft.id)
 
-              await supabase.from("membership_audit_log").insert({
+              await logMembershipAuditEvent({
                 action: "draft_expired",
-                target_type: "draft_application",
-                target_id: draft.id,
-                details: {
+                entityType: "draft_application",
+                entityId: draft.id,
+                newData: {
                   email: draft.email,
                   step: draft.current_step,
                   reason: "Expired after 24h inactivity — payment not captured",
                 },
-                performed_by: "system",
-              })
+                performedBy: "system",
+              }, supabase)
 
               summary.expired++
             }
@@ -451,13 +452,13 @@ export async function GET(request: Request) {
               })
               .eq("id", draft.id)
 
-            await supabase.from("membership_audit_log").insert({
+            await logMembershipAuditEvent({
               action: "draft_payment_on_hold",
-              target_type: "draft_application",
-              target_id: draft.id,
-              details: { email: draft.email, payment_order_id: draft.payment_order_id },
-              performed_by: "system",
-            })
+              entityType: "draft_application",
+              entityId: draft.id,
+              newData: { email: draft.email, payment_order_id: draft.payment_order_id },
+              performedBy: "system",
+            }, supabase)
 
             summary.payment_holds++
           }
@@ -550,17 +551,17 @@ export async function GET(request: Request) {
               .eq("id", draft.id)
 
             // Audit log
-            await supabase.from("membership_audit_log").insert({
+            await logMembershipAuditEvent({
               action: "draft_refunded",
-              target_type: "draft_application",
-              target_id: draft.id,
-              details: {
+              entityType: "draft_application",
+              entityId: draft.id,
+              newData: {
                 email: draft.email,
                 step: draft.current_step,
                 reason: "Refund completed — draft removed",
               },
-              performed_by: "system",
-            })
+              performedBy: "system",
+            }, supabase)
 
             summary.refunds_completed++
           }

@@ -2,6 +2,7 @@ import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { signResumeToken } from "@/lib/draft-resume"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",
@@ -168,15 +169,14 @@ export async function runBulkDraftReminders(
     }
   }
 
-  await supabase.from("membership_audit_log").insert({
+  // entity_id is NOT NULL in the DB — use a per-batch synthetic id
+  await logMembershipAuditEvent({
     action: "bulk_draft_reminders_sent",
-    target_type: "draft_application",
-    target_id: null,
-    performed_by: actor,
-    details: { sent, skipped_count: skipped.length, min_hours_idle: minHours } as unknown as Record<string, unknown>,
-  }).then(({ error: auditErr }) => {
-    if (auditErr) console.error("[bulk-reminder] audit log error:", auditErr)
-  })
+    entityType: "draft_application",
+    entityId: `bulk_${Date.now()}`,
+    performedBy: actor,
+    newData: { sent, skipped_count: skipped.length, min_hours_idle: minHours },
+  }, supabase)
 
   return { sent, skipped: skipped.length, skippedDetails: skipped, eligibleCount: candidates.length }
 }

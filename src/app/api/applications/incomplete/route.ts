@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { signResumeToken } from "@/lib/draft-resume"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
@@ -186,14 +187,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Audit log
-      await supabase.from("membership_audit_log").insert({
+      await logMembershipAuditEvent({
         action: "draft_deleted",
-        target_type: "draft_application",
-        target_id: draftId,
-        performed_by: (session as any).email || "admin",
-      }).then(({ error }) => {
-        if (error) console.error("Audit log error:", error)
-      })
+        entityType: "draft_application",
+        entityId: draftId,
+        performedBy: (session as any).email || "admin",
+      }, supabase)
 
       return Response.json({ status: true, message: "Draft deleted successfully" })
     }
@@ -344,14 +343,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Audit log
-      await supabase.from("membership_audit_log").insert({
+      await logMembershipAuditEvent({
         action: "draft_resumed",
-        target_type: "draft_application",
-        target_id: draftId,
-        performed_by: (session as any).email || "admin",
-      }).then(({ error }) => {
-        if (error) console.error("Audit log error:", error)
-      })
+        entityType: "draft_application",
+        entityId: draftId,
+        performedBy: (session as any).email || "admin",
+      }, supabase)
 
       return Response.json({ status: true, message: "Application resumed and applicant notified" })
     }

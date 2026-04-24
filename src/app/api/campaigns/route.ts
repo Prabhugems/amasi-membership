@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -31,16 +32,16 @@ export async function GET() {
     return Response.json({ error: error.message }, { status: 500 })
   }
 
-  // Each row's `details` JSONB contains: campaign, total, sent, failed, date, amasi_range
+  // Each row's `new_data` JSONB contains: campaign, total, sent, failed, date, amasi_range, recipients
   const campaigns = (data ?? []).map((row: any) => ({
     id: row.id,
-    campaign: row.details?.campaign ?? "Unknown Campaign",
-    total: row.details?.total ?? 0,
-    sent: row.details?.sent ?? 0,
-    failed: row.details?.failed ?? 0,
-    date: row.details?.date ?? row.created_at,
-    amasi_range: row.details?.amasi_range ?? "",
-    recipients: row.details?.recipients ?? [],
+    campaign: row.new_data?.campaign ?? "Unknown Campaign",
+    total: row.new_data?.total ?? 0,
+    sent: row.new_data?.sent ?? 0,
+    failed: row.new_data?.failed ?? 0,
+    date: row.new_data?.date ?? row.created_at,
+    amasi_range: row.new_data?.amasi_range ?? "",
+    recipients: row.new_data?.recipients ?? [],
     created_at: row.created_at,
   }))
 
@@ -195,25 +196,21 @@ export async function POST(request: NextRequest) {
   const amasiRange = `${members[members.length - 1]?.amasi_number} to ${members[0]?.amasi_number}`
 
   // Log campaign to audit log
-  try {
-    await supabase.from("membership_audit_log").insert({
-      action: "campaign_sent",
-      target_type: "members",
-      target_id: `profile_update_${Date.now()}`,
-      details: {
-        campaign: "Profile Update — Missing PG Degree",
-        total: members.length,
-        sent,
-        failed,
-        date: new Date().toISOString(),
-        amasi_range: amasiRange,
-        recipients,
-      },
-      performed_by: (session as any).email || "admin",
-    })
-  } catch (logErr) {
-    console.error("Failed to log campaign:", logErr)
-  }
+  await logMembershipAuditEvent({
+    action: "campaign_sent",
+    entityType: "members",
+    entityId: `profile_update_${Date.now()}`,
+    newData: {
+      campaign: "Profile Update — Missing PG Degree",
+      total: members.length,
+      sent,
+      failed,
+      date: new Date().toISOString(),
+      amasi_range: amasiRange,
+      recipients,
+    },
+    performedBy: (session as any).email || "admin",
+  }, supabase)
 
   return Response.json({ sent, failed, range: amasiRange })
 }

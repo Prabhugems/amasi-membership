@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
@@ -71,19 +72,17 @@ export async function POST(request: NextRequest) {
       console.error("Razorpay refund error:", razorpayError)
 
       // Log failed attempt to audit
-      await supabase.from("membership_audit_log").insert({
+      await logMembershipAuditEvent({
         action: "refund_failed",
-        target_type: "draft_application",
-        target_id: draftId,
-        details: {
+        entityType: "draft_application",
+        entityId: draftId,
+        newData: {
           email: draft.email,
           payment_id: draft.payment_id,
           error: razorpayError.message || "Unknown Razorpay error",
         },
-        performed_by: (session as any).email || "admin",
-      }).then(({ error }) => {
-        if (error) console.error("Audit log error:", error)
-      })
+        performedBy: (session as any).email || "admin",
+      }, supabase)
 
       return Response.json(
         { status: false, message: razorpayError.message || "Failed to initiate refund with Razorpay" },
@@ -176,19 +175,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit log
-    await supabase.from("membership_audit_log").insert({
+    await logMembershipAuditEvent({
       action: "refund_initiated",
-      target_type: "draft_application",
-      target_id: draftId,
-      details: {
+      entityType: "draft_application",
+      entityId: draftId,
+      newData: {
         email: draft.email,
         payment_id: draft.payment_id,
         refund_id: refund.id,
       },
-      performed_by: (session as any).email || "admin",
-    }).then(({ error }) => {
-      if (error) console.error("Audit log error:", error)
-    })
+      performedBy: (session as any).email || "admin",
+    }, supabase)
 
     return Response.json({
       status: true,

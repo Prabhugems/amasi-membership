@@ -143,6 +143,25 @@ export async function PUT(
       if (error) console.error("Audit log error:", error)
     })
 
+    // Campaign attribution: credit the most recent relevant recipient row.
+    // Only NULL → not-NULL transitions are counted (per the attribution rule).
+    try {
+      const nullToValue = auditChanges
+        .filter((e) => (e.old === null || e.old === undefined || e.old === "") && e.new)
+        .map((e) => e.field)
+      if (nullToValue.length > 0) {
+        const { creditUpdateIfRelevant } = await import("@/lib/campaigns/attribution")
+        await creditUpdateIfRelevant({
+          memberId: id,
+          changedFields: nullToValue,
+          at: new Date().toISOString(),
+          supabase,
+        })
+      }
+    } catch (err) {
+      console.error("campaign attribution error:", err)
+    }
+
     return Response.json({ status: true, message: "Profile updated successfully" })
   } catch (error: any) {
     console.error("Profile update error:", error)

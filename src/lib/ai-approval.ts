@@ -88,6 +88,28 @@ function similarity(a: string, b: string): number {
   return Math.min(1, Math.max(fullRatio, sortedRatio, jaccard) + firstNameBonus)
 }
 
+/**
+ * Convert a membership_applications DB row (snake_case) to the camelCase
+ * form shape scoreApplication() reads. Use this whenever you rescore an
+ * already-persisted application — passing the raw DB row silently fails
+ * every lookup (firstName, eduPostgradDegree, mciCouncilNumber…) and
+ * produces a ~5% score with bogus "empty field" flags.
+ */
+export function toScorerFormShape(appRow: Record<string, any>): Record<string, any> {
+  return {
+    firstName: appRow.first_name || "",
+    middleName: appRow.middle_name || "",
+    lastName: appRow.last_name || "",
+    eduPostgradDegree: appRow.pg_degree || "",
+    eduPostgradCollege: appRow.pg_college || "",
+    eduPostgradUniversity: appRow.pg_university || "",
+    eduPostgradYear: appRow.pg_year || "",
+    mciCouncilNumber: appRow.mci_council_number || "",
+    mciCouncilState: appRow.mci_council_state || "",
+    membershipType: appRow.membership_type || "",
+  }
+}
+
 export interface ApprovalCheck {
   check: string
   passed: boolean

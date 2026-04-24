@@ -12,11 +12,10 @@ function getResend() {
   return new Resend(key)
 }
 
-const baseUrl =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://amasi-membership.vercel.app")
+// Always use the Razorpay-registered branded domain for customer-facing URLs.
+// Never fall back to VERCEL_URL — Razorpay blocks .vercel.app domains with
+// "website does not match registered website(s)".
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",

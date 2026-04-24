@@ -25,11 +25,9 @@ const EMAIL_EXCLUDE_PATTERNS = [
 export const DEFAULT_MIN_HOURS_IDLE = 24
 export const MIN_HOURS_SINCE_LAST_REMINDER = 48
 
-const baseUrl =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://amasi-membership.vercel.app")
+// Always use the branded domain for customer-facing URLs — see
+// src/app/api/applications/incomplete/route.ts.
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 
 export interface BulkReminderResult {
   sent: number

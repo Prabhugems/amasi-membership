@@ -42,8 +42,10 @@ async function notifyAdminsNewApplication(details: {
     ? '<span style="background:#fef3c7;color:#92400e;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">Needs Manual Review</span>'
     : '<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600;">AI Approved</span>'
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://amasi-membership.vercel.app")
+  // Always use the Razorpay-registered branded domain for customer-facing URLs.
+  // A .vercel.app fallback causes Razorpay to block payments with
+  // "website does not match registered website(s)".
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">

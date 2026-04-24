@@ -11,11 +11,8 @@ function getResend() {
   return new Resend(key)
 }
 
-const baseUrl =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://amasi-membership.vercel.app")
+// Always use the branded domain for customer-facing URLs — see incomplete/route.ts.
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 
 export async function POST(request: NextRequest) {
   try {

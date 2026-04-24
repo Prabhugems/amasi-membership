@@ -27,12 +27,8 @@ function getResend() {
 }
 
 function getBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "https://amasi-membership.vercel.app")
-  )
+  // Always use the branded domain for customer-facing URLs — see incomplete/route.ts.
+  return process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 }
 
 function stepLabel(step: number): string {

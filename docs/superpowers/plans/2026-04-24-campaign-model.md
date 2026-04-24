@@ -4,7 +4,7 @@
 
 **Goal:** Replace the hardcoded, audit-log-backed "Email Campaigns" feature with a first-class campaign model (two tables + code-defined template registry) that supports multiple campaign types, honest attribution, resume-safe batched sending, marketing opt-out, and a correct rate limiter.
 
-**Architecture:** Promote campaigns out of `membership_audit_log` JSONB into `campaigns` and `campaign_recipients` tables. Campaign creation materialises recipient rows up front from a code-defined segment; sending advances batches by updating `sent_at` on recipient rows; attribution writes `update_detected_at` when members change a campaign's target field for the first time (strictly after `sent_at`). A typed registry holds templates, segments, and target fields — no SQL-in-a-cell. Keep `logMembershipAuditEvent` writes as an audit trail, not the source of truth.
+**Architecture:** Promote campaigns out of `membership_audit_log` JSONB into `email_campaigns` and `email_campaign_recipients` tables (named `email_*` to avoid collision with a pre-existing `campaigns` table scaffolded for event broadcasts). Campaign creation materialises recipient rows up front from a code-defined segment; sending advances batches by updating `sent_at` on recipient rows; attribution writes `update_detected_at` when members change a campaign's target field for the first time (strictly after `sent_at`). A typed registry holds templates, segments, and target fields — no SQL-in-a-cell. Keep `logMembershipAuditEvent` writes as an audit trail, not the source of truth.
 
 **Tech Stack:** Next.js 16 App Router, Supabase (Postgres 17), Resend, Vitest (new, for pure modules), Playwright (existing, for admin flow).
 
@@ -13,11 +13,11 @@
 ## Key Decisions (locked)
 
 **Attribution rule (prose, authoritative):**
-A `campaign_recipients` row is credited with a member update when, for some field `f` in the campaign's `target_fields`, the member's value of `f` transitioned from `NULL` to non-`NULL` at time `t`, **strictly after** the recipient's `sent_at`, and no newer campaign targeting the same `f` had `sent_at` in `(r.sent_at, t)` for that member (the most-recent-prior wins). Only the **first** `NULL → not-NULL` transition per field per recipient is credited; subsequent re-nullings and re-fills do not re-credit. Updates with `sent_at = t` exactly are ignored (require strict inequality) to avoid counting in-flight edits.
+An `email_campaign_recipients` row is credited with a member update when, for some field `f` in the campaign's `target_fields`, the member's value of `f` transitioned from `NULL` to non-`NULL` at time `t`, **strictly after** the recipient's `sent_at`, and no newer campaign targeting the same `f` had `sent_at` in `(r.sent_at, t)` for that member (the most-recent-prior wins). Only the **first** `NULL → not-NULL` transition per field per recipient is credited; subsequent re-nullings and re-fills do not re-credit. Updates with `sent_at = t` exactly are ignored (require strict inequality) to avoid counting in-flight edits.
 
 **Segment shape:** Each template exports `buildSegment(query) => query` that receives a base `supabase.from("members").select(...)` builder and returns it with filters applied. Segments are code, not stored SQL. No `eval`, no user-authored SQL fragments.
 
-**Target fields live on both the registry entry and the campaign row.** The registry is the source of truth at send time; the `campaigns.target_fields` column is a frozen snapshot so attribution survives future registry changes.
+**Target fields live on both the registry entry and the campaign row.** The registry is the source of truth at send time; the `email_campaigns.target_fields` column is a frozen snapshot so attribution survives future registry changes.
 
 **Opt-out categories:**
 - `marketing_opt_out_at timestamptz NULL` on `members`.
@@ -36,8 +36,8 @@ A `campaign_recipients` row is credited with a member update when, for some fiel
 ## File Structure
 
 **Create:**
-- `sql/022_campaigns.sql` — tables, indexes, members column.
-- `sql/022_campaigns_rollback.sql` — emergency rollback.
+- `sql/022_email_campaigns.sql` — tables, indexes, members column. (Named `email_` because a pre-existing `campaigns` table for event broadcasts already exists, verified 0 rows / no code refs but left untouched.)
+- `sql/022_email_campaigns_rollback.sql` — emergency rollback.
 - `src/lib/campaigns/types.ts` — shared types (`CampaignCategory`, `TemplateEntry`, `MemberSegmentRow`).
 - `src/lib/campaigns/registry.ts` — `TEMPLATES` map + `getTemplate(key)`.
 - `src/lib/campaigns/templates/profile-update-missing-pg-degree.ts` — first template entry (migrated from the existing route).
@@ -122,16 +122,20 @@ git commit -m "chore: add vitest for pure-module unit tests"
 ## Task 1: SQL migration — tables, indexes, members column
 
 **Files:**
-- Create: `sql/022_campaigns.sql`
-- Create: `sql/022_campaigns_rollback.sql`
+- Create: `sql/022_email_campaigns.sql`
+- Create: `sql/022_email_campaigns_rollback.sql`
 
-- [ ] **Step 1: Write `sql/022_campaigns.sql`**
+**Name collision note:** A pre-existing `campaigns` table (event-campaign broadcasts, 0 rows, no code refs) exists in the dev DB. Using `CREATE TABLE IF NOT EXISTS campaigns` would silently no-op against it. Tables are renamed to `email_campaigns` / `email_campaign_recipients` to coexist.
+
+- [ ] **Step 1: Write `sql/022_email_campaigns.sql`**
 
 ```sql
--- 022: Campaign model — promote campaigns out of membership_audit_log JSONB.
+-- 022: Email campaign model — promote campaigns out of membership_audit_log JSONB.
 -- Zero existing campaign_sent rows (verified 2026-04-24), so no backfill.
+-- Table name is `email_campaigns` (not `campaigns`) because a pre-existing
+-- `campaigns` table for event broadcasts already exists in the schema.
 
-CREATE TABLE IF NOT EXISTS campaigns (
+CREATE TABLE IF NOT EXISTS email_campaigns (
   id              uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   template_key    text NOT NULL,
   name            text NOT NULL,
@@ -143,12 +147,12 @@ CREATE TABLE IF NOT EXISTS campaigns (
   created_at      timestamptz DEFAULT now(),
   completed_at    timestamptz
 );
-CREATE INDEX IF NOT EXISTS idx_campaigns_status_created
-  ON campaigns(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_campaigns_status_created
+  ON email_campaigns(status, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS campaign_recipients (
+CREATE TABLE IF NOT EXISTS email_campaign_recipients (
   id                   uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  campaign_id          uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  campaign_id          uuid NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
   member_id            uuid NOT NULL,
   email                text NOT NULL,
   amasi_number         integer,
@@ -160,53 +164,53 @@ CREATE TABLE IF NOT EXISTS campaign_recipients (
   UNIQUE(campaign_id, member_id)
 );
 -- Sender picks next batch: sent_at IS NULL first, stable order.
-CREATE INDEX IF NOT EXISTS idx_campaign_recipients_campaign_pending
-  ON campaign_recipients(campaign_id, sent_at NULLS FIRST, id);
+CREATE INDEX IF NOT EXISTS idx_email_campaign_recipients_campaign_pending
+  ON email_campaign_recipients(campaign_id, sent_at NULLS FIRST, id);
 -- Attribution lookups from members-update handler.
-CREATE INDEX IF NOT EXISTS idx_campaign_recipients_member_sent
-  ON campaign_recipients(member_id, sent_at)
+CREATE INDEX IF NOT EXISTS idx_email_campaign_recipients_member_sent
+  ON email_campaign_recipients(member_id, sent_at)
   WHERE sent_at IS NOT NULL AND update_detected_at IS NULL;
 
 ALTER TABLE members
   ADD COLUMN IF NOT EXISTS marketing_opt_out_at timestamptz;
 ```
 
-- [ ] **Step 2: Write `sql/022_campaigns_rollback.sql`**
+- [ ] **Step 2: Write `sql/022_email_campaigns_rollback.sql`**
 
 ```sql
--- Rollback for 022_campaigns.sql. Safe because no production consumers
+-- Rollback for 022_email_campaigns.sql. Safe because no production consumers
 -- depend on these tables yet and no historical campaign rows exist.
 
-DROP TABLE IF EXISTS campaign_recipients;
-DROP TABLE IF EXISTS campaigns;
+DROP TABLE IF EXISTS email_campaign_recipients;
+DROP TABLE IF EXISTS email_campaigns;
 ALTER TABLE members DROP COLUMN IF EXISTS marketing_opt_out_at;
 ```
 
 - [ ] **Step 3: Apply migration against dev database**
 
-Use the Supabase MCP `apply_migration` tool (project `jmdwxymbgxwdsmcwbahp`) with the `022_campaigns.sql` contents, or paste into the Supabase SQL editor. Do **not** use `execute_sql` for DDL.
+Use the Supabase MCP `apply_migration` tool (project `jmdwxymbgxwdsmcwbahp`) with the migration name `022_email_campaigns` and the contents of `022_email_campaigns.sql`. Do **not** use `execute_sql` for DDL.
 
 - [ ] **Step 4: Verify**
 
 ```sql
 SELECT table_name FROM information_schema.tables
-WHERE table_name IN ('campaigns','campaign_recipients');
+WHERE table_name IN ('email_campaigns','email_campaign_recipients');
 
 SELECT column_name FROM information_schema.columns
 WHERE table_name = 'members' AND column_name = 'marketing_opt_out_at';
 
 SELECT indexname FROM pg_indexes
-WHERE tablename IN ('campaigns','campaign_recipients')
+WHERE tablename IN ('email_campaigns','email_campaign_recipients')
 ORDER BY indexname;
 ```
 
-Expected: two tables returned, one column returned, three non-PK indexes returned (`idx_campaigns_status_created`, `idx_campaign_recipients_campaign_pending`, `idx_campaign_recipients_member_sent`).
+Expected: two tables returned, one column returned, four non-PK indexes returned (`idx_email_campaigns_status_created`, `idx_email_campaign_recipients_campaign_pending`, `idx_email_campaign_recipients_member_sent`, and the auto-generated `email_campaign_recipients_campaign_id_member_id_key` for the UNIQUE constraint).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sql/022_campaigns.sql sql/022_campaigns_rollback.sql
-git commit -m "feat(sql): campaigns + campaign_recipients tables, marketing opt-out column"
+git add sql/022_email_campaigns.sql sql/022_email_campaigns_rollback.sql
+git commit -m "feat(sql): email_campaigns + email_campaign_recipients tables, marketing opt-out column"
 ```
 
 ---
@@ -557,7 +561,7 @@ export async function createCampaign(params: {
 
   // Insert campaign row.
   const { data: campaign, error: insErr } = await db
-    .from("campaigns")
+    .from("email_campaigns")
     .insert({
       template_key: template.key,
       name: template.name,
@@ -585,7 +589,7 @@ export async function createCampaign(params: {
 
   const rows = (members ?? []) as MemberSegmentRow[]
   if (rows.length === 0) {
-    await db.from("campaigns")
+    await db.from("email_campaigns")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", campaign.id)
     return { campaignId: campaign.id, totalRecipients: 0 }
@@ -604,7 +608,7 @@ export async function createCampaign(params: {
   for (let i = 0; i < recipientRows.length; i += 500) {
     const chunk = recipientRows.slice(i, i + 500)
     const { error: recErr } = await db
-      .from("campaign_recipients")
+      .from("email_campaign_recipients")
       .upsert(chunk, { onConflict: "campaign_id,member_id", ignoreDuplicates: true })
     if (recErr) throw new Error(`recipient insert failed: ${recErr.message}`)
   }
@@ -667,7 +671,7 @@ export async function sendNextBatch(params: {
   const limit = params.limit ?? 100
 
   const { data: campaign, error: campErr } = await db
-    .from("campaigns")
+    .from("email_campaigns")
     .select("*")
     .eq("id", params.campaignId)
     .single<CampaignRow>()
@@ -681,7 +685,7 @@ export async function sendNextBatch(params: {
   const template = getTemplate(campaign.template_key)
 
   const { data: recipients, error: recErr } = await db
-    .from("campaign_recipients")
+    .from("email_campaign_recipients")
     .select("*")
     .eq("campaign_id", params.campaignId)
     .is("sent_at", null)
@@ -691,7 +695,7 @@ export async function sendNextBatch(params: {
   if (recErr) throw new Error(`recipient fetch failed: ${recErr.message}`)
 
   if (!recipients || recipients.length === 0) {
-    await db.from("campaigns")
+    await db.from("email_campaigns")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", campaign.id)
     return { sent: 0, failed: 0, remaining: 0 }
@@ -718,12 +722,12 @@ export async function sendNextBatch(params: {
         subject: template.subject(member),
         html: template.html(member, { baseUrl }),
       })
-      await db.from("campaign_recipients")
+      await db.from("email_campaign_recipients")
         .update({ sent_at: new Date().toISOString(), send_error: null })
         .eq("id", r.id)
       sent++
     } catch (e: any) {
-      await db.from("campaign_recipients")
+      await db.from("email_campaign_recipients")
         .update({ send_error: e?.message ?? "send failed" })
         .eq("id", r.id)
       failed++
@@ -732,7 +736,7 @@ export async function sendNextBatch(params: {
 
   // Remaining count — cheap count query.
   const { count: remaining } = await db
-    .from("campaign_recipients")
+    .from("email_campaign_recipients")
     .select("*", { count: "exact", head: true })
     .eq("campaign_id", campaign.id)
     .is("sent_at", null)
@@ -747,7 +751,7 @@ export async function sendNextBatch(params: {
   }, db)
 
   if ((remaining ?? 0) === 0) {
-    await db.from("campaigns")
+    await db.from("email_campaigns")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", campaign.id)
   }
@@ -902,7 +906,7 @@ export async function creditUpdateIfRelevant(params: {
   // Pull recipient + campaign join in two queries (Supabase doesn't do real joins via PostgREST
   // without configured foreign keys; two small queries are fine at our scale).
   const { data: recips, error: recErr } = await db
-    .from("campaign_recipients")
+    .from("email_campaign_recipients")
     .select("id, campaign_id, sent_at, update_detected_at")
     .eq("member_id", params.memberId)
     .is("update_detected_at", null)
@@ -913,7 +917,7 @@ export async function creditUpdateIfRelevant(params: {
   if (recErr || !recips || recips.length === 0) return null
 
   const { data: camps, error: campErr } = await db
-    .from("campaigns")
+    .from("email_campaigns")
     .select("id, target_fields")
     .in("id", recips.map((r: any) => r.campaign_id))
   if (campErr || !camps) return null
@@ -932,7 +936,7 @@ export async function creditUpdateIfRelevant(params: {
   })
   if (!pick) return null
 
-  await db.from("campaign_recipients")
+  await db.from("email_campaign_recipients")
     .update({ update_detected_at: params.at })
     .eq("id", pick.id)
 
@@ -1050,7 +1054,7 @@ export async function GET() {
   const db = createAdminClient()
 
   const { data: campaigns, error } = await db
-    .from("campaigns")
+    .from("email_campaigns")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(20)
@@ -1065,11 +1069,11 @@ export async function GET() {
   // a SQL view / RPC before we remove the limit. See out-of-scope section.
   for (const c of campaigns ?? []) {
     const [totalQ, sentQ, failedQ, pendingQ, creditedQ] = await Promise.all([
-      db.from("campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id),
-      db.from("campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("sent_at", "is", null),
-      db.from("campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("send_error", "is", null),
-      db.from("campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).is("sent_at", null),
-      db.from("campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("update_detected_at", "is", null),
+      db.from("email_campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id),
+      db.from("email_campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("sent_at", "is", null),
+      db.from("email_campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("send_error", "is", null),
+      db.from("email_campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).is("sent_at", null),
+      db.from("email_campaign_recipients").select("*", { count: "exact", head: true }).eq("campaign_id", c.id).not("update_detected_at", "is", null),
     ])
     const total = totalQ.count ?? 0
     const sent = sentQ.count ?? 0

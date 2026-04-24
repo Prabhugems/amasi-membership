@@ -263,6 +263,78 @@ export default function ApplyPage() {
     }
   }, [draftChecked])
 
+  // One-click resume from an emailed link. URL carries ?resume=<JWT>. We POST
+  // the token to resume-from-token, which issues a member-session cookie and
+  // returns the saved draft; we then hydrate form state and skip straight to
+  // the right phase. Read window.location.search directly (not useSearchParams)
+  // to avoid forcing the page out of static prerender — see AGENTS.md.
+  const [resumeLinkError, setResumeLinkError] = useState<string | null>(null)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get("resume")
+    if (!token) return
+
+    // Strip ?resume= from the URL immediately — prevents re-use on refresh
+    // and keeps the sensitive token out of browser history / referer headers.
+    const cleanUrl = window.location.pathname + window.location.hash
+    window.history.replaceState({}, "", cleanUrl)
+
+    ;(async () => {
+      try {
+        const res = await fetch("/api/applications/draft/resume-from-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data?.status) {
+          setResumeLinkError(data?.message || "This resume link is invalid or has expired. Please contact support@amasi.org.")
+          return
+        }
+
+        const draft = data.draft as {
+          id: string
+          email: string
+          current_step: number
+          membership_type: string | null
+          step_data: Record<string, any>
+          updated_at: string | null
+        }
+
+        const saved = draft.step_data || {}
+        const savedFormData = saved.formData || {}
+        const savedType = MEMBERSHIP_TYPES.find(t => t.id === (saved.membership_type || draft.membership_type)) || null
+
+        setFormData({ ...INITIAL_FORM_DATA, ...savedFormData, email: draft.email })
+        if (savedType) setSelectedType(savedType)
+        setEmailVerified(true)
+        setVerifyStep("done")
+        setDraftUpdatedAt(draft.updated_at)
+
+        // Hydrate uploads so re-extracted fields don't get wiped on next save.
+        if (saved.uploads && typeof saved.uploads === "object") {
+          setUploads(saved.uploads as Record<string, UploadEntry>)
+        }
+
+        // Map current_step → phase. Landing and upload are the meaningful
+        // resumable phases; review needs File objects we can't restore.
+        const step = draft.current_step || 1
+        if (step <= 1 || !savedType) {
+          setPhase("landing")
+        } else {
+          setPhase("upload")
+        }
+
+        setDraftChecked(true)
+        setShowResumeDraft(false)
+      } catch (err) {
+        console.error("[resume link] failed:", err)
+        setResumeLinkError("Could not resume your application. Please try again or contact support@amasi.org.")
+      }
+    })()
+  }, [])
+
   // Save draft to server after each step change (only after email is verified)
   const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>): Promise<{ ok: boolean; error: string | null }> => {
     // The initial post-OTP-verify save fires on the same tick as setEmailVerified(true);
@@ -1056,6 +1128,11 @@ export default function ApplyPage() {
   if (phase === "check") {
     return (
       <div className="max-w-lg mx-auto px-4 py-12 sm:py-16">
+        {resumeLinkError && (
+          <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {resumeLinkError}
+          </div>
+        )}
         {/* Resume draft dialog */}
         <AnimatePresence>
           {showResumeDraft && (

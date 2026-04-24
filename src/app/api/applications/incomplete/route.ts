@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { signResumeToken } from "@/lib/draft-resume"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -200,12 +201,13 @@ export async function POST(request: NextRequest) {
     // --- Send reminder action ---
     if (action === "send_reminder") {
       // Atomically claim the send — only proceed if reminder_sent_at is null
-      // or older than 1 hour (prevent spam)
+      // or older than 1 hour (prevent spam). Allow in_progress, stuck,
+      // and payment_on_hold — anything where the applicant can still finish.
       const { data: claimed, error: claimError } = await supabase
         .from("draft_applications")
         .update({ reminder_sent_at: new Date().toISOString() })
         .eq("id", draftId)
-        .eq("status", "stuck")
+        .in("status", ["in_progress", "stuck", "payment_on_hold"])
         .or("reminder_sent_at.is.null,reminder_sent_at.lt." + new Date(Date.now() - 60 * 60 * 1000).toISOString())
         .select("*")
         .maybeSingle()
@@ -217,7 +219,7 @@ export async function POST(request: NextRequest) {
 
       if (!claimed) {
         return Response.json(
-          { status: false, message: "Cannot send reminder — either the draft is not in 'stuck' status, or a reminder was already sent within the last hour." },
+          { status: false, message: "Cannot send reminder — draft is already completed, or a reminder was sent within the last hour." },
           { status: 400 }
         )
       }
@@ -226,6 +228,11 @@ export async function POST(request: NextRequest) {
       const currentStep = draft.current_step || 1
       const stepLabel = escapeHtml(STEP_LABELS[currentStep] || `Step ${currentStep}`)
       const applicantEmail = draft.email
+
+      // One-click resume: signed token carries draftId+email, lands on /apply
+      // with form pre-populated, no OTP re-entry required.
+      const resumeToken = await signResumeToken(draft.id, applicantEmail)
+      const resumeUrl = `${baseUrl}/apply?resume=${encodeURIComponent(resumeToken)}`
 
       const resend = getResend()
       await resend.emails.send({
@@ -245,14 +252,15 @@ export async function POST(request: NextRequest) {
                 <strong>${stepLabel}</strong>.
               </p>
               <p style="color: #555; font-size: 14px; line-height: 1.6;">
-                Your progress has been saved. Click the button below to pick up where you left off.
+                Click the button below to pick up exactly where you left off — no need to re-enter your details.
               </p>
               <div style="text-align: center; margin: 28px 0 16px;">
-                <a href="${escapeHtml(baseUrl)}/apply"
+                <a href="${escapeHtml(resumeUrl)}"
                    style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
                   Resume Application
                 </a>
               </div>
+              <p style="color: #999; font-size: 12px; text-align: center;">This link works for 14 days and only for this email address.</p>
               <p style="color: #555; font-size: 13px;">If you have questions, please contact us at <a href="mailto:support@amasi.org" style="color: #0f766e;">support@amasi.org</a>.</p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
               <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>

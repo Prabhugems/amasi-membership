@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { getMemberSession } from "@/lib/auth"
+import { recordStepEvent } from "@/lib/funnel-tracking"
 
 /** Verify the caller has a valid member JWT cookie matching the given email. */
 async function verifyMemberSession(email: string): Promise<boolean> {
@@ -45,7 +46,7 @@ export async function PUT(request: NextRequest) {
     // Check if draft exists
     const { data: existing } = await supabase
       .from("draft_applications")
-      .select("id, step_data, updated_at, membership_type")
+      .select("id, step_data, updated_at, membership_type, current_step")
       .eq("email", normalizedEmail)
       .limit(1)
       .maybeSingle()
@@ -92,6 +93,18 @@ export async function PUT(request: NextRequest) {
         )
       }
 
+      // Funnel: only log when the step actually advanced (save-draft is also
+      // called for intra-step auto-saves, which would otherwise spam the table).
+      if (current_step !== existing.current_step) {
+        void recordStepEvent({
+          email: normalizedEmail,
+          draftId: updated.id,
+          eventType: "step_entered",
+          step: current_step,
+          metadata: { from_step: existing.current_step, membership_type: membership_type ?? existing.membership_type },
+        }, supabase)
+      }
+
       return Response.json({ status: true, draft: updated })
     }
 
@@ -119,6 +132,15 @@ export async function PUT(request: NextRequest) {
       console.error("Draft insert error:", insertError)
       return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
     }
+
+    // Funnel: first persisted step for this email
+    void recordStepEvent({
+      email: normalizedEmail,
+      draftId: inserted.id,
+      eventType: "step_entered",
+      step: current_step,
+      metadata: { first_save: true, membership_type },
+    }, supabase)
 
     return Response.json({ status: true, draft: inserted })
   } catch (error: unknown) {

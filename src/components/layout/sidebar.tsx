@@ -28,6 +28,7 @@ import {
   ScrollText,
   Clock,
   KeyRound,
+  TrendingDown,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -55,6 +56,7 @@ const sections: NavSection[] = [
       { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Reports", href: "/reports", icon: BarChart3 },
+      { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },

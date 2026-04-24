@@ -3,6 +3,7 @@ import crypto from "crypto"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { recordStepEvent } from "@/lib/funnel-tracking"
 
 export async function POST(request: NextRequest) {
   try {
@@ -151,6 +152,21 @@ export async function POST(request: NextRequest) {
         console.error("Application payment status update error:", updateError)
       }
     }
+
+    void recordStepEvent({
+      email: email || "",
+      applicationId: applicationId || null,
+      eventType: "payment",
+      step: 5,
+      status: "captured",
+      metadata: {
+        gateway: "razorpay",
+        gateway_payment_id: razorpay_payment_id,
+        gateway_order_id: razorpay_order_id,
+        amount,
+        currency: currency || "INR",
+      },
+    }, supabase)
 
     return Response.json({
       status: true,

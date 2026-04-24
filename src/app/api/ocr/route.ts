@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { normalizeDocumentKey, requiresExtraction } from "@/lib/document-keys"
 import { extractDocument } from "@/lib/document-extraction"
+import { recordStepEvent } from "@/lib/funnel-tracking"
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +62,13 @@ export async function POST(request: NextRequest) {
           fileUrl = urlData?.publicUrl || null
         }
       } catch {}
+      void recordStepEvent({
+        email: (session.email as string) || "",
+        eventType: "doc_upload",
+        step: 3,
+        status: "uploaded",
+        metadata: { docType, bytes: buffer.length, ocr_skipped: true },
+      })
       return Response.json({ success: true, extracted: {}, docType, fileUrl })
     }
 
@@ -69,6 +77,13 @@ export async function POST(request: NextRequest) {
 
     // Handle invalid document (same response shape as before)
     if (!result.isValid) {
+      void recordStepEvent({
+        email: (session.email as string) || "",
+        eventType: "doc_upload",
+        step: 3,
+        status: "rejected",
+        metadata: { docType, reason: result.rejectionReason || "invalid", engine: result.engine },
+      })
       return Response.json({
         success: false,
         isIrrelevant: true,
@@ -102,6 +117,21 @@ export async function POST(request: NextRequest) {
       // Non-blocking — OCR result still returned even if storage fails
       console.error("Document storage error:", uploadErr.message)
     }
+
+    void recordStepEvent({
+      email: (session.email as string) || "",
+      eventType: "doc_upload",
+      step: 3,
+      status: "extracted",
+      metadata: {
+        docType,
+        engine: result.engine,
+        fields_extracted: Object.keys(result.extracted || {}).length,
+        eligibility: result.eligibility?.eligible ?? null,
+        eligibility_reason: result.eligibility?.reason ?? null,
+        has_warnings: (result.expiryWarnings || []).length > 0,
+      },
+    })
 
     return Response.json({
       success: true,

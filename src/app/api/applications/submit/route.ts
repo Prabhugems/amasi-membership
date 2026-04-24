@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { Resend } from "resend"
 import { scoreApplication } from "@/lib/ai-approval"
+import { recordStepEvent } from "@/lib/funnel-tracking"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
 import { logAiDecision, updateAiDecisionOutcome, type AiDecisionInput } from "@/lib/ai-decision-log"
@@ -268,6 +269,21 @@ export async function POST(request: NextRequest) {
         uploads: uploads || {},
         paymentPaid: !!paymentId,
       }, approval, scoringDurationMs, null).catch(err => console.error("[submit] ai decision log failed:", err))
+
+      void recordStepEvent({
+        email: formData.email || "",
+        applicationId,
+        eventType: "submit",
+        step: 6,
+        status: allAiVerified ? "auto_approved" : "pending_review",
+        metadata: {
+          reference_number: referenceNumber,
+          membership_type: formData.membershipType,
+          ai_confidence: approval.totalScore,
+          ai_auto_approve: approval.autoApprove,
+          blocking_reasons: approval.blockingReasons,
+        },
+      }, supabase)
     }
 
     // Clean up draft application on successful insert

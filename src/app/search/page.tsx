@@ -476,6 +476,20 @@ function EmptyState({ recentSearches, onQuickSearch, onClearRecent }: {
 
 /* --- Member profile card (single result) --- */
 function MemberProfile({ member }: { member: MemberData & Record<string, any> }) {
+  const memberAmasi = member.membership_no || member.amasi_number
+  const fmasQuery = useQuery({
+    queryKey: ["search-fmas", memberAmasi],
+    queryFn: async () => {
+      if (!memberAmasi) return { credential: null }
+      const res = await fetch(`/api/credential?type=FMAS&id=${memberAmasi}`)
+      if (res.status === 404) return { credential: null }
+      return res.json()
+    },
+    enabled: !!memberAmasi,
+    retry: false,
+  })
+  const hasFmas = !!fmasQuery.data?.credential
+
   return (
     <div className="grid gap-6 md:grid-cols-3">
       {/* Profile sidebar */}
@@ -520,7 +534,7 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
                 Edit Profile
               </Button>
             </Link>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid ${hasFmas ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
               <Link href={`/card?id=${encodeURIComponent(member.email)}`}>
                 <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
                   <CreditCard className="h-3.5 w-3.5" />
@@ -533,6 +547,14 @@ function MemberProfile({ member }: { member: MemberData & Record<string, any> })
                   Certificate
                 </Button>
               </Link>
+              {hasFmas && (
+                <Link href={`/member/fmas-certificate?id=${encodeURIComponent(String(memberAmasi))}`}>
+                  <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-300">
+                    <Award className="h-3.5 w-3.5" />
+                    FMAS Cert
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 

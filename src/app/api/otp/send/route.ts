@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     // never progresses.
     if (!membershipType) {
       const emailKey = email.toLowerCase()
-      const [{ data: typedDraft }, { data: submittedApp }] = await Promise.all([
+      const [{ data: typedDraft }, { data: submittedApp }, { data: existingMember }] = await Promise.all([
         supabase
           .from("draft_applications")
           .select("id")
@@ -55,9 +55,15 @@ export async function POST(request: NextRequest) {
           .eq("email", emailKey)
           .limit(1)
           .maybeSingle(),
+        supabase
+          .from("members")
+          .select("id")
+          .ilike("email", emailKey)
+          .limit(1)
+          .maybeSingle(),
       ])
 
-      if (!typedDraft && !submittedApp) {
+      if (!typedDraft && !submittedApp && !existingMember) {
         return Response.json(
           {
             status: false,

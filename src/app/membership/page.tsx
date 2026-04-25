@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Search, Loader2, User, CreditCard, Award, MapPin, GraduationCap,
   CheckCircle, Clock, Shield, ExternalLink, Phone, Mail, Hash, FileText as FileIcon,
@@ -34,6 +34,26 @@ export default function KnowYourMembershipPage() {
   const [member, setMember] = useState<any>(null)
   const [notFound, setNotFound] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [fmasYear, setFmasYear] = useState<number | null>(null)
+
+  useEffect(() => {
+    const amasi = member?.amasi_number
+    if (!amasi) {
+      setFmasYear(null)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/credential?type=FMAS&id=${amasi}`)
+      .then((r) => (r.status === 404 ? null : r.json()))
+      .then((d) => {
+        if (cancelled) return
+        setFmasYear(d?.credential?.year ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setFmasYear(null)
+      })
+    return () => { cancelled = true }
+  }, [member?.amasi_number])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -233,6 +253,18 @@ export default function KnowYourMembershipPage() {
                   <CreditCard className="h-3.5 w-3.5" /> View Card
                 </Button>
               </a>
+              <a href={`/member/certificate?id=${member.amasi_number}`}>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                  <Award className="h-3.5 w-3.5" /> Certificate
+                </Button>
+              </a>
+              {fmasYear !== null && (
+                <a href={`/member/fmas-certificate?id=${member.amasi_number}`}>
+                  <Button variant="outline" size="sm" className="gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-300">
+                    <Award className="h-3.5 w-3.5" /> FMAS Cert ({fmasYear})
+                  </Button>
+                </a>
+              )}
               <a href={`/verify?id=${member.amasi_number}`}>
                 <Button variant="outline" size="sm" className="gap-1.5 text-xs">
                   <Shield className="h-3.5 w-3.5" /> Verify

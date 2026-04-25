@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     const amasiNumbers = (data ?? [])
       .map((m: { amasi_number?: number }) => m.amasi_number)
       .filter((n: unknown): n is number => typeof n === "number")
-    let credentialsByAmasi: Record<number, { type: string; year: number }[]> = {}
+    const credentialsByAmasi: Record<number, { type: string; year: number }[]> = {}
     if (amasiNumbers.length) {
       const { data: creds } = await supabase
         .from("member_credentials")

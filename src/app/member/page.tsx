@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, Suspense, useCallback } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import {
@@ -208,6 +209,21 @@ function MemberPortalContent() {
     }
     return items
   }
+
+  // FMAS credential check
+  const fmasQuery = useQuery({
+    queryKey: ["fmas-credential", member?.amasi_number],
+    queryFn: async () => {
+      if (!member?.amasi_number) return { credential: null }
+      const res = await fetch(`/api/credential?type=FMAS&id=${member.amasi_number}`)
+      if (res.status === 404) return { credential: null }
+      return res.json()
+    },
+    enabled: !!member?.amasi_number && phase === "dashboard",
+    retry: false,
+  })
+
+  const hasFmas = !!fmasQuery.data?.credential
 
   // ===== LOGIN =====
   if (phase === "login") {
@@ -746,6 +762,18 @@ function MemberPortalContent() {
                         )}
                       </button>
                     ))}
+                    {hasFmas && (
+                      <Link href={`/member/fmas-certificate?id=${amasiNum}`} className="group p-5 rounded-xl border bg-card transition-all text-left relative hover:border-amber-300 hover:bg-amber-50/50">
+                        <div className="p-2.5 rounded-lg w-fit mb-3 bg-amber-100 text-amber-600"><Award className="h-5 w-5" /></div>
+                        <p className="font-semibold text-sm">FMAS Certificate</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Fellow of Minimal Access Surgery{fmasQuery.data?.credential?.year ? ` — awarded ${fmasQuery.data.credential.year}` : ""}
+                        </p>
+                        <div className="flex items-center text-xs text-primary mt-2">
+                          View &amp; download <ChevronRight className="h-3 w-3 ml-0.5" />
+                        </div>
+                      </Link>
+                    )}
                   </div>
                 </div>
 

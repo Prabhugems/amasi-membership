@@ -35,8 +35,9 @@ export function parseFmasianRecord(raw: AirtableRaw): AirtableFmasianRow {
 
 export function parseSkillCourseRecord(raw: AirtableRaw): AirtableSkillCourseRow {
   const f = raw.fields
-  const attachments = f["FMAS Certificate"] as AirtableAttachment[] | undefined
-  const first = Array.isArray(attachments) && attachments.length > 0 ? attachments[0] : null
+  const raw_attachments = f["FMAS Certificate"]
+  const attachments = Array.isArray(raw_attachments) ? (raw_attachments as AirtableAttachment[]) : null
+  const first = attachments && attachments.length > 0 ? attachments[0] : null
   return {
     id: raw.id,
     skillCourseNumber: toIntOrNull(f["Skill course Number"]) ?? 0,

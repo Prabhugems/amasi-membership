@@ -25,11 +25,17 @@ async function main() {
   console.log("[seed-fmas] fetching Skill Course records ...")
   const courseById = new Map<string, ReturnType<typeof parseSkillCourseRecord>>()
   let courseCount = 0
+  let courseErrors = 0
   for await (const raw of listAllRecords(TABLE_SKILL_COURSE)) {
-    courseById.set(raw.id, parseSkillCourseRecord(raw))
-    courseCount++
+    try {
+      courseById.set(raw.id, parseSkillCourseRecord(raw))
+      courseCount++
+    } catch (e) {
+      courseErrors++
+      console.warn(`[seed-fmas]   skill course parse failed for ${raw.id}:`, (e as Error).message)
+    }
   }
-  console.log(`[seed-fmas] fetched ${courseCount} Skill Course records`)
+  console.log(`[seed-fmas] fetched ${courseCount} Skill Course records (${courseErrors} parse errors)`)
 
   // 2) Pick one canonical course per year (the first one we see with an attachment),
   //    download the template, and upsert credential_templates.
@@ -74,34 +80,40 @@ async function main() {
   const skippedNoAmasi: string[] = []
   const skippedNoYear: string[] = []
   const skippedNotInMembers: number[] = []
+  const skippedErrors: string[] = []
 
   for await (const raw of listAllRecords(TABLE_FMASIANS)) {
     scanned++
-    const f = parseFmasianRecord(raw)
-    if (f.amasiNumber === null) {
-      skippedNoAmasi.push(f.id)
-      continue
+    try {
+      const f = parseFmasianRecord(raw)
+      if (f.amasiNumber === null) {
+        skippedNoAmasi.push(f.id)
+        continue
+      }
+      if (f.yearOfConvocation === null) {
+        skippedNoYear.push(`${f.id}/${f.amasiNumber}`)
+        continue
+      }
+      if (!memberAmasiSet.has(f.amasiNumber)) {
+        skippedNotInMembers.push(f.amasiNumber)
+        continue
+      }
+      const course = f.skillCourseRecordId ? courseById.get(f.skillCourseRecordId) ?? null : null
+      if (!DRY_RUN) {
+        await upsertCredential(db, {
+          amasiNumber: f.amasiNumber,
+          credentialType: "FMAS",
+          year: f.yearOfConvocation,
+          skillCourseId: course?.skillCourseNumber ?? null,
+          awardedAt: null,
+        })
+      }
+      matched++
+      if (scanned % 500 === 0) console.log(`[seed-fmas]   scanned=${scanned} matched=${matched}`)
+    } catch (e) {
+      skippedErrors.push(raw.id)
+      console.warn(`[seed-fmas]   fmasian parse failed for ${raw.id}:`, (e as Error).message)
     }
-    if (f.yearOfConvocation === null) {
-      skippedNoYear.push(`${f.id}/${f.amasiNumber}`)
-      continue
-    }
-    if (!memberAmasiSet.has(f.amasiNumber)) {
-      skippedNotInMembers.push(f.amasiNumber)
-      continue
-    }
-    const course = f.skillCourseRecordId ? courseById.get(f.skillCourseRecordId) ?? null : null
-    if (!DRY_RUN) {
-      await upsertCredential(db, {
-        amasiNumber: f.amasiNumber,
-        credentialType: "FMAS",
-        year: f.yearOfConvocation,
-        skillCourseId: course?.skillCourseNumber ?? null,
-        awardedAt: null,
-      })
-    }
-    matched++
-    if (scanned % 500 === 0) console.log(`[seed-fmas]   scanned=${scanned} matched=${matched}`)
   }
 
   console.log("[seed-fmas] summary:")
@@ -110,6 +122,7 @@ async function main() {
   console.log(`  skipped (no AMASI #):    ${skippedNoAmasi.length}`)
   console.log(`  skipped (no year):       ${skippedNoYear.length}`)
   console.log(`  skipped (not a member):  ${skippedNotInMembers.length}`)
+  console.log(`  skipped (parse error):   ${skippedErrors.length}`)
   if (skippedNotInMembers.length && skippedNotInMembers.length <= 50) {
     console.log(`    AMASI #s: ${skippedNotInMembers.join(", ")}`)
   }

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { listTemplates } from "@/lib/campaigns/registry"
 import { createCampaign } from "@/lib/campaigns/create"
+import { logAdminAction } from "@/lib/audit-log"
 import type { CampaignRow } from "@/lib/campaigns/types"
 
 interface CampaignSummary extends CampaignRow {
@@ -71,10 +72,20 @@ export async function POST(request: NextRequest) {
   const templateKey = typeof body?.templateKey === "string" ? body.templateKey : null
   if (!templateKey) return Response.json({ error: "templateKey required" }, { status: 400 })
 
+  const adminEmail = (session as { email?: string }).email || "admin"
+  const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || request.headers.get("x-real-ip")
+    || undefined
+
   try {
-    const result = await createCampaign({
-      templateKey,
-      createdBy: (session as { email?: string }).email || "admin",
+    const result = await createCampaign({ templateKey, createdBy: adminEmail })
+    await logAdminAction({
+      adminEmail,
+      action: "campaign_created",
+      entityType: "campaign",
+      entityId: result.campaignId,
+      details: { templateKey, totalRecipients: result.totalRecipients },
+      ipAddress,
     })
     return Response.json(result)
   } catch (e) {

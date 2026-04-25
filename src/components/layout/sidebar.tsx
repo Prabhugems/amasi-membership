@@ -29,6 +29,7 @@ import {
   Clock,
   KeyRound,
   TrendingDown,
+  Award,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -58,6 +59,7 @@ const sections: NavSection[] = [
       { name: "Reports", href: "/reports", icon: BarChart3 },
       { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
+      { name: "FMAS Holders", href: "/admin/fmas", icon: Award },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Campaigns", href: "/campaigns", icon: Send },

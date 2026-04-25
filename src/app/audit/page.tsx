@@ -18,6 +18,8 @@ import {
   MailQuestion,
   RotateCcw,
   StickyNote,
+  Send,
+  AlertTriangle,
 } from "lucide-react"
 
 interface AuditEntry {
@@ -44,9 +46,12 @@ const ACTION_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; 
   reply_ticket: { label: "Replied to Ticket", icon: MessageSquare, color: "text-blue-600 dark:text-blue-300", bg: "bg-blue-50 dark:bg-blue-500/15" },
   close_ticket: { label: "Closed Ticket", icon: CheckCircle2, color: "text-gray-600 dark:text-gray-300", bg: "bg-gray-50 dark:bg-gray-500/15" },
   update_ticket_status: { label: "Updated Ticket Status", icon: FileEdit, color: "text-violet-600 dark:text-violet-300", bg: "bg-violet-50 dark:bg-violet-500/15" },
+  campaign_created: { label: "Created Campaign", icon: Send, color: "text-teal-600 dark:text-teal-300", bg: "bg-teal-50 dark:bg-teal-500/15" },
+  campaign_batch_sent: { label: "Sent Campaign Batch", icon: Send, color: "text-teal-600 dark:text-teal-300", bg: "bg-teal-50 dark:bg-teal-500/15" },
+  campaign_batch_failed: { label: "Campaign Batch Failed", icon: AlertTriangle, color: "text-red-600 dark:text-red-300", bg: "bg-red-50 dark:bg-red-500/15" },
 }
 
-const ENTITY_TYPES = ["application", "member", "ticket", "upgrade", "notification"]
+const ENTITY_TYPES = ["application", "member", "ticket", "upgrade", "notification", "campaign"]
 const ACTIONS = Object.keys(ACTION_CONFIG)
 
 const PAGE_SIZE = 30

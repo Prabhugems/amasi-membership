@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, Upload, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
-  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle,
+  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle, Award,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
@@ -186,6 +186,11 @@ function MemberCard({ m }: { m: any }) {
             {m.status}
           </span>
         )}
+        {m.credentials?.length > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30">
+            <Award className="h-2.5 w-2.5" /> FMAS
+          </span>
+        )}
       </div>
       <div className="mt-3 space-y-1 text-xs text-muted-foreground">
         {m.state && (
@@ -234,6 +239,7 @@ function TableSkeleton() {
           <td className="px-4 py-3.5 hidden lg:table-cell"><div className="h-4 w-14 bg-muted rounded" /></td>
           <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-6 w-16 bg-muted rounded-full" /></td>
           <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-4 w-12 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-5 w-20 bg-muted rounded" /></td>
           <td className="px-4 py-3.5"><div className="h-7 w-16 bg-muted rounded ml-auto" /></td>
         </tr>
       ))}
@@ -315,6 +321,7 @@ export default function MembersPage() {
   const [stateFilter, setStateFilter] = useState("")
   const [zoneFilter, setZoneFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
+  const [hasFmas, setHasFmas] = useState(false)
   const [page, setPage] = useState(0)
   const [sortCol, setSortCol] = useState<SortCol>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
@@ -322,10 +329,10 @@ export default function MembersPage() {
   const [hover, setHover] = useState<HoverState | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const activeFilterCount = [typeFilter, stateFilter, zoneFilter, statusFilter].filter(Boolean).length
+  const activeFilterCount = [typeFilter, stateFilter, zoneFilter, statusFilter].filter(Boolean).length + (hasFmas ? 1 : 0)
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["members-list", searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter, page, sortCol, sortDir],
+    queryKey: ["members-list", searchTerm, typeFilter, stateFilter, zoneFilter, statusFilter, hasFmas, page, sortCol, sortDir],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (searchTerm) params.set("q", searchTerm)
@@ -333,6 +340,7 @@ export default function MembersPage() {
       if (stateFilter) params.set("state", stateFilter)
       if (zoneFilter) params.set("zone", zoneFilter)
       if (statusFilter) params.set("status", statusFilter)
+      if (hasFmas) params.set("hasFmas", "1")
       if (sortCol) params.set("sort", sortCol)
       if (sortDir) params.set("dir", sortDir)
       params.set("limit", String(PAGE_SIZE))
@@ -372,6 +380,7 @@ export default function MembersPage() {
     setStateFilter("")
     setZoneFilter("")
     setStatusFilter("")
+    setHasFmas(false)
     setSearchTerm("")
     setSearchQuery("")
     setSortCol(null)
@@ -575,6 +584,17 @@ export default function MembersPage() {
           <FilterSelect label="All States" value={stateFilter} onChange={(v) => { setStateFilter(v); setPage(0) }} options={STATES} />
           <FilterSelect label="All Zones" value={zoneFilter} onChange={(v) => { setZoneFilter(v); setPage(0) }} options={ZONES} />
           <FilterSelect label="All Statuses" value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(0) }} options={STATUSES} />
+          <button
+            onClick={() => { setHasFmas((v) => !v); setPage(0) }}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-sm transition-colors ${
+              hasFmas
+                ? "bg-amber-600 text-white border-amber-600"
+                : "bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-400/30 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+            }`}
+          >
+            <Award className="h-3.5 w-3.5" />
+            Has FMAS
+          </button>
           {activeFilterCount > 0 && (
             <button
               onClick={clearAllFilters}
@@ -607,6 +627,12 @@ export default function MembersPage() {
                 <button onClick={() => { setStatusFilter(""); setPage(0) }} className="hover:text-orange-900"><X className="h-3 w-3" /></button>
               </span>
             )}
+            {hasFmas && (
+              <span className="inline-flex items-center gap-1 text-xs bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30 rounded-full px-2.5 py-1 font-medium">
+                <Award className="h-3 w-3" /> Has FMAS
+                <button onClick={() => { setHasFmas(false); setPage(0) }} className="hover:text-amber-900"><X className="h-3 w-3" /></button>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -634,6 +660,7 @@ export default function MembersPage() {
                   <SortableHeader col="zone" label="Zone" className="hidden lg:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
                   <SortableHeader col="status" label="Status" className="hidden xl:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
                   <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">PG Degree</th>
+                  <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden xl:table-cell">Credentials</th>
                   <th scope="col" className="text-right px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -641,7 +668,7 @@ export default function MembersPage() {
                 {isLoading && <TableSkeleton />}
                 {!isLoading && members.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="p-16 text-center">
+                    <td colSpan={9} className="p-16 text-center">
                       <div className="flex flex-col items-center gap-3">
                         <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
                           <Users className="h-7 w-7 text-muted-foreground/40" />
@@ -706,6 +733,20 @@ export default function MembersPage() {
                       ) : "\u2014"}
                     </td>
                     <td className="px-4 py-3.5 hidden md:table-cell text-muted-foreground text-xs truncate max-w-[160px]">{m.pg_degree || "\u2014"}</td>
+                    <td className="px-4 py-3.5 hidden xl:table-cell">
+                      {m.credentials?.length ? (
+                        m.credentials.map((c: { type: string; year: number }) => (
+                          <span
+                            key={`${c.type}-${c.year}`}
+                            className="inline-block mr-1 px-2 py-0.5 text-xs rounded-md bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30"
+                          >
+                            {c.type} {c.year}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground/40 text-xs">{"\u2014"}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Link href={`/card?id=${encodeURIComponent(m.email)}`}>

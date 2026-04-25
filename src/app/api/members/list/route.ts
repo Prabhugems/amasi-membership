@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   const status = request.nextUrl.searchParams.get("status") || ""
   const sortBy = request.nextUrl.searchParams.get("sort") || "amasi_number"
   const sortDir = request.nextUrl.searchParams.get("dir") || "desc"
+  const hasFmas = request.nextUrl.searchParams.get("hasFmas") === "1"
 
   try {
     const supabase = createAdminClient()
@@ -63,6 +64,20 @@ export async function GET(request: NextRequest) {
       query = query.eq("status", status)
     }
 
+    // Filter by FMAS credential
+    if (hasFmas) {
+      const { data: fmasRows } = await supabase
+        .from("member_credentials")
+        .select("amasi_number")
+        .eq("credential_type", "FMAS")
+      const fmasAmasi = (fmasRows ?? []).map((r: { amasi_number: number }) => r.amasi_number)
+      if (fmasAmasi.length === 0) {
+        // No FMAS holders — return empty result immediately
+        return Response.json({ status: true, data: [], total: 0 })
+      }
+      query = query.in("amasi_number", fmasAmasi)
+    }
+
     const { data, error, count } = await query
 
     if (error) {
@@ -70,7 +85,29 @@ export async function GET(request: NextRequest) {
       return Response.json({ status: false, message: error.message || "Unable to load members.", hint: error.hint || null }, { status: 500 })
     }
 
-    return Response.json({ status: true, data: data || [], total: count || 0 })
+    // Batch-fetch credentials for this page of members
+    const amasiNumbers = (data ?? [])
+      .map((m: { amasi_number?: number }) => m.amasi_number)
+      .filter((n: unknown): n is number => typeof n === "number")
+    let credentialsByAmasi: Record<number, { type: string; year: number }[]> = {}
+    if (amasiNumbers.length) {
+      const { data: creds } = await supabase
+        .from("member_credentials")
+        .select("amasi_number, credential_type, year")
+        .in("amasi_number", amasiNumbers)
+      for (const c of creds ?? []) {
+        const list = credentialsByAmasi[c.amasi_number] ?? []
+        list.push({ type: c.credential_type, year: c.year })
+        credentialsByAmasi[c.amasi_number] = list
+      }
+    }
+
+    const enrichedData = (data ?? []).map((m: any) => ({
+      ...m,
+      credentials: credentialsByAmasi[m.amasi_number] ?? [],
+    }))
+
+    return Response.json({ status: true, data: enrichedData, total: count || 0 })
   } catch (error: any) {
     console.error("Members list error:", error.message)
     return Response.json({ status: false, message: "Unable to load members. Please try again." }, { status: 500 })

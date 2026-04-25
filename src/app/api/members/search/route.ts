@@ -6,7 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit"
 // Public-safe field list for non-admin callers. Excludes PII such as email,
 // phone, DOB, address, MCI number/state, and all document URLs except photo.
 const PUBLIC_SELECT =
-  "id, name, membership_type, amasi_number, membership_no, city, state, zone, pg_degree, is_active, photo_url"
+  "id, name, membership_type, amasi_number, city, state, zone, pg_degree, status, profile_photo"
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -43,35 +43,39 @@ export async function GET(request: NextRequest) {
     let data = null
 
     if (isEmail) {
-      const { data: result } = await supabase
+      const { data: result, error } = await supabase
         .from("members")
         .select(selectFields)
         .ilike("email", query.trim())
         .limit(1)
+      if (error) console.error("members.search email query failed:", error)
       data = result
     } else if (isPhone) {
-      const { data: result } = await supabase
+      const { data: result, error } = await supabase
         .from("members")
         .select(selectFields)
         .eq("phone", query.trim())
         .limit(1)
+      if (error) console.error("members.search phone query failed:", error)
       data = result
     } else {
       // Search by name or amasi number
       const asNum = parseInt(query)
       if (!isNaN(asNum)) {
-        const { data: result } = await supabase
+        const { data: result, error } = await supabase
           .from("members")
           .select(selectFields)
           .eq("amasi_number", asNum)
           .limit(1)
+        if (error) console.error("members.search amasi_number query failed:", error)
         data = result
       } else {
-        const { data: result } = await supabase
+        const { data: result, error } = await supabase
           .from("members")
           .select(selectFields)
           .ilike("name", `%${query}%`)
           .limit(5)
+        if (error) console.error("members.search name query failed:", error)
         data = result
       }
     }
@@ -105,6 +109,7 @@ export async function GET(request: NextRequest) {
             return t || ""
           })(),
           status_name: m.status === "active" ? "Membership Number Allotted" : m.status,
+          is_active: m.status === "active",
           state_name: m.state || "",
           mci_council_number: m.mci_council_number || "",
           member_reg_date: m.application_date || m.created_at,

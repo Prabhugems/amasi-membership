@@ -18,7 +18,8 @@ export async function POST(
   try {
     const result = await sendNextBatch({ campaignId: id, limit })
     return Response.json(result)
-  } catch (e: any) {
-    return Response.json({ error: e.message ?? "send failed" }, { status: 500 })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "send failed"
+    return Response.json({ error: msg }, { status: 500 })
   }
 }

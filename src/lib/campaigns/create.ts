@@ -34,10 +34,11 @@ export async function createCampaign(params: {
   }
 
   // Resolve segment. Wrap with marketing opt-out filter when category = 'marketing'.
+  // Casts mirror the buildSegment-as-`any` design choice in types.ts.
   let query = db.from("members").select(MEMBER_SEGMENT_COLUMNS)
-  query = template.buildSegment(query as any) as any
+  query = template.buildSegment(query)
   if (template.category === "marketing") {
-    query = (query as any).is("marketing_opt_out_at", null)
+    query = query.is("marketing_opt_out_at", null)
   }
   const { data: members, error: segErr } = await query
   if (segErr) {

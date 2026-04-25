@@ -22,9 +22,11 @@ export interface TemplateEntry {
   name: string
   category: CampaignCategory
   targetFields: (keyof MemberSegmentRow)[]
-  buildSegment: (
-    query: any
-  ) => any
+  // Supabase's PostgrestFilterBuilder has 5+ generic params and narrowing on every
+  // .eq/.is/.not chain — typing this strictly costs more in scaffolding than it
+  // earns in safety, since templates are code-reviewed and small.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildSegment: (query: any) => any
   subject: (m: MemberSegmentRow) => string
   html: (m: MemberSegmentRow, ctx: { baseUrl: string }) => string
 }

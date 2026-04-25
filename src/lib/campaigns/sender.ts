@@ -82,9 +82,10 @@ export async function sendNextBatch(params: {
         .update({ sent_at: new Date().toISOString(), send_error: null })
         .eq("id", r.id)
       sent++
-    } catch (e: any) {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "send failed"
       await db.from("email_campaign_recipients")
-        .update({ send_error: e?.message ?? "send failed" })
+        .update({ send_error: msg })
         .eq("id", r.id)
       failed++
     }

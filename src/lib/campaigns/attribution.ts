@@ -48,6 +48,9 @@ export async function creditUpdateIfRelevant(params: {
 
   // Pull recipient + campaign join in two queries (Supabase doesn't do real joins via PostgREST
   // without configured foreign keys; two small queries are fine at our scale).
+  type RecipRow = { id: string; campaign_id: string; sent_at: string; update_detected_at: string | null }
+  type CampRow = { id: string; target_fields: string[] }
+
   const { data: recips, error: recErr } = await db
     .from("email_campaign_recipients")
     .select("id, campaign_id, sent_at, update_detected_at")
@@ -57,16 +60,18 @@ export async function creditUpdateIfRelevant(params: {
     .lt("sent_at", params.at)
     .order("sent_at", { ascending: false })
     .limit(20)
+    .returns<RecipRow[]>()
   if (recErr || !recips || recips.length === 0) return null
 
   const { data: camps, error: campErr } = await db
     .from("email_campaigns")
     .select("id, target_fields")
-    .in("id", recips.map((r: any) => r.campaign_id))
+    .in("id", recips.map((r) => r.campaign_id))
+    .returns<CampRow[]>()
   if (campErr || !camps) return null
 
-  const byId = new Map(camps.map((c: any) => [c.id, c.target_fields as string[]]))
-  const candidates: CreditCandidate[] = recips.map((r: any) => ({
+  const byId = new Map(camps.map((c) => [c.id, c.target_fields]))
+  const candidates: CreditCandidate[] = recips.map((r) => ({
     id: r.id,
     sent_at: r.sent_at,
     target_fields: byId.get(r.campaign_id) ?? [],

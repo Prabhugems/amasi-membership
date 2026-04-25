@@ -74,10 +74,11 @@ export async function POST(request: NextRequest) {
   try {
     const result = await createCampaign({
       templateKey,
-      createdBy: (session as any).email || "admin",
+      createdBy: (session as { email?: string }).email || "admin",
     })
     return Response.json(result)
-  } catch (e: any) {
-    return Response.json({ error: e.message ?? "create failed" }, { status: 500 })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "create failed"
+    return Response.json({ error: msg }, { status: 500 })
   }
 }

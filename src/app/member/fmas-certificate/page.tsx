@@ -188,17 +188,17 @@ function FmasCertificateContent() {
               />
               <div style={{
                 position: "absolute",
-                top: "40%",
+                top: `${typeof cert.nameTopPct === "number" ? cert.nameTopPct : 56}%`,
                 left: 0,
                 right: 0,
                 textAlign: "center",
                 fontFamily: "Georgia, 'Times New Roman', serif",
               }}>
                 <p style={{
-                  fontSize: "30px",
+                  fontSize: `${typeof cert.nameFontSizePx === "number" ? cert.nameFontSizePx : 28}px`,
                   fontStyle: "italic",
                   fontWeight: 500,
-                  color: "#1a1a1a",
+                  color: "#1a3a6c",
                   margin: 0,
                   letterSpacing: "0.02em",
                 }}>

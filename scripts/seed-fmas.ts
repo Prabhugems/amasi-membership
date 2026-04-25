@@ -66,6 +66,8 @@ async function main() {
         presidentName: course.presidentName,
         convocationDate: course.convocationDateAndPlace,
         convocationPlace: extractConvocationPlace(course.convocationDateAndPlace),
+        nameTopPct: null,
+        nameFontSizePx: null,
       })
     }
   }

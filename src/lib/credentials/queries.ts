@@ -46,6 +46,10 @@ export async function getTemplate(
     presidentName: data.president_name,
     convocationDate: data.convocation_date,
     convocationPlace: data.convocation_place,
+    nameTopPct: data.name_top_pct === null || data.name_top_pct === undefined
+      ? null
+      : Number(data.name_top_pct),
+    nameFontSizePx: data.name_font_size_px ?? null,
   }
 }
 
@@ -91,6 +95,9 @@ export async function upsertTemplate(
   db: SupabaseClient,
   t: CredentialTemplate
 ): Promise<void> {
+  // Intentionally do NOT include name_top_pct / name_font_size_px here.
+  // Those are admin-tuned per template; re-running the seed must not clobber
+  // them. Set them explicitly via the admin UI or direct SQL.
   const { error } = await db.from("credential_templates").upsert(
     {
       credential_type: t.credentialType,

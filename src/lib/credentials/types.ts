@@ -16,6 +16,8 @@ export interface CredentialTemplate {
   presidentName: string | null
   convocationDate: string | null
   convocationPlace: string | null
+  nameTopPct: number | null
+  nameFontSizePx: number | null
 }
 
 // Shape of an Airtable FMASIANS row (only the fields we care about).

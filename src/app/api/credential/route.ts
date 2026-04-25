@@ -70,6 +70,8 @@ export async function GET(request: NextRequest) {
         presidentName: template.presidentName,
         convocationPlace: template.convocationPlace,
         convocationDate: template.convocationDate,
+        nameTopPct: template.nameTopPct,
+        nameFontSizePx: template.nameFontSizePx,
       },
     })
   } catch (e) {

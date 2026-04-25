@@ -58,6 +58,7 @@ const PUBLIC_API_ROUTES = [
   "/api/ocr",
   "/api/card",
   "/api/certificate",
+  "/api/credential",
   "/api/members/search",
   "/api/directory",
   "/api/members/upload",

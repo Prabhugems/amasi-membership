@@ -188,17 +188,19 @@ function FmasCertificateContent() {
               />
               <div style={{
                 position: "absolute",
-                top: "46%",
+                top: "40%",
                 left: 0,
                 right: 0,
                 textAlign: "center",
-                fontFamily: "'Brush Script MT', 'Lucida Handwriting', 'Apple Chancery', cursive",
+                fontFamily: "Georgia, 'Times New Roman', serif",
               }}>
                 <p style={{
-                  fontSize: "34px",
+                  fontSize: "30px",
                   fontStyle: "italic",
+                  fontWeight: 500,
                   color: "#1a1a1a",
                   margin: 0,
+                  letterSpacing: "0.02em",
                 }}>
                   Dr. {cert.name}
                 </p>

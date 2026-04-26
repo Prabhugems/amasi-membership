@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { signResumeToken } from "@/lib/draft-resume"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
+import { isExcludedEmail } from "@/lib/email-exclusions"
 
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",
@@ -12,15 +13,6 @@ const STEP_LABELS: Record<number, string> = {
   5: "Payment",
   6: "Submission",
 }
-
-// Emails that should never receive a marketing-style reminder
-const EMAIL_EXCLUDE_PATTERNS = [
-  /@test\./i,
-  /^test@/i,
-  /^collegeofamasi@/i,
-  /^admin@/i,
-  /^noreply@/i,
-]
 
 export const DEFAULT_MIN_HOURS_IDLE = 24
 export const MIN_HOURS_SINCE_LAST_REMINDER = 48
@@ -105,7 +97,7 @@ export async function runBulkDraftReminders(
     const email = draft.email?.trim()
     if (!email) { skipped.push({ email: "(blank)", reason: "no email" }); continue }
 
-    if (EMAIL_EXCLUDE_PATTERNS.some(p => p.test(email))) {
+    if (isExcludedEmail(email)) {
       skipped.push({ email, reason: "excluded (test/internal)" })
       continue
     }

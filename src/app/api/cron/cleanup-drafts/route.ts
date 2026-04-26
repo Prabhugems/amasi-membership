@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
+import { isExcludedEmail } from "@/lib/email-exclusions"
 import { Resend } from "resend"
 
 const STEP_LABELS: Record<number, string> = {
@@ -202,14 +203,38 @@ export async function GET(request: Request) {
 
     for (const draft of reminderDrafts || []) {
       if (dryRun) {
-        planAction(draft, "send_reminder_18h", `${hoursIdle(draft.updated_at)}h idle, no prior reminder`)
+        const why = isExcludedEmail(draft.email)
+          ? `excluded address; would mark reminder_sent_at without emailing`
+          : `${hoursIdle(draft.updated_at)}h idle, no prior reminder`
+        planAction(draft, "send_reminder_18h", why)
+        continue
+      }
+      // Update reminder_sent_at FIRST (so the row is excluded from future
+      // reminder picks even if the email send fails or we skip the address).
+      await supabase
+        .from("draft_applications")
+        .update({ reminder_sent_at: new Date().toISOString() })
+        .eq("id", draft.id)
+      // Skip the email send for excluded addresses (test/internal) but keep
+      // the state change above so the cron doesn't re-pick this row each hour.
+      if (isExcludedEmail(draft.email)) {
+        await logMembershipAuditEvent({
+          action: "draft_reminder_skipped_excluded",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, reason: "excluded test/internal address" },
+          performedBy: "system",
+        }, supabase)
         continue
       }
       const html = emailWrapper(
         "Complete Your Application",
         `
         <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Your membership application is incomplete. You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+        </p>
+        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
         </p>
         <div style="margin:20px 0;text-align:center;">
           <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
@@ -226,10 +251,6 @@ export async function GET(request: Request) {
           subject: "Complete your AMASI membership application",
           html,
         })
-        await supabase
-          .from("draft_applications")
-          .update({ reminder_sent_at: new Date().toISOString() })
-          .eq("id", draft.id)
         summary.reminders_sent++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] reminder email ${draft.email}:`, errMessage(err))
@@ -238,9 +259,14 @@ export async function GET(request: Request) {
 
     // -----------------------------------------------------------------------
     // Step 3 — Soft-delete unpaid drafts (24h idle, no payment)
+    // Issue 2 guarantee: only expire drafts that have already been reminded
+    // and given a 6h grace window. This prevents reminder + expiry firing in
+    // the same cron invocation for backlog drafts that are >24h on first
+    // sight. They get the reminder this run; expire on the next-day's run.
     // Files in storage are KEPT for the 90-day audit window.
     // -----------------------------------------------------------------------
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
+    const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
     const { data: expiredDrafts } = await supabase
       .from("draft_applications")
       .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
@@ -249,9 +275,17 @@ export async function GET(request: Request) {
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
+      .not("reminder_sent_at", "is", null)
+      .lt("reminder_sent_at", sixHoursAgo)
 
     for (const draft of expiredDrafts || []) {
-      if (dryRun) { planAction(draft, "soft_delete_unpaid", `unpaid, ${hoursIdle(draft.updated_at)}h idle`); continue }
+      if (dryRun) {
+        const why = isExcludedEmail(draft.email)
+          ? `unpaid, ${hoursIdle(draft.updated_at)}h idle, excluded address (would soft-delete without emailing)`
+          : `unpaid, ${hoursIdle(draft.updated_at)}h idle, reminder sent ≥6h ago`
+        planAction(draft, "soft_delete_unpaid", why)
+        continue
+      }
       try {
         const { data: marked } = await supabase
           .from("draft_applications")
@@ -262,32 +296,39 @@ export async function GET(request: Request) {
           .select("id")
           .maybeSingle()
         if (!marked) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`); continue }
-        const html = emailWrapper(
-          "Application Expired",
-          `
-          <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-            Your AMASI membership application has been removed due to inactivity.
-            You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-          </p>
-          <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-            If you still wish to join, you can start a new application at any time.
-          </p>
-          <div style="margin:20px 0;text-align:center;">
-            <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
-          </div>
-          `,
-        )
-        await resend!.emails.send({
-          from: fromEmail,
-          to: draft.email,
-          subject: "Your AMASI membership application has expired",
-          html,
-        })
+        if (!isExcludedEmail(draft.email)) {
+          const html = emailWrapper(
+            "Application Expired",
+            `
+            <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+              Your AMASI membership application has been removed due to inactivity.
+              You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+            </p>
+            <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+              If you still wish to join, you can start a new application at any time.
+            </p>
+            <div style="margin:20px 0;text-align:center;">
+              <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
+            </div>
+            `,
+          )
+          await resend!.emails.send({
+            from: fromEmail,
+            to: draft.email,
+            subject: "Your AMASI membership application has expired",
+            html,
+          })
+        }
         await logMembershipAuditEvent({
           action: "draft_expired",
           entityType: "draft_application",
           entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, reason: "Soft-deleted after 24h inactivity (files retained)" },
+          newData: {
+            email: draft.email,
+            step: draft.current_step,
+            reason: "Soft-deleted after 24h inactivity (files retained)",
+            email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
+          },
           performedBy: "system",
         }, supabase)
         summary.expired++
@@ -304,7 +345,7 @@ export async function GET(request: Request) {
     // -----------------------------------------------------------------------
     const { data: paidStuckDrafts } = await supabase
       .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, reminder_sent_at")
       .in("status", ["in_progress", "stuck"])
       .lt("updated_at", twentyFourHoursAgo)
       .or("payment_order_id.not.is.null,has_verified_payment.eq.true")
@@ -364,29 +405,44 @@ export async function GET(request: Request) {
               if (dryRun) planAction(draft, "skip_payment_attempted", "Razorpay order in attempted state, may complete")
               continue
             } else {
-              if (dryRun) { planAction(draft, "soft_delete_payment_failed", `Razorpay order status=${status}, treating as unpaid`); continue }
-              try {
-                await resend!.emails.send({
-                  from: fromEmail,
-                  to: draft.email,
-                  subject: "Your AMASI membership application has expired",
-                  html: emailWrapper(
-                    "Application Expired",
-                    `
-                    <p style="font-size:14px;color:#374151;">Dear Applicant,</p>
-                    <p style="font-size:14px;color:#555;line-height:1.6;">
-                      Your AMASI membership application started on ${new Date(draft.created_at).toLocaleDateString("en-IN")}
-                      has expired due to inactivity. The payment was not completed.
-                    </p>
-                    <p style="font-size:14px;color:#555;line-height:1.6;">You are welcome to apply again at any time.</p>
-                    <div style="text-align:center;margin:24px 0;">
-                      <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Apply Again</a>
-                    </div>
-                    `,
-                  ),
-                })
-              } catch (emailErr) {
-                console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
+              // Same Issue-2 guard as Step 3: only expire if reminder was sent ≥6h ago
+              const r = (draft as { reminder_sent_at?: string | null }).reminder_sent_at
+              const remindedLongEnough = r && new Date(r).getTime() < Date.now() - 6 * 3600000
+              if (!remindedLongEnough) {
+                if (dryRun) planAction(draft, "skip_no_reminder_grace", `Razorpay status=${status} but no reminder ≥6h ago`)
+                continue
+              }
+              if (dryRun) {
+                const why = isExcludedEmail(draft.email)
+                  ? `Razorpay status=${status}, excluded address (would soft-delete without emailing)`
+                  : `Razorpay status=${status}, treating as unpaid, reminder sent ≥6h ago`
+                planAction(draft, "soft_delete_payment_failed", why)
+                continue
+              }
+              if (!isExcludedEmail(draft.email)) {
+                try {
+                  await resend!.emails.send({
+                    from: fromEmail,
+                    to: draft.email,
+                    subject: "Your AMASI membership application has expired",
+                    html: emailWrapper(
+                      "Application Expired",
+                      `
+                      <p style="font-size:14px;color:#374151;">Dear Applicant,</p>
+                      <p style="font-size:14px;color:#555;line-height:1.6;">
+                        Your AMASI membership application started on ${draft.created_at ? new Date(draft.created_at).toLocaleDateString("en-IN") : "recently"}
+                        has expired due to inactivity. The payment was not completed.
+                      </p>
+                      <p style="font-size:14px;color:#555;line-height:1.6;">You are welcome to apply again at any time.</p>
+                      <div style="text-align:center;margin:24px 0;">
+                        <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Apply Again</a>
+                      </div>
+                      `,
+                    ),
+                  })
+                } catch (emailErr) {
+                  console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
+                }
               }
               const { data: marked } = await supabase
                 .from("draft_applications")
@@ -400,7 +456,12 @@ export async function GET(request: Request) {
                 action: "draft_expired",
                 entityType: "draft_application",
                 entityId: draft.id,
-                newData: { email: draft.email, step: draft.current_step, reason: "Soft-deleted after 24h inactivity — payment not captured (files retained)" },
+                newData: {
+                  email: draft.email,
+                  step: draft.current_step,
+                  reason: "Soft-deleted after 24h inactivity — payment not captured (files retained)",
+                  email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
+                },
                 performedBy: "system",
               }, supabase)
               summary.expired++
@@ -460,22 +521,30 @@ export async function GET(request: Request) {
           }
 
           if (refunded) {
-            if (dryRun) { planAction(draft, "soft_delete_refund_completed", "Razorpay confirms refund completed"); continue }
-            await resend!.emails.send({
-              from: fromEmail,
-              to: draft.email,
-              subject: "AMASI membership application — refund processed",
-              html: emailWrapper(
-                "Refund Processed",
-                `
-                <p style="font-size:14px;color:#374151;margin:0 0 12px;">Your payment for the AMASI membership application has been refunded successfully.</p>
-                <p style="font-size:14px;color:#374151;margin:0 0 12px;">If you wish to apply again in the future, you are welcome to start a new application.</p>
-                <div style="margin:20px 0;text-align:center;">
-                  <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
-                </div>
-                `,
-              ),
-            })
+            if (dryRun) {
+              const why = isExcludedEmail(draft.email)
+                ? "Razorpay confirms refund completed; excluded address (would soft-delete without emailing)"
+                : "Razorpay confirms refund completed"
+              planAction(draft, "soft_delete_refund_completed", why)
+              continue
+            }
+            if (!isExcludedEmail(draft.email)) {
+              await resend!.emails.send({
+                from: fromEmail,
+                to: draft.email,
+                subject: "AMASI membership application — refund processed",
+                html: emailWrapper(
+                  "Refund Processed",
+                  `
+                  <p style="font-size:14px;color:#374151;margin:0 0 12px;">Your payment for the AMASI membership application has been refunded successfully.</p>
+                  <p style="font-size:14px;color:#374151;margin:0 0 12px;">If you wish to apply again in the future, you are welcome to start a new application.</p>
+                  <div style="margin:20px 0;text-align:center;">
+                    <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
+                  </div>
+                  `,
+                ),
+              })
+            }
             await supabase
               .from("draft_applications")
               .update({ status: "expired", deleted_at: new Date().toISOString() })
@@ -484,7 +553,12 @@ export async function GET(request: Request) {
               action: "draft_refunded",
               entityType: "draft_application",
               entityId: draft.id,
-              newData: { email: draft.email, step: draft.current_step, reason: "Refund completed — soft-deleted (files retained)" },
+              newData: {
+                email: draft.email,
+                step: draft.current_step,
+                reason: "Refund completed — soft-deleted (files retained)",
+                email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
+              },
               performedBy: "system",
             }, supabase)
             summary.refunds_completed++

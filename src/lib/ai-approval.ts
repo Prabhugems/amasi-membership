@@ -8,6 +8,8 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXTRACTION_SKIPPED_KEYS, normalizeDocumentKey } from "@/lib/document-keys"
 import { verifyWithNmcCached, type NmcCacheSource } from "@/lib/nmc-cache"
 
+export type ApprovalDecision = "auto_approved" | "manual_review" | "documents_unreadable"
+
 const BLOCKED_DEGREES = [
   "bams", "bums", "bhms", "bds", "bpt", "bot", "bnys",
   "md ayurveda", "md homeopathy", "md unani", "md siddha",
@@ -129,7 +131,7 @@ export interface NmcVerification {
 }
 
 export interface ApprovalResult {
-  totalScore: number        // 0-100
+  totalScore: number        // 0-100; 0 when decision === 'documents_unreadable' (per-check scoring is skipped)
   autoApprove: boolean
   blockingReasons: string[] // which of the 4 checks failed (empty if auto-approved)
   checks: ApprovalCheck[]
@@ -137,11 +139,17 @@ export interface ApprovalResult {
   nmcVerification: NmcVerification | null
   nmcApiStatus: string | null
   nmcResponseTimeMs: number | null
+  /** Set when the scorer short-circuits because required docs aren't OCR-verified.
+   *  When undefined, decision is derived downstream from autoApprove. */
+  decision?: ApprovalDecision
+  /** Populated only when decision === 'documents_unreadable'. */
+  unreadableReason?: string
+  unreadableDocs?: string[]
 }
 
 export async function scoreApplication(
   formData: Record<string, any>,
-  uploads: Record<string, { status: string; extracted: Record<string, any>; message?: string }>,
+  uploads: Record<string, { status: string; extracted: Record<string, any>; message?: string; fileUrl?: string | null }>,
   paymentPaid: boolean,
   supabase?: SupabaseClient,
 ): Promise<ApprovalResult> {
@@ -152,6 +160,34 @@ export async function scoreApplication(
   const normalizedUploads: typeof uploads = {}
   for (const [key, value] of Object.entries(uploads)) {
     normalizedUploads[normalizeDocumentKey(key)] = value
+  }
+
+  // --- Pre-flight gate: required docs must have a real file AND a successful OCR ---
+  // Defense-in-depth. The submit route also runs validateRequiredDocuments first;
+  // this gate covers rescore/list paths that bypass the submit gate, and prevents
+  // the per-check scorer from synthesizing a misleading partial score (the bug
+  // that produced 32% scores for applications with unreadable documents).
+  const unreadable: string[] = []
+  for (const [key, entry] of Object.entries(normalizedUploads)) {
+    if (EXTRACTION_SKIPPED_KEYS.includes(key)) continue
+    const fileUrl = typeof entry.fileUrl === "string" ? entry.fileUrl.trim() : ""
+    if (!fileUrl || entry.status !== "extracted") unreadable.push(key)
+  }
+  if (unreadable.length > 0) {
+    const reason = "Required documents could not be read by OCR. Re-upload required."
+    return {
+      totalScore: 0,
+      autoApprove: false,
+      blockingReasons: ["documents_unreadable"],
+      checks: [],
+      flags: [reason, ...unreadable.map(k => `Unreadable: ${k}`)],
+      nmcVerification: null,
+      nmcApiStatus: null,
+      nmcResponseTimeMs: null,
+      decision: "documents_unreadable",
+      unreadableReason: reason,
+      unreadableDocs: unreadable,
+    }
   }
 
   // --- 1. Name Match Across Documents (weight: 20) ---

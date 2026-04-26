@@ -462,13 +462,13 @@ export default function PendingPage() {
   }
   const selectAll = () => {
     const actionableIds = applications
-      .filter((a: any) => ["submitted", "pending_review", "ai_approved", "need_clarification", "resubmit_requested"].includes(a.status))
+      .filter((a: any) => ["submitted", "pending_review", "ai_approved", "need_clarification", "resubmit_requested", "documents_unreadable"].includes(a.status))
       .map((a: any) => a.id)
     setSelectedIds(new Set(actionableIds))
   }
   const deselectAll = () => setSelectedIds(new Set())
   const isActionable = (status: string) =>
-    ["submitted", "pending_review", "ai_approved", "need_clarification", "resubmit_requested"].includes(status)
+    ["submitted", "pending_review", "ai_approved", "need_clarification", "resubmit_requested", "documents_unreadable"].includes(status)
 
   const tabs: { key: TabFilter; label: string }[] = [
     { key: "pending", label: "Pending Review" },
@@ -489,7 +489,7 @@ export default function PendingPage() {
       ai_approved: allApps.filter((a: any) => a.status === "ai_approved").length,
       approved: allApps.filter((a: any) => a.status === "approved").length,
       rejected: allApps.filter((a: any) => a.status === "rejected").length,
-      clarification: allApps.filter((a: any) => ["need_clarification", "resubmit_requested"].includes(a.status)).length,
+      clarification: allApps.filter((a: any) => ["need_clarification", "resubmit_requested", "documents_unreadable"].includes(a.status)).length,
     } as Record<string, number>
   }, [data])
 
@@ -743,17 +743,19 @@ export default function PendingPage() {
           const aiScore = getAiScoreNum(app)
           const profileDoc = docs.profile || null
 
-          const borderClass = app.needs_manual_review
-            ? "border-l-4 border-l-amber-400"
-            : app.ai_verified
-              ? "border-l-4 border-l-emerald-400"
-              : app.status === "rejected"
-                ? "border-l-4 border-l-red-400"
-                : app.status === "approved"
-                  ? "border-l-4 border-l-emerald-400"
-                  : app.status === "ai_approved"
-                    ? "border-l-4 border-l-blue-400"
-                    : ""
+          const borderClass = app.status === "documents_unreadable"
+            ? "border-l-4 border-l-red-500"
+            : app.needs_manual_review
+              ? "border-l-4 border-l-amber-400"
+              : app.ai_verified
+                ? "border-l-4 border-l-emerald-400"
+                : app.status === "rejected"
+                  ? "border-l-4 border-l-red-400"
+                  : app.status === "approved"
+                    ? "border-l-4 border-l-emerald-400"
+                    : app.status === "ai_approved"
+                      ? "border-l-4 border-l-blue-400"
+                      : ""
 
           return (
             <Card
@@ -788,15 +790,16 @@ export default function PendingPage() {
                       <p className="font-bold text-sm">{fullName}</p>
                       <Badge variant={
                         app.status === "approved" || app.status === "ai_approved" ? "success" :
-                        app.status === "rejected" ? "destructive" :
+                        app.status === "rejected" || app.status === "documents_unreadable" ? "destructive" :
                         app.status === "need_clarification" || app.status === "resubmit_requested" ? "outline" :
                         "warning"
-                      } className={`text-xs ${app.status === "need_clarification" ? "border-orange-300 dark:border-orange-400/30 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15 soft-pulse" : app.status === "resubmit_requested" ? "border-amber-300 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 soft-pulse" : ["pending_review", "submitted", "pending"].includes(app.status) ? "soft-pulse" : ""}`}>
+                      } className={`text-xs ${app.status === "documents_unreadable" ? "bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-200 border-red-300 dark:border-red-400/40 soft-pulse" : app.status === "need_clarification" ? "border-orange-300 dark:border-orange-400/30 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-500/15 soft-pulse" : app.status === "resubmit_requested" ? "border-amber-300 dark:border-amber-400/30 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 soft-pulse" : ["pending_review", "submitted", "pending"].includes(app.status) ? "soft-pulse" : ""}`}>
                         {app.status === "ai_approved" ? "AI Approved" :
                          app.status === "pending_review" ? "Needs Review" :
                          app.status === "submitted" ? "Submitted" :
                          app.status === "need_clarification" ? "Clarification Needed" :
                          app.status === "resubmit_requested" ? "Resubmit Requested" :
+                         app.status === "documents_unreadable" ? "Documents Unreadable" :
                          app.status}
                       </Badge>
                       {/* Inline AI confidence meter */}

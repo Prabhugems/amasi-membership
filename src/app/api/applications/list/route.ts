@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     } else if (status === "rejected") {
       query = query.eq("status", "rejected")
     } else if (status === "clarification") {
-      query = query.in("status", ["need_clarification", "resubmit_requested"])
+      query = query.in("status", ["need_clarification", "resubmit_requested", "documents_unreadable"])
     }
 
     const { data, error, count } = await query
@@ -76,7 +76,9 @@ async function autoHealBuggyScores(supabase: SupabaseClient, rows: any[]): Promi
           app.payment_status === "paid",
           supabase,
         )
-        const aiConfidence = `${approval.totalScore}% — ${approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"}`
+        const aiConfidence = approval.decision === "documents_unreadable"
+          ? "documents_unreadable"
+          : `${approval.totalScore}% — ${approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"}`
         const newFlags = [
           ...approval.flags,
           ...approval.checks.map((c) => `${c.check}: ${c.score}% ${c.passed ? "✓" : "✗"} — ${c.detail}`),

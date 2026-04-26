@@ -60,20 +60,25 @@ export async function logAiDecision(
       }
     }
 
-    // Determine decision
+    // Determine decision. `documents_unreadable` is a hard short-circuit set by the
+    // scorer's pre-flight gate; it takes precedence over autoApprove/manual_review.
     let decision: string
     if (scoringError) {
       decision = "manual_review"
+    } else if (result?.decision === "documents_unreadable") {
+      decision = "documents_unreadable"
     } else if (result?.autoApprove) {
       decision = "auto_approved"
     } else {
       decision = "manual_review"
     }
 
-    // Use blockingReasons from the 4-check auto-approval gate
-    const blockingReason = result && !result.autoApprove && result.blockingReasons.length > 0
-      ? result.blockingReasons.join(", ")
-      : null
+    // For documents_unreadable, prefer the structured reason over generic blockingReasons
+    const blockingReason = result?.decision === "documents_unreadable"
+      ? `documents_unreadable: ${(result.unreadableDocs || []).join(", ")}`
+      : result && !result.autoApprove && result.blockingReasons.length > 0
+        ? result.blockingReasons.join(", ")
+        : null
 
     // Use granular NMC status from scoring result (set by nmc-cache.ts)
     const nmcApiStatus = result?.nmcApiStatus || null

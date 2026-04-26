@@ -7,7 +7,7 @@ import { recordStepEvent } from "@/lib/funnel-tracking"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
 import { logAiDecision, updateAiDecisionOutcome, type AiDecisionInput } from "@/lib/ai-decision-log"
-import { validateRequiredDocuments } from "@/lib/document-keys"
+import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -151,11 +151,12 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Email/mobile not verified" }, { status: 401 })
     }
 
-    // --- Auth gate 3: verify required documents are present ---
+    // --- Auth gate 3: verify required documents are present, uploaded, and OCR-extracted ---
     const membershipType = getMembershipType(formData.membershipType)
     if (membershipType) {
       const docValidation = validateRequiredDocuments(uploads || {}, membershipType.requiredDocs)
       if (!docValidation.valid) {
+        const missingLabels = docValidation.missing.map(lookupDocumentLabel)
         // Log to ai_decisions for tracking
         try {
           await logAiDecision(supabase, {
@@ -165,12 +166,13 @@ export async function POST(request: NextRequest) {
             formData,
             uploads: uploads || {},
             paymentPaid: true,
-          }, null, 0, { message: `Missing documents: ${docValidation.missing.join(", ")}` })
+          }, null, 0, { message: `${docValidation.reason}: ${docValidation.missing.join(", ")}` })
         } catch {}
         return Response.json({
           status: false,
+          reason: docValidation.reason,
           missingDocuments: docValidation.missing,
-          message: `Application submission requires the following documents: ${docValidation.missing.join(", ")}. Please upload them and try again.`,
+          message: `These documents need a clearer upload before we can submit your application: ${missingLabels.join(", ")}.`,
         }, { status: 400 })
       }
     }
@@ -179,10 +181,19 @@ export async function POST(request: NextRequest) {
     const scoringStart = performance.now()
     const approval = await scoreApplication(formData, uploads || {}, !!paymentId, supabase)
     const scoringDurationMs = Math.round(performance.now() - scoringStart)
-    const allAiVerified = approval.autoApprove
+    const documentsUnreadable = approval.decision === "documents_unreadable"
+    const allAiVerified = approval.autoApprove && !documentsUnreadable
     const hasPendingReview = !approval.autoApprove
     const aiFlags = approval.flags
-    const aiConfidence = approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"
+    const aiConfidence = documentsUnreadable
+      ? "documents_unreadable"
+      : approval.totalScore >= 80 ? "high" : approval.totalScore >= 50 ? "medium" : "low"
+    const applicationStatus = documentsUnreadable
+      ? "documents_unreadable"
+      : allAiVerified && paymentId ? "ai_approved" : hasPendingReview ? "pending_review" : "submitted"
+    const manualReviewReason = documentsUnreadable
+      ? approval.unreadableReason || "Required documents could not be read by OCR. Re-upload required."
+      : hasPendingReview ? `Score: ${approval.totalScore}%. ${aiFlags.join("; ")}` : null
 
     // Save application
     const { data: app, error: insertError } = await supabase
@@ -237,18 +248,18 @@ export async function POST(request: NextRequest) {
         email_verified: emailVerified,
         mobile_verified: mobileVerified,
         ai_verified: allAiVerified,
-        ai_confidence: `${approval.totalScore}% — ${aiConfidence}`,
+        ai_confidence: documentsUnreadable ? "documents_unreadable" : `${approval.totalScore}% — ${aiConfidence}`,
         ai_flags: [...aiFlags, ...approval.checks.map(c => `${c.check}: ${c.score}% ${c.passed ? "✓" : "✗"} — ${c.detail}`)],
         nmc_verification: approval.nmcVerification,
         needs_manual_review: hasPendingReview,
-        manual_review_reason: hasPendingReview ? `Score: ${approval.totalScore}%. ${aiFlags.join("; ")}` : null,
+        manual_review_reason: manualReviewReason,
         documents: Object.fromEntries(
           Object.entries(uploads || {}).map(([k, v]: [string, any]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
         ),
         ocr_data: Object.fromEntries(
           Object.entries(uploads || {}).filter(([, v]: [string, any]) => v.extracted).map(([k, v]: [string, any]) => [k, v.extracted])
         ),
-        status: allAiVerified && paymentId ? "ai_approved" : hasPendingReview ? "pending_review" : "submitted",
+        status: applicationStatus,
       })
       .select("id")
       .single()
@@ -275,13 +286,14 @@ export async function POST(request: NextRequest) {
         applicationId,
         eventType: "submit",
         step: 6,
-        status: allAiVerified ? "auto_approved" : "pending_review",
+        status: documentsUnreadable ? "documents_unreadable" : allAiVerified ? "auto_approved" : "pending_review",
         metadata: {
           reference_number: referenceNumber,
           membership_type: formData.membershipType,
           ai_confidence: approval.totalScore,
           ai_auto_approve: approval.autoApprove,
           blocking_reasons: approval.blockingReasons,
+          unreadable_docs: approval.unreadableDocs || null,
         },
       }, supabase)
     }

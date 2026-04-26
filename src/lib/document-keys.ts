@@ -103,30 +103,40 @@ export function requiresExtraction(key: string): boolean {
 }
 
 /**
- * Validate that uploads contain all required document types for a membership type.
- * Uses the requiredDocs list from MembershipType (defined in membership-types.ts).
- * Returns { valid: true } or { valid: false, missing: [...labels] }.
+ * Validate that uploads contain all required document types for a membership type
+ * AND that each upload has a real file (fileUrl) plus a successful OCR (status='extracted').
+ *
+ * Returns canonical doc keys (not labels) in `missing` so callers can decide how
+ * to render the message; `lookupDocumentLabel` is available for display.
  */
 export function validateRequiredDocuments(
   uploads: Record<string, any>,
   requiredDocTypes: string[],
-): { valid: true } | { valid: false; missing: string[] } {
-  // Normalize all upload keys
-  const uploadedKeys = new Set(
-    Object.keys(uploads || {}).map(normalizeDocumentKey)
-  )
+): { valid: true } | { valid: false; reason: "documents_incomplete"; missing: string[] } {
+  // Build a normalized-key view of uploads so legacy keys (e.g. pg_certificate) resolve
+  const uploadByKey: Record<string, any> = {}
+  for (const [k, v] of Object.entries(uploads || {})) {
+    uploadByKey[normalizeDocumentKey(k)] = v
+  }
 
   const missing: string[] = []
   for (const docType of requiredDocTypes) {
     const canonical = normalizeDocumentKey(docType)
     // Skip photo — it's required for UI but not for scoring/verification
     if (canonical === "photo") continue
-    if (!uploadedKeys.has(canonical)) {
-      const config = DOCUMENT_TYPES[canonical]
-      missing.push(config?.label || canonical)
-    }
+    const entry = uploadByKey[canonical]
+    if (!entry) { missing.push(canonical); continue }
+    const fileUrl = typeof entry.fileUrl === "string" ? entry.fileUrl.trim() : ""
+    if (!fileUrl) { missing.push(canonical); continue }
+    if (entry.status !== "extracted") { missing.push(canonical); continue }
   }
 
-  if (missing.length > 0) return { valid: false, missing }
+  if (missing.length > 0) return { valid: false, reason: "documents_incomplete", missing }
   return { valid: true }
+}
+
+/** Resolve a doc key to its human label for user-facing messages. */
+export function lookupDocumentLabel(key: string): string {
+  const canonical = normalizeDocumentKey(key)
+  return DOCUMENT_TYPES[canonical]?.label || canonical
 }

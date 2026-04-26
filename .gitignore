@@ -42,7 +42,12 @@ next-env.d.ts
 .env*.local
 
 # local dev artifacts (screenshots, agent memory, playwright snapshots)
-.claude/
+# Ignore everything inside .claude/ but keep CONTEXT.md tracked — it's the
+# version-controlled session-zero brief for Claude Code, used by every dev.
+# Note: must use `.claude/*` (not `.claude/`) so git still descends into the
+# directory and the negation below can take effect.
+.claude/*
+!.claude/CONTEXT.md
 .playwright-mcp/
 /*.png
 

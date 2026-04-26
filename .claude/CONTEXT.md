@@ -1,0 +1,62 @@
+# Project context for Claude Code
+
+This file is auto-imported via `AGENTS.md`. Keep it short and curated.
+
+If you're spending more than 30 seconds reading this, it's too long — trim it.
+
+---
+
+## Fragile areas (read before editing)
+
+These areas have produced 3+ recurring bugs. Edit with extra care; prefer structural fixes over tactical patches.
+
+- **`src/app/apply/page.tsx`** (2,985 LOC). 24 fix commits in the last 4 months. Mixes phase orchestration, OCR, payment, OTP, draft sync. The `setPhase` transitions silently bounce on invalid state — see AGENTS.md "crash loudly, not redirect silently". A future refactor extracts the phase machine into `useReducer`. Until then: any new branch should `console.error + Sentry.captureException` on impossible states, never silently redirect.
+- **`src/middleware.ts`** (`PUBLIC_API_ROUTES` allowlist). 13 fix commits — every new public endpoint ships 401-blocked until someone adds a string here. Long-term fix: opt-in `withAdminAuth(handler)` wrappers and drop the allowlist. Until then: when adding a new route under `/api/`, immediately decide and add to the allowlist if public.
+- **Application → member field copy.** Three handlers (`api/applications/{submit,approve}/route.ts`, `lib/auto-approval.ts`) each construct the member row independently. Adding a column to one path does NOT propagate. Bug pattern: doc URLs / profile photo / new fields silently dropped on approval. Long-term fix: `lib/build-member-row.ts`. Until then: when adding a member column, edit all three callers in the same commit.
+- **Razorpay payment flow.** No `payment_intents` ledger today; idempotency is checked ad-hoc. The `auto-approve` branch in `webhooks/razorpay/route.ts` is **not idempotent** against partial failure — Razorpay retries on non-2xx. Don't add side-effects to that branch without an idempotency guard.
+- **Schema drift via swallowed inserts.** `try { supabase.insert(...) } catch (e) { console.error(e) }` is widespread. Failed writes do NOT surface. The `membership_audit_log` rename in 2026-04 silently broke 11 callers for an unknown duration. Prefer `.throwOnError()` or surface to Sentry; never swallow audit-write failures.
+- **Next.js 16 client-router hooks.** `useSearchParams` / `usePathname` etc. without `<Suspense>` cause static prerender to fail at build time only. Has already cost ~3h of silent broken deploys (`7036f2f`). The CI `build` job (`.github/workflows/test.yml`) catches this — do not bypass it.
+
+## Architectural decisions
+
+- **Auth model:** opt-out allowlist in `middleware.ts`. Admin cookie required for `/api/*` unless route is in `PUBLIC_API_ROUTES`. Member sessions checked in handlers via `getMemberSession()`. (Slated for inversion — see Fragile areas.)
+- **Storage:** Bucket `uploads` is owned by this app. `form-uploads`, `event-assets`, `downloads` belong to the AMASICON event apps that share the Supabase project (`jmdwxymbgxwdsmcwbahp`) — do not modify. As of `f4cd574`, `uploads` has additive RLS policies (service-role-only ALL + authenticated INSERT). The bucket is still `public=true`; flipping to private is Phase B and requires switching `ocr/`, `applications/resubmit/`, `members/upload/` routes to store paths instead of public URLs.
+- **Supabase client:** ALL server reads/writes go through `createAdminClient()` from `src/lib/supabase.ts` (service role, bypasses RLS). The only browser-side Supabase use is `src/hooks/use-realtime-count.ts` (anon key). Do not introduce a service-role client into any `'use client'` file.
+- **Razorpay split:** Processing fee (₹100, ILM exempt) is split to Events360 via Razorpay Route. The transfer is included **at order creation** (`payments/create-order/route.ts:120`), with a fallback to per-payment transfer in `payments/verify/route.ts:71`. Both are server-built — never trust client-supplied transfer config.
+- **Document handling:** Canonical doc keys live in `src/lib/document-keys.ts`. Always normalise via `normalizeDocumentKey()` — alias drift (e.g. `pg_certificate` vs `pg_degree_certificate`) has caused real bugs. `validateRequiredDocuments()` enforces every required doc has `status === "extracted"` AND a non-empty `fileUrl` — do not bypass either check.
+- **Member fees:** `MEMBERSHIP_FEES` in `payments/create-order/route.ts` is the server-side source of truth. The client supplies the amount; the server validates against this table and rejects mismatches. If you add a membership tier, add it here first.
+- **OCR:** Document extraction goes through `src/lib/document-extraction.ts` (Claude Sonnet Vision, with OCR.space fallback). This module was a deliberate de-dup; do not re-implement extraction inline in routes.
+- **Audit logs:** Use `src/lib/audit-log.ts`. Writing directly to `membership_audit_log` from a route is a code smell — the schema has drifted twice in 2026.
+
+## Recently fixed bugs (rolling — last 30 days, newest first)
+
+Don't re-introduce these. If you're touching a listed area, check the commit before editing.
+
+| Date | Commit | What broke | What fixed it |
+|---|---|---|---|
+| 2026-04-26 | `c6aa4c9` | `apply/page.tsx` "Request Admin Review" button let users mark broken/invalid docs as `status='uploaded'` with `fileUrl=null` — produced 6 paid+broken applications | Removed the escape hatch; replaced with retry-with-clearer-photo + contact support |
+| 2026-04-26 | `f4cd574` | `uploads` storage bucket public-read + signed-URL fallback leaked public URLs even on signed-URL failure | Added storage RLS (additive); removed dead public-URL fallbacks in `signed-url/route.ts` and `tickets/upload/route.ts` |
+| 2026-04-25 | `dcf98a8` | `/api/credential` 401'd for public callers because middleware didn't whitelist | Added to `PUBLIC_API_ROUTES`. **Pattern: opt-out allowlist — see Fragile areas.** |
+| 2026-04-25 | `24547fc` | Legacy members (in `members` but no `membership_applications`) couldn't log in via OTP | Added legacy-member fallback in OTP verify |
+| 2026-04-25 | `951febb` | `/admin/fmas` capped at 1000 rows because Supabase default LIMIT not overridden | Pagination added |
+| 2026-04-25 | `3227219` / `294284e` | `members/search` referenced columns that don't exist; "Know Your Membership" returned empty for every user | Use real column names in `PUBLIC_SELECT`. **Pattern: schema drift — see Fragile areas.** |
+| 2026-04-24 | `7b76013` | `membership_audit_log` rename silently broke 11 callers; campaign stats stuck at 0 | Updated callers; this is the canonical "schema drift via swallowed insert" incident |
+| 2026-04-24 | `8a6e8a7` | Resubmit path passed snake_case DB row to camelCase scorer; every score collapsed to ~5% | Normalize before scoring; auto-rescore for affected rows |
+| 2026-04-23 | `8855294` | 95% of draft applicants trapped at step-2 OTP loop; `setPhase(selectedType ? "upload" : "landing")` silently bounced null-type users | Validate `selectedType !== null` before transition. **Pattern: silent fallback — see Fragile areas.** |
+| 2026-04-23 | `467c050` | Zombie null-type drafts couldn't be backfilled on resume — stale closure on `emailVerified` in `saveDraftToServer` | Use refs for async closure state |
+| 2026-04-23 | `7036f2f` | `useSearchParams()` without Suspense in `IncompletePage` silently failed 4 deploys for ~3h | Wrapped in `<Suspense>`. **Pattern: client-router hooks — CI build job now catches.** |
+| 2026-04-23 | `cc8012c` | Document URLs (MCI/PG/ASI) never copied from application to member on approval; members showed all docs as "Missing" | Copy URLs in approve handler. **Pattern: app→member copy — see Fragile areas.** |
+| 2026-04-23 | `5169bc3` | Profile photos never uploaded to storage post-face-detection; only stored as `File` in React state | Added storage upload step |
+| 2026-04-23 | `6652c36` | Submission allowed with missing documents | 3-layer validation gate added |
+| 2026-04-22 | `4e3b98d` | OCR extraction logic duplicated and drifted between `/api/ocr` and `/api/applications/resubmit`; photo doc-type triggered scoring | Centralized in `lib/document-extraction.ts`; photo excluded from scoring |
+| 2026-04-22 | `93b87a4` | `/api/applications/approve` 500'd — missing `randomUUID` import | Imported from `node:crypto`; added Sentry |
+
+(Older fixes summarised in `AUDIT-2026-04.md` §2.)
+
+## Audit reference
+
+The 2026-04-26 health audit is at `AUDIT-2026-04.md` (424 lines). Score: 5.5/10. Top 3 structural fixes outstanding: opt-in auth wrappers, `apply/page.tsx` state machine extraction, `payment_intents` ledger.
+
+## Test coverage
+
+The `__tests__/critical-paths.test.ts` file holds the canonical regression tests for the 5 highest-value flows. If a fix here doesn't add a test, add a TODO comment explaining why and link the relevant CHANGELOG entry.

@@ -59,11 +59,7 @@ export async function POST(request: NextRequest) {
       .createSignedUrl(path, 3600) // 1 hour
 
     if (error || !data?.signedUrl) {
-      // Fallback: try public URL if bucket is still public
-      const { data: publicData } = supabase.storage.from("uploads").getPublicUrl(path)
-      if (publicData?.publicUrl) {
-        return Response.json({ url: publicData.publicUrl })
-      }
+      console.error("signed-url generation failed", { path, error: error?.message })
       return Response.json({ error: "Could not generate URL" }, { status: 500 })
     }
 

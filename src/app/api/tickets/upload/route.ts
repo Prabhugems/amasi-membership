@@ -63,23 +63,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate a long-lived signed URL (30 days)
-    const { data: signedData } = await supabase.storage
+    const { data: signedData, error: signErr } = await supabase.storage
       .from("uploads")
       .createSignedUrl(ticketPath, 86400 * 30)
 
-    const url = signedData?.signedUrl
-    if (!url) {
-      // Fallback to public URL
-      const { data: publicData } = supabase.storage.from("uploads").getPublicUrl(ticketPath)
-      return Response.json({
-        url: publicData?.publicUrl || "",
-        filename: file.name,
-        size: file.size,
-      })
+    if (!signedData?.signedUrl) {
+      console.error("ticket-upload signed URL generation failed", { ticketPath, error: signErr?.message })
+      return Response.json({ error: "Upload succeeded but URL generation failed" }, { status: 500 })
     }
 
     return Response.json({
-      url,
+      url: signedData.signedUrl,
       filename: file.name,
       size: file.size,
     })

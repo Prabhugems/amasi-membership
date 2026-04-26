@@ -191,6 +191,10 @@ export async function GET(request: Request) {
     // -----------------------------------------------------------------------
     // Step 2 — Single reminder at 18h-from-updated_at
     //   Replaces the prior 1h-after-stuck logic.
+    //   Cohort restriction (option β, 2026-04-26 review): only email drafts
+    //   that actually started filling the form (have step_data.formData).
+    //   OTP-only drafts (verified email, never selected membership type)
+    //   get silent cleanup in Step 3a — no reminder, no expiry email.
     // -----------------------------------------------------------------------
     const eighteenHoursAgo = new Date(Date.now() - 18 * 3600000).toISOString()
     const { data: reminderDrafts } = await supabase
@@ -200,6 +204,7 @@ export async function GET(request: Request) {
       .lt("updated_at", eighteenHoursAgo)
       .is("reminder_sent_at", null)
       .is("deleted_at", null)
+      .not("step_data->formData", "is", null)
 
     for (const draft of reminderDrafts || []) {
       if (dryRun) {
@@ -258,6 +263,69 @@ export async function GET(request: Request) {
     }
 
     // -----------------------------------------------------------------------
+    // Cutoffs used by Step 3a, Step 3, Step 4 below.
+    // -----------------------------------------------------------------------
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
+    const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
+
+    // -----------------------------------------------------------------------
+    // Step 3a — Silent soft-delete for OTP-only drafts (no formData)
+    //   These applicants verified an email but never selected a membership
+    //   type or filled any form field. Sending them a "complete your
+    //   application" email reads as cold-call spam. Cleanup happens silently
+    //   with full audit-log capture (step_data snapshot retained).
+    //
+    //   PAYMENT GUARD: must be unpaid AND no payment order. A paid draft
+    //   without formData (rare edge case) is NEVER silently deleted — it
+    //   stays in stuck for admin review.
+    // -----------------------------------------------------------------------
+    const { data: otpOnlyDrafts } = await supabase
+      .from("draft_applications")
+      .select("id, email, phone, current_step, status, updated_at, created_at, step_data, payment_order_id, payment_id, has_verified_payment")
+      .in("status", ["in_progress", "stuck"])
+      .lt("updated_at", twentyFourHoursAgo)
+      .eq("has_verified_payment", false)
+      .is("payment_order_id", null)
+      .is("deleted_at", null)
+      .is("step_data->formData", null)
+
+    for (const draft of otpOnlyDrafts || []) {
+      if (dryRun) {
+        planAction(draft, "silent_soft_delete_no_formdata", `OTP-only abandoned, ${hoursIdle(draft.updated_at)}h idle, no formData persisted`)
+        continue
+      }
+      try {
+        const { data: marked } = await supabase
+          .from("draft_applications")
+          .update({ status: "expired", deleted_at: new Date().toISOString() })
+          .eq("id", draft.id)
+          .is("payment_order_id", null)
+          .eq("has_verified_payment", false)
+          .is("step_data->formData", null)
+          .select("id")
+          .maybeSingle()
+        if (!marked) { console.log(`[cleanup-drafts] skipped silent ${draft.id}: state changed during cleanup`); continue }
+        await logMembershipAuditEvent({
+          action: "draft_silent_expired_no_formdata",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: {
+            email: draft.email,
+            phone: (draft as { phone?: string | null }).phone ?? null,
+            step: draft.current_step,
+            created_at: draft.created_at,
+            reason: "Soft-deleted silently — applicant verified email but never selected a membership type or filled the form (no step_data.formData)",
+            step_data_snapshot: (draft as { step_data?: unknown }).step_data ?? null,
+          },
+          performedBy: "system",
+        }, supabase)
+        summary.expired++
+      } catch (err: unknown) {
+        console.error(`[cleanup-drafts] silent expire ${draft.id}:`, errMessage(err))
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Step 3 — Soft-delete unpaid drafts (24h idle, no payment)
     // Issue 2 guarantee: only expire drafts that have already been reminded
     // and given a 6h grace window. This prevents reminder + expiry firing in
@@ -265,8 +333,6 @@ export async function GET(request: Request) {
     // sight. They get the reminder this run; expire on the next-day's run.
     // Files in storage are KEPT for the 90-day audit window.
     // -----------------------------------------------------------------------
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
-    const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
     const { data: expiredDrafts } = await supabase
       .from("draft_applications")
       .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")

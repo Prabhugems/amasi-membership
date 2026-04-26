@@ -169,7 +169,39 @@ function calcAge(dob: string): number | null {
 // Year options for dropdowns
 const YEAR_OPTIONS = Array.from({ length: 50 }, (_, i) => String(new Date().getFullYear() - i))
 
+// Inlined at build time. To toggle, set NEXT_PUBLIC_MAINTENANCE_MODE on Vercel and redeploy.
+const MAINTENANCE_MODE = process.env.NEXT_PUBLIC_MAINTENANCE_MODE === "true"
+
+function MaintenanceNotice() {
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center px-4">
+      <div className="max-w-md w-full text-center space-y-4 rounded-2xl border bg-card p-8 shadow-sm">
+        <div className="mx-auto h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center">
+          <Clock className="h-6 w-6 text-amber-700" />
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight">Applications temporarily paused</h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Membership applications are temporarily paused for system maintenance. We&apos;ll be back online within a few hours.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          For urgent queries, contact{" "}
+          <a href="mailto:membership@amasi.org" className="font-medium text-foreground underline underline-offset-2">
+            membership@amasi.org
+          </a>
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function ApplyPage() {
+  if (MAINTENANCE_MODE) {
+    return <MaintenanceNotice />
+  }
+  return <ApplyForm />
+}
+
+function ApplyForm() {
   // Restore form data from localStorage on mount
   const [phase, setPhase] = useState<Phase>(() => {
     if (typeof window !== "undefined") {

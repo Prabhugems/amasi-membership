@@ -51,9 +51,16 @@ next-env.d.ts
 .playwright-mcp/
 /*.png
 
-# Session working notes — high-volume, accumulate PII/secrets over time.
-# Promote to docs/sessions/ or distill into CHANGELOG/CONTEXT.md if worth keeping.
-SESSION-*.md
+# Working notes & operational drafts — accumulate applicant PII (names, app
+# IDs, payment IDs, narrative of what broke for whom). Have no business in
+# git history even on a private repo. Promote to docs/sessions/ or distill
+# into CHANGELOG.md / .claude/CONTEXT.md if worth keeping.
+#
+# Broad pattern catches dated working notes (SESSION-, SECRETARY-BRIEFING-,
+# EMAIL-TEMPLATES-, SQL-OPERATIONS-, etc.). Allowlist below for real
+# artifacts that happen to match (audits, postmortems, etc.).
+*-2026-*.md
+!AUDIT-2026-*.md
 
 # test results (generated screenshots, archives, snapshots)
 /test-results/

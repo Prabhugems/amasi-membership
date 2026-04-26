@@ -3,10 +3,6 @@ import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { Resend } from "resend"
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",
   2: "Email Verification",
@@ -16,10 +12,6 @@ const STEP_LABELS: Record<number, string> = {
   6: "Submission",
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")
@@ -27,7 +19,6 @@ function getResend() {
 }
 
 function getBaseUrl() {
-  // Always use the branded domain for customer-facing URLs — see incomplete/route.ts.
   return process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 }
 
@@ -35,23 +26,6 @@ function stepLabel(step: number): string {
   return STEP_LABELS[step] || `Step ${step}`
 }
 
-/**
- * Extract Supabase Storage paths from step_data JSONB.
- * Matches URLs containing `/storage/v1/object/` and extracts the
- * bucket-relative path for the `uploads` bucket.
- */
-function extractStoragePaths(stepData: Record<string, unknown>): string[] {
-  const paths: string[] = []
-  const json = JSON.stringify(stepData)
-  const regex = /\/storage\/v1\/object\/(?:sign|public)\/uploads\/([^?"]+)/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(json)) !== null) {
-    paths.push(decodeURIComponent(match[1]))
-  }
-  return Array.from(new Set(paths))
-}
-
-/** Styled HTML email wrapper matching the project teal-gradient pattern. */
 function emailWrapper(title: string, bodyHtml: string): string {
   return `
     <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
@@ -66,13 +40,44 @@ function emailWrapper(title: string, bodyHtml: string): string {
   `
 }
 
+// Structural type for the draft_applications columns this route reads.
+// Not a full row — only what the SELECTs in this file project.
+interface DraftRow {
+  id: string
+  email: string
+  current_step: number
+  status: string
+  updated_at: string
+  payment_order_id: string | null
+  payment_id: string | null
+  has_verified_payment: boolean | null
+  created_at?: string
+}
+
+// Razorpay SDK returns loosely-typed objects. We only read .status here.
+interface RazorpayStatusOnly {
+  status: string
+}
+
+// Narrow an unknown thrown value to a printable string for logging.
+function errMessage(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (typeof e === "string") return e
+  try { return JSON.stringify(e) } catch { return String(e) }
+}
+
 // ---------------------------------------------------------------------------
-// GET /api/cron/cleanup-drafts
-// Runs hourly. Cleans up stale / expired / stuck draft applications.
+// GET /api/cron/cleanup-drafts[?dryRun=true]
+//
+// Hourly draft maintenance. Soft-delete model (sets deleted_at, keeps row);
+// storage files retained for the 90-day audit window (separate hard-delete
+// sweep, not in this route).
+//
+// dryRun=true: returns the planned actions per draft without sending any
+// email, writing any state, or logging any audit/step events.
 // ---------------------------------------------------------------------------
 
 export async function GET(request: Request) {
-  // Auth: cron secret or admin session
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET?.trim()
 
@@ -84,217 +89,208 @@ export async function GET(request: Request) {
     }
   }
 
+  const dryRun = new URL(request.url).searchParams.get("dryRun") === "true"
+
+  type Action = {
+    id: string; email: string; current_step: number; step_label: string;
+    hours_idle: number; status: string;
+    payment: { has_verified: boolean; order_id: string | null; payment_id: string | null };
+    would_do: string; reason?: string;
+  }
   const summary = {
+    dry_run: dryRun,
     marked_stale: 0,
     reminders_sent: 0,
     expired: 0,
     payment_holds: 0,
     refunds_completed: 0,
+    would_act_on: [] as Action[],
+  }
+
+  const hoursIdle = (updated_at: string) =>
+    Math.round(((Date.now() - new Date(updated_at).getTime()) / 3600000) * 10) / 10
+
+  const planAction = (draft: DraftRow, would_do: string, reason?: string) => {
+    summary.would_act_on.push({
+      id: draft.id,
+      email: draft.email,
+      current_step: draft.current_step,
+      step_label: stepLabel(draft.current_step),
+      hours_idle: hoursIdle(draft.updated_at),
+      status: draft.status,
+      payment: {
+        has_verified: !!draft.has_verified_payment,
+        order_id: draft.payment_order_id || null,
+        payment_id: draft.payment_id || null,
+      },
+      would_do,
+      reason,
+    })
   }
 
   try {
     const supabase = createAdminClient()
-    const resend = getResend()
+    const resend = dryRun ? null : getResend()
     const baseUrl = getBaseUrl()
-    const fromEmail =
-      process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>"
+    const fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>"
 
     // -----------------------------------------------------------------------
-    // Step 1: Mark stale drafts
-    // Find drafts where status = 'in_progress' AND updated_at < now() - 2h
+    // Step 1 — Mark stale (in_progress + 2h idle → stuck)
+    // Internal state only, does NOT bump updated_at (preserves user-activity
+    // clock for the 18h reminder logic).
     // -----------------------------------------------------------------------
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600000).toISOString()
     const { data: staleDrafts } = await supabase
       .from("draft_applications")
-      .select("id, current_step")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
       .eq("status", "in_progress")
       .lt("updated_at", twoHoursAgo)
+      .is("deleted_at", null)
 
-    if (staleDrafts && staleDrafts.length > 0) {
-      for (const draft of staleDrafts) {
-        const label = stepLabel(draft.current_step)
-        const { error } = await supabase
-          .from("draft_applications")
-          .update({
-            status: "stuck",
-            stale_since: new Date().toISOString(),
-            failure_reason: `Application inactive \u2014 user did not proceed past step ${escapeHtml(label)}`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", draft.id)
-
-        if (!error) {
-          summary.marked_stale++
-          await logMembershipAuditEvent({
-            action: "draft_marked_stale",
-            entityType: "draft_application",
-            entityId: draft.id,
-            newData: { step: draft.current_step, reason: "Inactive for 2+ hours" },
-            performedBy: "system",
-          }, supabase)
-        } else console.error(`[cleanup-drafts] mark stale ${draft.id}:`, error.message)
-      }
+    for (const draft of staleDrafts || []) {
+      if (dryRun) { planAction(draft, "mark_stale", "in_progress >2h idle"); continue }
+      const { error } = await supabase
+        .from("draft_applications")
+        .update({
+          status: "stuck",
+          stale_since: new Date().toISOString(),
+          failure_reason: `Application inactive — user did not proceed past step ${escapeHtml(stepLabel(draft.current_step))}`,
+        })
+        .eq("id", draft.id)
+      if (!error) {
+        summary.marked_stale++
+        await logMembershipAuditEvent({
+          action: "draft_marked_stale",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { step: draft.current_step, reason: "Inactive for 2+ hours" },
+          performedBy: "system",
+        }, supabase)
+      } else console.error(`[cleanup-drafts] mark stale ${draft.id}:`, error.message)
     }
 
     // -----------------------------------------------------------------------
-    // Step 2: Send reminder emails
-    // Stuck drafts where stale_since >= 1h old AND reminder_sent_at IS NULL
+    // Step 2 — Single reminder at 18h-from-updated_at
+    //   Replaces the prior 1h-after-stuck logic.
     // -----------------------------------------------------------------------
-    const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
-
+    const eighteenHoursAgo = new Date(Date.now() - 18 * 3600000).toISOString()
     const { data: reminderDrafts } = await supabase
       .from("draft_applications")
-      .select("id, email, current_step")
-      .eq("status", "stuck")
-      .lt("stale_since", oneHourAgo)
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
+      .in("status", ["in_progress", "stuck"])
+      .lt("updated_at", eighteenHoursAgo)
       .is("reminder_sent_at", null)
+      .is("deleted_at", null)
 
-    if (reminderDrafts && reminderDrafts.length > 0) {
-      for (const draft of reminderDrafts) {
-        const label = stepLabel(draft.current_step)
-        const resumeUrl = `${baseUrl}/apply`
-
-        const html = emailWrapper(
-          "Complete Your Application",
-          `
-          <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-            Your membership application is incomplete. You were on: <strong>${escapeHtml(label)}</strong>.
-          </p>
-          <div style="margin:20px 0;text-align:center;">
-            <a href="${escapeHtml(resumeUrl)}" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
-          </div>
-          <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-            If you no longer wish to apply, your application will be automatically removed after 24 hours.
-          </p>
-          `,
-        )
-
-        try {
-          await resend.emails.send({
-            from: fromEmail,
-            to: draft.email,
-            subject: "Complete your AMASI membership application",
-            html,
-          })
-
-          await supabase
-            .from("draft_applications")
-            .update({ reminder_sent_at: new Date().toISOString() })
-            .eq("id", draft.id)
-
-          summary.reminders_sent++
-        } catch (err: any) {
-          console.error(`[cleanup-drafts] reminder email ${draft.email}:`, err.message)
-        }
+    for (const draft of reminderDrafts || []) {
+      if (dryRun) {
+        planAction(draft, "send_reminder_18h", `${hoursIdle(draft.updated_at)}h idle, no prior reminder`)
+        continue
+      }
+      const html = emailWrapper(
+        "Complete Your Application",
+        `
+        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+          Your membership application is incomplete. You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+        </p>
+        <div style="margin:20px 0;text-align:center;">
+          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
+          If you no longer wish to apply, your application will be removed after 24 hours of further inactivity.
+        </p>
+        `,
+      )
+      try {
+        await resend!.emails.send({
+          from: fromEmail,
+          to: draft.email,
+          subject: "Complete your AMASI membership application",
+          html,
+        })
+        await supabase
+          .from("draft_applications")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", draft.id)
+        summary.reminders_sent++
+      } catch (err: unknown) {
+        console.error(`[cleanup-drafts] reminder email ${draft.email}:`, errMessage(err))
       }
     }
 
     // -----------------------------------------------------------------------
-    // Step 3: Expire unpaid drafts
-    // Stuck > 24h, no payment
+    // Step 3 — Soft-delete unpaid drafts (24h idle, no payment)
+    // Files in storage are KEPT for the 90-day audit window.
     // -----------------------------------------------------------------------
-    const twentyFourHoursAgo = new Date(
-      Date.now() - 24 * 60 * 60 * 1000,
-    ).toISOString()
-
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
     const { data: expiredDrafts } = await supabase
       .from("draft_applications")
-      .select("*")
-      .eq("status", "stuck")
-      .lt("stale_since", twentyFourHoursAgo)
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
+      .in("status", ["in_progress", "stuck"])
+      .lt("updated_at", twentyFourHoursAgo)
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
+      .is("deleted_at", null)
 
-    if (expiredDrafts && expiredDrafts.length > 0) {
-      for (const draft of expiredDrafts) {
-        try {
-          // Atomically mark for deletion — only succeeds if payment hasn't arrived
-          const { data: markedForDelete } = await supabase
-            .from("draft_applications")
-            .update({ status: "expired" })
-            .eq("id", draft.id)
-            .is("payment_order_id", null)
-            .eq("has_verified_payment", false)
-            .select("id")
-            .maybeSingle()
-
-          if (!markedForDelete) {
-            console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`)
-            continue
-          }
-
-          // Send expiry email (after atomic guard succeeds)
-          const html = emailWrapper(
-            "Application Expired",
-            `
-            <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-              Your AMASI membership application has been removed due to inactivity.
-              You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-            </p>
-            <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-              If you still wish to join, you can start a new application at any time.
-            </p>
-            <div style="margin:20px 0;text-align:center;">
-              <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
-            </div>
-            `,
-          )
-
-          await resend.emails.send({
-            from: fromEmail,
-            to: draft.email,
-            subject: "Your AMASI membership application has expired",
-            html,
-          })
-
-          // Delete document files from storage (safe — payment guard passed)
-          const paths = extractStoragePaths(draft.step_data || {})
-          if (paths.length > 0) {
-            const { error: storageError } = await supabase.storage
-              .from("uploads")
-              .remove(paths)
-            if (storageError) {
-              console.error(
-                `[cleanup-drafts] storage cleanup ${draft.id}:`,
-                storageError.message,
-              )
-            }
-          }
-
-          // Now safe to delete
-          await supabase.from("draft_applications").delete().eq("id", draft.id)
-
-          // Log to audit
-          await logMembershipAuditEvent({
-            action: "draft_expired",
-            entityType: "draft_application",
-            entityId: draft.id,
-            newData: {
-              email: draft.email,
-              step: draft.current_step,
-              reason: "Expired after 24h inactivity",
-            },
-            performedBy: "system",
-          }, supabase)
-
-          summary.expired++
-        } catch (err: any) {
-          console.error(`[cleanup-drafts] expire ${draft.id}:`, err.message)
-        }
+    for (const draft of expiredDrafts || []) {
+      if (dryRun) { planAction(draft, "soft_delete_unpaid", `unpaid, ${hoursIdle(draft.updated_at)}h idle`); continue }
+      try {
+        const { data: marked } = await supabase
+          .from("draft_applications")
+          .update({ status: "expired", deleted_at: new Date().toISOString() })
+          .eq("id", draft.id)
+          .is("payment_order_id", null)
+          .eq("has_verified_payment", false)
+          .select("id")
+          .maybeSingle()
+        if (!marked) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`); continue }
+        const html = emailWrapper(
+          "Application Expired",
+          `
+          <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+            Your AMASI membership application has been removed due to inactivity.
+            You were on: <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+          </p>
+          <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+            If you still wish to join, you can start a new application at any time.
+          </p>
+          <div style="margin:20px 0;text-align:center;">
+            <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
+          </div>
+          `,
+        )
+        await resend!.emails.send({
+          from: fromEmail,
+          to: draft.email,
+          subject: "Your AMASI membership application has expired",
+          html,
+        })
+        await logMembershipAuditEvent({
+          action: "draft_expired",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, reason: "Soft-deleted after 24h inactivity (files retained)" },
+          performedBy: "system",
+        }, supabase)
+        summary.expired++
+      } catch (err: unknown) {
+        console.error(`[cleanup-drafts] expire ${draft.id}:`, errMessage(err))
       }
     }
 
     // -----------------------------------------------------------------------
-    // Step 4: Check paid-but-stuck drafts
-    // Stuck > 24h with payment info
+    // Step 4 — Paid-but-stuck drafts (24h idle, payment present)
+    //   - Razorpay paid/captured → status=payment_on_hold + admin alert (manual refund)
+    //   - Razorpay attempted → skip (may complete)
+    //   - Else → soft-delete (treat as unpaid)
     // -----------------------------------------------------------------------
     const { data: paidStuckDrafts } = await supabase
       .from("draft_applications")
-      .select("*")
-      .eq("status", "stuck")
-      .lt("stale_since", twentyFourHoursAgo)
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
+      .in("status", ["in_progress", "stuck"])
+      .lt("updated_at", twentyFourHoursAgo)
       .or("payment_order_id.not.is.null,has_verified_payment.eq.true")
+      .is("deleted_at", null)
 
     if (paidStuckDrafts && paidStuckDrafts.length > 0) {
       const Razorpay = (await import("razorpay")).default
@@ -306,33 +302,24 @@ export async function GET(request: Request) {
       for (const draft of paidStuckDrafts) {
         try {
           if (draft.payment_order_id) {
-            const payment = await razorpay.orders.fetch(draft.payment_order_id)
-            const status = (payment as any).status
+            const order = await razorpay.orders.fetch(draft.payment_order_id)
+            const status = (order as RazorpayStatusOnly).status
 
             if (status === "paid" || status === "captured") {
-              // Mark as payment_on_hold
+              if (dryRun) { planAction(draft, "flag_payment_on_hold", `Razorpay order ${status} (admin manual refund)`); continue }
               await supabase
                 .from("draft_applications")
-                .update({
-                  status: "payment_on_hold",
-                  has_verified_payment: true,
-                  updated_at: new Date().toISOString(),
-                })
+                .update({ status: "payment_on_hold", has_verified_payment: true, updated_at: new Date().toISOString() })
                 .eq("id", draft.id)
-
-              // Send admin alert to all active admins
               const { data: admins } = await supabase
                 .from("admin_users")
                 .select("email")
                 .eq("is_active", true)
-
               if (admins && admins.length > 0) {
                 const alertHtml = emailWrapper(
-                  "Payment On Hold \u2014 Action Required",
+                  "Payment On Hold — Action Required",
                   `
-                  <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-                    A paid draft application is stuck and requires manual review.
-                  </p>
+                  <p style="font-size:14px;color:#374151;margin:0 0 12px;">A paid draft application is stuck and requires manual review.</p>
                   <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;">
                     <tr><td style="padding:8px 0;color:#6b7280;width:140px;">Email</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(draft.email)}</td></tr>
                     <tr><td style="padding:8px 0;color:#6b7280;">Step</td><td style="padding:8px 0;">${escapeHtml(stepLabel(draft.current_step))}</td></tr>
@@ -343,19 +330,10 @@ export async function GET(request: Request) {
                   </div>
                   `,
                 )
-
                 await Promise.allSettled(
-                  admins.map((admin) =>
-                    resend.emails.send({
-                      from: fromEmail,
-                      to: admin.email,
-                      subject: `Payment On Hold: ${draft.email}`,
-                      html: alertHtml,
-                    }),
-                  ),
+                  admins.map((admin) => resend!.emails.send({ from: fromEmail, to: admin.email, subject: `Payment On Hold: ${draft.email}`, html: alertHtml })),
                 )
               }
-
               await logMembershipAuditEvent({
                 action: "draft_payment_on_hold",
                 entityType: "draft_application",
@@ -363,19 +341,14 @@ export async function GET(request: Request) {
                 newData: { email: draft.email, payment_order_id: draft.payment_order_id },
                 performedBy: "system",
               }, supabase)
-
               summary.payment_holds++
+            } else if (status === "attempted") {
+              if (dryRun) planAction(draft, "skip_payment_attempted", "Razorpay order in attempted state, may complete")
+              continue
             } else {
-              // Payment in "attempted" state may complete later — skip
-              if (status === "attempted") {
-                console.log(`[cleanup-drafts] skipped ${draft.id}: payment in "attempted" state, may complete later`)
-                continue
-              }
-
-              // Payment not captured — treat as unpaid, expire and delete
-              // Send expiry notification email
+              if (dryRun) { planAction(draft, "soft_delete_payment_failed", `Razorpay order status=${status}, treating as unpaid`); continue }
               try {
-                await resend.emails.send({
+                await resend!.emails.send({
                   from: fromEmail,
                   to: draft.email,
                   subject: "Your AMASI membership application has expired",
@@ -387,9 +360,7 @@ export async function GET(request: Request) {
                       Your AMASI membership application started on ${new Date(draft.created_at).toLocaleDateString("en-IN")}
                       has expired due to inactivity. The payment was not completed.
                     </p>
-                    <p style="font-size:14px;color:#555;line-height:1.6;">
-                      You are welcome to apply again at any time.
-                    </p>
+                    <p style="font-size:14px;color:#555;line-height:1.6;">You are welcome to apply again at any time.</p>
                     <div style="text-align:center;margin:24px 0;">
                       <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Apply Again</a>
                     </div>
@@ -399,55 +370,30 @@ export async function GET(request: Request) {
               } catch (emailErr) {
                 console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
               }
-
-              // Atomically mark for deletion — only succeeds if payment hasn't been verified
-              const { data: markedForDelete } = await supabase
+              const { data: marked } = await supabase
                 .from("draft_applications")
-                .update({ status: "expired" })
+                .update({ status: "expired", deleted_at: new Date().toISOString() })
                 .eq("id", draft.id)
                 .eq("has_verified_payment", false)
                 .select("id")
                 .maybeSingle()
-
-              if (!markedForDelete) {
-                console.log(`[cleanup-drafts] skipped ${draft.id}: payment verified during expiry`)
-                continue
-              }
-
-              const paths = extractStoragePaths(draft.step_data || {})
-              if (paths.length > 0) {
-                await supabase.storage.from("uploads").remove(paths)
-              }
-
-              await supabase
-                .from("draft_applications")
-                .delete()
-                .eq("id", draft.id)
-
+              if (!marked) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment verified during expiry`); continue }
               await logMembershipAuditEvent({
                 action: "draft_expired",
                 entityType: "draft_application",
                 entityId: draft.id,
-                newData: {
-                  email: draft.email,
-                  step: draft.current_step,
-                  reason: "Expired after 24h inactivity — payment not captured",
-                },
+                newData: { email: draft.email, step: draft.current_step, reason: "Soft-deleted after 24h inactivity — payment not captured (files retained)" },
                 performedBy: "system",
               }, supabase)
-
               summary.expired++
             }
           } else {
-            // has_verified_payment but no order_id — mark on hold
+            // has_verified_payment but no order_id → mark on hold
+            if (dryRun) { planAction(draft, "flag_payment_on_hold", "has_verified_payment=true but no order_id"); continue }
             await supabase
               .from("draft_applications")
-              .update({
-                status: "payment_on_hold",
-                updated_at: new Date().toISOString(),
-              })
+              .update({ status: "payment_on_hold", updated_at: new Date().toISOString() })
               .eq("id", draft.id)
-
             await logMembershipAuditEvent({
               action: "draft_payment_on_hold",
               entityType: "draft_application",
@@ -455,26 +401,23 @@ export async function GET(request: Request) {
               newData: { email: draft.email, payment_order_id: draft.payment_order_id },
               performedBy: "system",
             }, supabase)
-
             summary.payment_holds++
           }
-        } catch (err: any) {
-          console.error(
-            `[cleanup-drafts] paid-stuck check ${draft.id}:`,
-            err.message,
-          )
+        } catch (err: unknown) {
+          console.error(`[cleanup-drafts] paid-stuck check ${draft.id}:`, errMessage(err))
         }
       }
     }
 
     // -----------------------------------------------------------------------
-    // Step 5: Check refund status
-    // Drafts with status = 'refund_initiated'
+    // Step 5 — Refund completion check (status='refund_initiated')
+    // On Razorpay-confirmed refund → soft-delete (storage files retained).
     // -----------------------------------------------------------------------
     const { data: refundDrafts } = await supabase
       .from("draft_applications")
-      .select("*")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
       .eq("status", "refund_initiated")
+      .is("deleted_at", null)
 
     if (refundDrafts && refundDrafts.length > 0) {
       const Razorpay = (await import("razorpay")).default
@@ -486,94 +429,58 @@ export async function GET(request: Request) {
       for (const draft of refundDrafts) {
         try {
           if (!draft.payment_order_id && !draft.payment_id) continue
-
-          // Check if the order or payment has been refunded
           let refunded = false
-
           if (draft.payment_order_id) {
             const order = await razorpay.orders.fetch(draft.payment_order_id)
-            if ((order as any).status === "refunded") {
-              refunded = true
-            }
+            if ((order as RazorpayStatusOnly).status === "refunded") refunded = true
           }
-
           if (!refunded && draft.payment_id) {
             try {
-              const paymentDetail = await razorpay.payments.fetch(
-                draft.payment_id,
-              )
-              if ((paymentDetail as any).status === "refunded") {
-                refunded = true
-              }
-            } catch {
-              // Payment fetch failed — skip this round
-            }
+              const paymentDetail = await razorpay.payments.fetch(draft.payment_id)
+              if ((paymentDetail as RazorpayStatusOnly).status === "refunded") refunded = true
+            } catch { /* skip this round */ }
           }
 
           if (refunded) {
-            // Send refund confirmation email
-            const html = emailWrapper(
-              "Refund Processed",
-              `
-              <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-                Your payment for the AMASI membership application has been refunded successfully.
-              </p>
-              <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-                If you wish to apply again in the future, you are welcome to start a new application.
-              </p>
-              <div style="margin:20px 0;text-align:center;">
-                <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
-              </div>
-              `,
-            )
-
-            await resend.emails.send({
+            if (dryRun) { planAction(draft, "soft_delete_refund_completed", "Razorpay confirms refund completed"); continue }
+            await resend!.emails.send({
               from: fromEmail,
               to: draft.email,
               subject: "AMASI membership application — refund processed",
-              html,
+              html: emailWrapper(
+                "Refund Processed",
+                `
+                <p style="font-size:14px;color:#374151;margin:0 0 12px;">Your payment for the AMASI membership application has been refunded successfully.</p>
+                <p style="font-size:14px;color:#374151;margin:0 0 12px;">If you wish to apply again in the future, you are welcome to start a new application.</p>
+                <div style="margin:20px 0;text-align:center;">
+                  <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Start New Application</a>
+                </div>
+                `,
+              ),
             })
-
-            // Clean up storage
-            const paths = extractStoragePaths(draft.step_data || {})
-            if (paths.length > 0) {
-              await supabase.storage.from("uploads").remove(paths)
-            }
-
-            // Delete the draft
             await supabase
               .from("draft_applications")
-              .delete()
+              .update({ status: "expired", deleted_at: new Date().toISOString() })
               .eq("id", draft.id)
-
-            // Audit log
             await logMembershipAuditEvent({
               action: "draft_refunded",
               entityType: "draft_application",
               entityId: draft.id,
-              newData: {
-                email: draft.email,
-                step: draft.current_step,
-                reason: "Refund completed — draft removed",
-              },
+              newData: { email: draft.email, step: draft.current_step, reason: "Refund completed — soft-deleted (files retained)" },
               performedBy: "system",
             }, supabase)
-
             summary.refunds_completed++
           }
-        } catch (err: any) {
-          console.error(
-            `[cleanup-drafts] refund check ${draft.id}:`,
-            err.message,
-          )
+        } catch (err: unknown) {
+          console.error(`[cleanup-drafts] refund check ${draft.id}:`, errMessage(err))
         }
       }
     }
 
     console.log("[cleanup-drafts] completed:", summary)
     return Response.json(summary)
-  } catch (error: any) {
-    console.error("[cleanup-drafts] fatal error:", error)
+  } catch (error: unknown) {
+    console.error("[cleanup-drafts] fatal error:", errMessage(error))
     return Response.json({ error: "Cleanup failed" }, { status: 500 })
   }
 }

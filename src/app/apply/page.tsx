@@ -886,6 +886,18 @@ function ApplyForm() {
       })
       const orderData = await orderRes.json()
       if (!orderData.status || !orderData.orderId) {
+        // Server-side document gate failed (race / stale tab / cleared cookies between
+        // upload and pay). Bounce the user back to the upload step so they can re-upload
+        // rather than leaving them stuck on a payment screen they can't pass.
+        if (orderData.error === "documents_incomplete") {
+          toast.error(
+            orderData.message || "We couldn't find your uploaded documents. Please re-upload to continue.",
+            { duration: 7000 },
+          )
+          setPhase("upload")
+          setSubmitting(false)
+          return
+        }
         toast.error(orderData.message || "Failed to create payment order")
         setSubmitting(false)
         return

@@ -2,6 +2,8 @@ import { NextRequest } from "next/server"
 import Razorpay from "razorpay"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createAdminClient } from "@/lib/supabase"
+import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
+import { getMembershipType } from "@/lib/membership-types"
 
 // Server-side fee lookup — source of truth for membership fees
 const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
@@ -39,57 +41,98 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: `Invalid currency for ${membershipType}. Expected ${expectedCurrency}` }, { status: 400 })
     }
 
+    // Document gate + duplicate-payment guard. Both require email; a missing
+    // email at this stage is itself a programming error worth surfacing.
+    if (!email) {
+      return Response.json({ status: false, message: "Email required to initiate payment" }, { status: 400 })
+    }
+
+    const supabase = createAdminClient()
+    const emailKey = email.toLowerCase().trim()
+    const typeKey = membershipType.toUpperCase()
+
+    // --- Document gate: refuse to create the order if required docs aren't OCR-verified ---
+    // Source of truth is `draft_applications.step_data.uploads` (server-side state) — NOT
+    // the client request body, which would be trivially spoofable. The client saves the
+    // draft via /api/applications/save-draft before reaching this endpoint.
+    const { data: draftRow } = await supabase
+      .from("draft_applications")
+      .select("step_data")
+      .eq("email", emailKey)
+      .eq("membership_type", typeKey)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const draftStepData = draftRow?.step_data as { uploads?: Record<string, unknown> } | null
+    const draftUploads = draftStepData?.uploads || null
+    const membershipTypeConfig = getMembershipType(typeKey)
+    if (!membershipTypeConfig) {
+      return Response.json({ status: false, message: "Unknown membership type" }, { status: 400 })
+    }
+    if (!draftUploads) {
+      return Response.json({
+        status: false,
+        error: "documents_incomplete",
+        missing: membershipTypeConfig.requiredDocs.filter(d => d !== "profile"),
+        message: "Please upload your documents before proceeding to payment.",
+      }, { status: 400 })
+    }
+    const docCheck = validateRequiredDocuments(draftUploads, membershipTypeConfig.requiredDocs)
+    if (!docCheck.valid) {
+      return Response.json({
+        status: false,
+        error: docCheck.reason,
+        missing: docCheck.missing,
+        message: `These documents need a clearer upload before payment: ${docCheck.missing.map(lookupDocumentLabel).join(", ")}.`,
+      }, { status: 400 })
+    }
+
     // Duplicate-payment guard: a user whose phone died post-payment could return
     // and pay a second time if we don't check. Block new orders when the same
     // email already has a paid draft OR a submitted-and-not-rejected application
     // for the same membership type.
-    if (email) {
-      const supabase = createAdminClient()
-      const emailKey = email.toLowerCase().trim()
-      const typeKey = membershipType.toUpperCase()
+    const { data: paidDraft } = await supabase
+      .from("draft_applications")
+      .select("id, current_step")
+      .eq("email", emailKey)
+      .eq("membership_type", typeKey)
+      .eq("has_verified_payment", true)
+      .limit(1)
+      .maybeSingle()
 
-      const { data: paidDraft } = await supabase
-        .from("draft_applications")
-        .select("id, current_step")
-        .eq("email", emailKey)
-        .eq("membership_type", typeKey)
-        .eq("has_verified_payment", true)
-        .limit(1)
-        .maybeSingle()
+    if (paidDraft) {
+      return Response.json(
+        {
+          status: false,
+          code: "DUPLICATE_PAYMENT",
+          message: "You have already paid for this application. Please refresh the page and complete your submission instead of paying again.",
+          draftId: paidDraft.id,
+        },
+        { status: 409 }
+      )
+    }
 
-      if (paidDraft) {
-        return Response.json(
-          {
-            status: false,
-            code: "DUPLICATE_PAYMENT",
-            message: "You have already paid for this application. Please refresh the page and complete your submission instead of paying again.",
-            draftId: paidDraft.id,
-          },
-          { status: 409 }
-        )
-      }
+    const { data: existingApp } = await supabase
+      .from("membership_applications")
+      .select("id, reference_number, status")
+      .eq("email", emailKey)
+      .eq("membership_type", typeKey)
+      .eq("payment_status", "paid")
+      .not("status", "in", '("rejected")')
+      .limit(1)
+      .maybeSingle()
 
-      const { data: existingApp } = await supabase
-        .from("membership_applications")
-        .select("id, reference_number, status")
-        .eq("email", emailKey)
-        .eq("membership_type", typeKey)
-        .eq("payment_status", "paid")
-        .not("status", "in", '("rejected")')
-        .limit(1)
-        .maybeSingle()
-
-      if (existingApp) {
-        return Response.json(
-          {
-            status: false,
-            code: "DUPLICATE_PAYMENT",
-            message: `You have already submitted and paid for a ${typeKey} application (${existingApp.reference_number}). Please check your application status instead.`,
-            referenceNumber: existingApp.reference_number,
-          },
-          { status: 409 }
-        )
-      }
+    if (existingApp) {
+      return Response.json(
+        {
+          status: false,
+          code: "DUPLICATE_PAYMENT",
+          message: `You have already submitted and paid for a ${typeKey} application (${existingApp.reference_number}). Please check your application status instead.`,
+          referenceNumber: existingApp.reference_number,
+        },
+        { status: 409 }
+      )
     }
 
     const razorpay = new Razorpay({

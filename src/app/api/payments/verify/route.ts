@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { recordStepEvent } from "@/lib/funnel-tracking"
+import { validateRequiredDocuments } from "@/lib/document-keys"
+import { getMembershipType } from "@/lib/membership-types"
 
 export async function POST(request: NextRequest) {
   try {
@@ -110,6 +112,62 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: true, message: "Payment already recorded", paymentId: razorpay_payment_id })
     }
 
+    // --- Defense-in-depth: re-check that documents are still valid at verify time ---
+    // create-order already gates this; this branch should only fire on a contract
+    // violation (race, stale client, direct API hit). When it does, the money has
+    // already moved — we record the payment but flag the draft so admins can refund.
+    let paidButBroken = false
+    if (email && membershipType) {
+      const emailKey = email.toLowerCase().trim()
+      const typeKey = (membershipType as string).toUpperCase()
+      const { data: draftRow } = await supabase
+        .from("draft_applications")
+        .select("id, step_data")
+        .eq("email", emailKey)
+        .eq("membership_type", typeKey)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const draftStepData = draftRow?.step_data as { uploads?: Record<string, unknown> } | null
+      const draftUploads = draftStepData?.uploads || null
+      const membershipTypeConfig = getMembershipType(typeKey)
+      const docCheck = membershipTypeConfig && draftUploads
+        ? validateRequiredDocuments(draftUploads, membershipTypeConfig.requiredDocs)
+        : { valid: false as const, reason: "documents_incomplete" as const, missing: [] as string[] }
+
+      if (!docCheck.valid) {
+        paidButBroken = true
+        Sentry.captureMessage(
+          `[paid_but_broken] Razorpay payment ${razorpay_payment_id} captured for ${emailKey} (${typeKey}) but documents failed validation at verify time`,
+          {
+            level: "fatal",
+            tags: { flow: "payment_verify", severity: "fatal", reason: "paid_but_broken" },
+            extra: {
+              razorpay_order_id,
+              razorpay_payment_id,
+              referenceNumber,
+              email: emailKey,
+              membershipType: typeKey,
+              missing_documents: docCheck.missing,
+              draft_id: draftRow?.id || null,
+            },
+          },
+        )
+        if (draftRow?.id) {
+          await supabase
+            .from("draft_applications")
+            .update({
+              failure_reason: "paid_but_broken",
+              failure_step: 5,
+              status: "stuck",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", draftRow.id)
+        }
+      }
+    }
+
     // Record payment
     const { error: insertError } = await supabase.from("membership_payments").insert({
       application_id: applicationId || null,
@@ -172,6 +230,7 @@ export async function POST(request: NextRequest) {
       status: true,
       message: "Payment verified successfully",
       paymentId: razorpay_payment_id,
+      paidButBroken,
     })
   } catch (error: any) {
     console.error("Payment verify error:", error)

@@ -6,7 +6,18 @@ import { createPacer } from "./rate-limiter"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
 import type { CampaignRecipientRow, CampaignRow, MemberSegmentRow } from "./types"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy: instantiating at module top-level throws "Missing API key" during
+// Next.js's "Collecting page data" build phase when RESEND_API_KEY is absent
+// (e.g. CI builds without server secrets). Defer until first use.
+let _resend: Resend | null = null
+function getResend(): Resend {
+  if (!_resend) {
+    const key = process.env.RESEND_API_KEY
+    if (!key) throw new Error("RESEND_API_KEY is not configured")
+    _resend = new Resend(key)
+  }
+  return _resend
+}
 const fromEmail = process.env.RESEND_FROM_EMAIL || "AMASI <noreply@amasi.org>"
 const baseUrl = "https://membership.amasi.org"
 
@@ -72,7 +83,7 @@ export async function sendNextBatch(params: {
       membership_type: null, marketing_opt_out_at: null,
     }
     try {
-      await resend.emails.send({
+      await getResend().emails.send({
         from: fromEmail,
         to: r.email,
         subject: template.subject(member),

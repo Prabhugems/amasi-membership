@@ -11,7 +11,7 @@ import {
   Upload, FileCheck, Sparkles, CheckCircle, AlertCircle, Loader2,
   ArrowRight, ArrowLeft, Send, Shield, Award, Clock, Users, Star,
   ChevronRight, ChevronDown, X, Eye, GraduationCap, Stethoscope, Copy, Check,
-  ExternalLink, FileText, ClipboardCheck, Info,
+  ExternalLink, FileText, ClipboardCheck, Info, Mail,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -1953,18 +1953,25 @@ function ApplyForm() {
                               <AlertCircle className="h-5 w-5" /> Document Not Recognized
                             </div>
                             <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
-                            <div className="flex gap-2 mt-3">
-                              <Button variant="outline" size="sm" onClick={() => handleRemoveFile(docType)} className="text-xs">
-                                <X className="h-3 w-3 mr-1" /> Remove & Re-upload
-                              </Button>
-                              <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => {
-                                setUploads((prev) => ({
-                                  ...prev,
-                                  [docType]: { ...prev[docType], status: "uploaded", message: "Pending manual review by admin team" },
-                                }))
-                                toast.info("Document will be reviewed manually by our admin team")
-                              }}>
-                                <Eye className="h-3 w-3 mr-1" /> Request Admin Review
+                            <p className="text-xs text-muted-foreground mt-2">Please upload a clearer photo or scan of the original document.</p>
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
+                                <Upload className="h-3 w-3 mr-1.5" /> Retry with a clearer photo
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0]
+                                    if (file) handleFileUpload(docType, file)
+                                    e.target.value = ""
+                                  }}
+                                />
+                              </label>
+                              <Button asChild variant="outline" size="sm" className="text-xs">
+                                <a href={`mailto:membership@amasi.org?subject=${encodeURIComponent(`Document upload issue — ${label} (${formData.email || "AMASI applicant"})`)}`}>
+                                  <Mail className="h-3 w-3 mr-1" /> Contact Support
+                                </a>
                               </Button>
                             </div>
                           </div>
@@ -1975,18 +1982,25 @@ function ApplyForm() {
                               <AlertCircle className="h-5 w-5" /> Not Eligible
                             </div>
                             <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
-                            <div className="flex gap-2 mt-3">
-                              <Button variant="outline" size="sm" onClick={() => handleRemoveFile(docType)} className="text-xs">
-                                <X className="h-3 w-3 mr-1" /> Remove & Re-upload
-                              </Button>
-                              <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => {
-                                setUploads((prev) => ({
-                                  ...prev,
-                                  [docType]: { ...prev[docType], status: "uploaded", message: "Pending manual review — degree eligibility to be verified by admin" },
-                                }))
-                                toast.info("Your eligibility will be reviewed manually by our admin team")
-                              }}>
-                                <Eye className="h-3 w-3 mr-1" /> Request Admin Review
+                            <p className="text-xs text-muted-foreground mt-2">If you believe this is an error, please contact membership support.</p>
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
+                                <Upload className="h-3 w-3 mr-1.5" /> Retry with a clearer photo
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0]
+                                    if (file) handleFileUpload(docType, file)
+                                    e.target.value = ""
+                                  }}
+                                />
+                              </label>
+                              <Button asChild variant="outline" size="sm" className="text-xs">
+                                <a href={`mailto:membership@amasi.org?subject=${encodeURIComponent(`Eligibility question — ${label} (${formData.email || "AMASI applicant"})`)}`}>
+                                  <Mail className="h-3 w-3 mr-1" /> Contact Support
+                                </a>
                               </Button>
                             </div>
                           </div>

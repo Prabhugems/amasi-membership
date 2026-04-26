@@ -51,6 +51,10 @@ next-env.d.ts
 .playwright-mcp/
 /*.png
 
+# Session working notes — high-volume, accumulate PII/secrets over time.
+# Promote to docs/sessions/ or distill into CHANGELOG/CONTEXT.md if worth keeping.
+SESSION-*.md
+
 # test results (generated screenshots, archives, snapshots)
 /test-results/
 

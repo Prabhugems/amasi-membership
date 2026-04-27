@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -8,10 +9,13 @@ function generateOTP(): string {
   return String(randomInt(100000, 999999))
 }
 
-function maskEmail(email: string): string {
-  const [local, domain] = email.split("@")
-  const visible = local.slice(0, 2)
-  return `${visible}***@${domain}`
+// Uniform response for any valid identifier — does NOT confirm whether the
+// reference number or email was found in the database (oracle prevention).
+function oracleSafeResponse() {
+  return Response.json(
+    { ok: true, message: "If the reference number is valid, an OTP has been sent." },
+    { status: 200 }
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -19,7 +23,7 @@ export async function POST(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
     const rl = await checkRateLimit(`track-otp:${ip}`, 5, 15 * 60 * 1000)
     if (!rl.allowed) {
-      return Response.json({ status: false, message: "Too many requests. Please try again later." }, { status: 429 })
+      return Response.json({ ok: false, message: "Too many requests. Please try again later." }, { status: 429 })
     }
 
     const body = await request.json()
@@ -27,6 +31,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
     let resolvedEmail: string | null = null
+    let resolvedRefNumber: string | null = null
 
     if (referenceNumber?.trim()) {
       const ref = referenceNumber.trim().toUpperCase()
@@ -36,13 +41,13 @@ export async function POST(request: NextRequest) {
         .eq("reference_number", ref)
         .maybeSingle()
 
+      // Do NOT reveal whether the reference number was found.
+      // Same response for found and not-found to prevent email enumeration oracle.
       if (!app) {
-        return Response.json(
-          { status: false, message: "No application found with this reference number." },
-          { status: 404 }
-        )
+        return oracleSafeResponse()
       }
       resolvedEmail = app.email.toLowerCase().trim()
+      resolvedRefNumber = ref
     } else if (emailInput?.includes("@")) {
       resolvedEmail = emailInput.toLowerCase().trim()
       const { data: app } = await supabase
@@ -51,15 +56,13 @@ export async function POST(request: NextRequest) {
         .eq("email", resolvedEmail)
         .maybeSingle()
 
+      // Same oracle-safe pattern: don't confirm whether the email exists.
       if (!app) {
-        return Response.json(
-          { status: false, message: "No application found for this email address." },
-          { status: 404 }
-        )
+        return oracleSafeResponse()
       }
     } else {
       return Response.json(
-        { status: false, message: "Please provide a valid email or reference number." },
+        { ok: false, message: "Please provide a valid email or reference number." },
         { status: 400 }
       )
     }
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     if ((count || 0) >= 3) {
       return Response.json(
-        { status: false, message: "Too many OTP requests. Please wait 10 minutes." },
+        { ok: false, message: "Too many OTP requests. Please wait 10 minutes." },
         { status: 429 }
       )
     }
@@ -86,17 +89,18 @@ export async function POST(request: NextRequest) {
       email: resolvedEmail,
       code,
       expires_at: expiresAt.toISOString(),
+      reference_number: resolvedRefNumber,
     })
 
     if (insertError) {
       console.error("[track/send-otp] insert error:", insertError)
-      return Response.json({ status: false, message: "Failed to generate OTP." }, { status: 500 })
+      return Response.json({ ok: false, message: "Failed to generate OTP." }, { status: 500 })
     }
 
     const resendKey = process.env.RESEND_API_KEY?.trim()
     if (!resendKey) {
       console.error("[track/send-otp] RESEND_API_KEY not set")
-      return Response.json({ status: false, message: "Email service not configured." }, { status: 500 })
+      return Response.json({ ok: false, message: "Email service not configured." }, { status: 500 })
     }
 
     const resend = new Resend(resendKey)
@@ -120,17 +124,13 @@ export async function POST(request: NextRequest) {
 
     if (emailError) {
       console.error("[track/send-otp] email send error:", emailError)
-      return Response.json({ status: false, message: "Failed to send verification email." }, { status: 500 })
+      return Response.json({ ok: false, message: "Failed to send verification email." }, { status: 500 })
     }
 
-    return Response.json({
-      status: true,
-      message: "Verification code sent to your email.",
-      email: resolvedEmail as string,
-      maskedEmail: maskEmail(resolvedEmail as string),
-    })
+    return oracleSafeResponse()
   } catch (error: unknown) {
     console.error("[track/send-otp] unexpected error:", error)
-    return Response.json({ status: false, message: "Something went wrong. Please try again." }, { status: 500 })
+    Sentry.captureException(error)
+    return Response.json({ ok: false, message: "Something went wrong. Please try again." }, { status: 500 })
   }
 }

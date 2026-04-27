@@ -1,5 +1,6 @@
 "use client"
 
+import * as Sentry from "@sentry/nextjs"
 import { Suspense, useState, useCallback, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -56,6 +57,12 @@ interface ApplicationData {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@")
+  const visible = local.slice(0, 2)
+  return `${visible}***@${domain}`
+}
 
 function statusBadgeVariant(status: string) {
   switch (status) {
@@ -638,7 +645,7 @@ function ApplicationResult({ app }: { app: ApplicationData }) {
 function IdentifyPhase({
   onOtpSent,
 }: {
-  onOtpSent: (email: string, masked: string) => void
+  onOtpSent: (email: string, referenceNumber: string, maskedDisplay: string) => void
 }) {
   const searchParams = useSearchParams()
   const initialRef = searchParams.get("ref") || ""
@@ -669,8 +676,11 @@ function IdentifyPhase({
         })
         const data = await res.json()
 
-        if (data.status) {
-          onOtpSent(data.email, data.maskedEmail)
+        if (data.ok) {
+          // Server no longer returns email/maskedEmail (oracle fix).
+          // Mask client-side for email input; ref-number path uses generic display.
+          const masked = isEmail ? maskEmail(value) : ""
+          onOtpSent(isEmail ? value : "", isEmail ? "" : value, masked)
         } else {
           setError(data.message || "Something went wrong.")
         }
@@ -744,15 +754,23 @@ function IdentifyPhase({
 
 function OtpPhase({
   email,
+  referenceNumber,
   maskedEmail,
   onVerified,
   onBack,
 }: {
   email: string
+  referenceNumber: string
   maskedEmail: string
   onVerified: (applications: ApplicationData[]) => void
   onBack: () => void
 }) {
+  if (!email && !referenceNumber) {
+    console.error("TrackPage: OtpPhase rendered without email or referenceNumber — impossible state")
+    Sentry.captureException(new Error("TrackPage: OtpPhase without email or referenceNumber"))
+    return null
+  }
+
   const [code, setCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
@@ -770,10 +788,14 @@ function OtpPhase({
       setError(null)
 
       try {
+        const verifyBody: Record<string, string> = { code: trimmed }
+        if (email) verifyBody.email = email
+        else verifyBody.referenceNumber = referenceNumber
+
         const res = await fetch("/api/track/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, code: trimmed }),
+          body: JSON.stringify(verifyBody),
         })
         const data = await res.json()
 
@@ -797,13 +819,17 @@ function OtpPhase({
     setError(null)
 
     try {
+      const resendBody: Record<string, string> = {}
+      if (email) resendBody.email = email
+      else resendBody.referenceNumber = referenceNumber
+
       const res = await fetch("/api/track/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(resendBody),
       })
       const data = await res.json()
-      if (data.status) {
+      if (data.ok) {
         setResendMsg("New code sent — check your inbox.")
         setCode("")
         inputRef.current?.focus()
@@ -823,7 +849,9 @@ function OtpPhase({
         <h1 className="text-2xl font-bold tracking-tight">Enter Verification Code</h1>
         <p className="text-muted-foreground text-sm">
           We sent a 6-digit code to{" "}
-          <span className="font-medium text-foreground">{maskedEmail}</span>.
+          <span className="font-medium text-foreground">
+            {maskedEmail || "the email address on your application"}
+          </span>.
           Enter it below to view your application status.
         </p>
       </div>
@@ -924,6 +952,12 @@ function ResultPhase({
   applications: ApplicationData[]
   onReset: () => void
 }) {
+  if (!applications || applications.length === 0) {
+    console.error("TrackPage: ResultPhase rendered with empty applications — impossible state")
+    Sentry.captureException(new Error("TrackPage: ResultPhase with empty applications"))
+    return null
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -964,14 +998,19 @@ function TrackContent() {
   type Phase = "identify" | "otp" | "result"
   const [phase, setPhase] = useState<Phase>("identify")
   const [email, setEmail] = useState("")
+  const [referenceNumber, setReferenceNumber] = useState("")
   const [maskedEmail, setMaskedEmail] = useState("")
   const [applications, setApplications] = useState<ApplicationData[]>([])
 
-  const handleOtpSent = useCallback((resolvedEmail: string, masked: string) => {
-    setEmail(resolvedEmail)
-    setMaskedEmail(masked)
-    setPhase("otp")
-  }, [])
+  const handleOtpSent = useCallback(
+    (resolvedEmail: string, refNum: string, masked: string) => {
+      setEmail(resolvedEmail)
+      setReferenceNumber(refNum)
+      setMaskedEmail(masked)
+      setPhase("otp")
+    },
+    []
+  )
 
   const handleVerified = useCallback(
     (apps: ApplicationData[]) => {
@@ -984,6 +1023,7 @@ function TrackContent() {
   const handleReset = useCallback(() => {
     setPhase("identify")
     setEmail("")
+    setReferenceNumber("")
     setMaskedEmail("")
     setApplications([])
   }, [])
@@ -1006,6 +1046,7 @@ function TrackContent() {
         {phase === "otp" && (
           <OtpPhase
             email={email}
+            referenceNumber={referenceNumber}
             maskedEmail={maskedEmail}
             onVerified={handleVerified}
             onBack={handleReset}

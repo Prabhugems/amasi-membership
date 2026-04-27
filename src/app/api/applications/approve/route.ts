@@ -45,88 +45,121 @@ export async function POST(request: NextRequest) {
 
     // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
-    const memberId = randomUUID()
 
-    // Get next AMASI number atomically via sequence
-    const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
-    if (seqError || !seqNum) {
-      return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
+    // Idempotency guard: when an application is approved, bumped back to
+    // need_clarification, then approved again, member_id and assigned_amasi_number
+    // are already set and a members row already exists. Re-running the insert
+    // hits the email unique constraint and returns 500. Detect this case and
+    // skip the sequence RPC + insert entirely.
+    let memberId: string = randomUUID()
+    let nextAmasiNumber: number = 0
+    let alreadyLinked = false
+
+    if (app.member_id) {
+      const { data: existingMember } = await supabase
+        .from("members")
+        .select("id, amasi_number")
+        .eq("id", app.member_id)
+        .maybeSingle()
+
+      if (existingMember) {
+        alreadyLinked = true
+        memberId = existingMember.id
+        nextAmasiNumber = app.assigned_amasi_number ?? existingMember.amasi_number
+      } else {
+        // Data drift: member_id is set on the application but the members row is gone.
+        // Log loudly, then fall through to create a fresh member (crash loudly, not silently).
+        Sentry.captureException(
+          new Error(
+            `approve: member_id ${app.member_id} set on application ${applicationId} but no members row found — treating as unlinked`
+          ),
+          { tags: { flow: "application_approve" }, extra: { applicationId, member_id: app.member_id } }
+        )
+      }
     }
-    const nextAmasiNumber = seqNum
 
-    const { error: insertError } = await supabase.from("members").insert({
-      id: memberId,
-      amasi_number: nextAmasiNumber,
-      name: fullName,
-      email: app.email,
-      phone: app.phone || null,
-      mobile_code: app.mobile_code,
-      membership_type: app.membership_type,
-      status: "active",
-      voting_eligible: app.membership_type === "LM",
-      salutation: app.salutation,
-      father_name: app.father_name,
-      date_of_birth: app.date_of_birth,
-      nationality: app.nationality,
-      gender: app.gender,
-      application_no: app.reference_number || app.application_number,
-      application_date: new Date().toISOString().split("T")[0],
-      street_address_1: app.street_address_1,
-      street_address_2: app.street_address_2,
-      city: app.city,
-      state: app.state,
-      country: app.country || "India",
-      postal_code: app.postal_code,
-      zone: app.zone,
-      edu_undergrad_degree: app.ug_degree,
-      ug_college: app.ug_college,
-      ug_university: app.ug_university,
-      ug_year: app.ug_year,
-      pg_degree: app.pg_degree,
-      pg_college: app.pg_college,
-      pg_university: app.pg_university,
-      pg_year: app.pg_year,
-      edu_superspecialty_degree: app.ss_degree,
-      mci_council_number: app.mci_council_number,
-      mci_council_state: app.mci_council_state,
-      imr_registration_no: app.imr_registration_no,
-      asi_membership_no: app.asi_membership_no,
-      asi_state: app.asi_state,
-      joining_date: new Date().toISOString().split("T")[0],
-      // Copy document URLs from application
-      profile_photo: (() => {
-        const docs = app.documents || {}
-        return docs.photo?.url || docs.photo?.fileUrl || docs.profile?.fileUrl || docs.profile?.url || null
-      })(),
-      mci_certificate: (() => {
-        const d = (app.documents || {}).mci_certificate
-        return d?.fileUrl || d?.url || null
-      })(),
-      pg_degree_certificate: (() => {
-        const d = (app.documents || {}).pg_degree_certificate || (app.documents || {}).pg_certificate
-        return d?.fileUrl || d?.url || null
-      })(),
-      asi_member_certificate: (() => {
-        const d = (app.documents || {}).asi_member_certificate
-        return d?.fileUrl || d?.url || null
-      })(),
-      mbbs_degree_certificate: (() => {
-        const d = (app.documents || {}).mbbs_degree_certificate
-        return d?.fileUrl || d?.url || null
-      })(),
-      letter_hod: (() => {
-        const d = (app.documents || {}).letter_hod
-        return d?.fileUrl || d?.url || null
-      })(),
-      active_license: (() => {
-        const d = (app.documents || {}).active_license
-        return d?.fileUrl || d?.url || null
-      })(),
-    })
+    if (!alreadyLinked) {
+      // Get next AMASI number atomically via sequence
+      const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
+      if (seqError || !seqNum) {
+        return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
+      }
+      nextAmasiNumber = seqNum
 
-    if (insertError) {
-      console.error("Member insert error:", insertError)
-      return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
+      const { error: insertError } = await supabase.from("members").insert({
+        id: memberId,
+        amasi_number: nextAmasiNumber,
+        name: fullName,
+        email: app.email,
+        phone: app.phone || null,
+        mobile_code: app.mobile_code,
+        membership_type: app.membership_type,
+        status: "active",
+        voting_eligible: app.membership_type === "LM",
+        salutation: app.salutation,
+        father_name: app.father_name,
+        date_of_birth: app.date_of_birth,
+        nationality: app.nationality,
+        gender: app.gender,
+        application_no: app.reference_number || app.application_number,
+        application_date: new Date().toISOString().split("T")[0],
+        street_address_1: app.street_address_1,
+        street_address_2: app.street_address_2,
+        city: app.city,
+        state: app.state,
+        country: app.country || "India",
+        postal_code: app.postal_code,
+        zone: app.zone,
+        edu_undergrad_degree: app.ug_degree,
+        ug_college: app.ug_college,
+        ug_university: app.ug_university,
+        ug_year: app.ug_year,
+        pg_degree: app.pg_degree,
+        pg_college: app.pg_college,
+        pg_university: app.pg_university,
+        pg_year: app.pg_year,
+        edu_superspecialty_degree: app.ss_degree,
+        mci_council_number: app.mci_council_number,
+        mci_council_state: app.mci_council_state,
+        imr_registration_no: app.imr_registration_no,
+        asi_membership_no: app.asi_membership_no,
+        asi_state: app.asi_state,
+        joining_date: new Date().toISOString().split("T")[0],
+        // Copy document URLs from application
+        profile_photo: (() => {
+          const docs = app.documents || {}
+          return docs.photo?.url || docs.photo?.fileUrl || docs.profile?.fileUrl || docs.profile?.url || null
+        })(),
+        mci_certificate: (() => {
+          const d = (app.documents || {}).mci_certificate
+          return d?.fileUrl || d?.url || null
+        })(),
+        pg_degree_certificate: (() => {
+          const d = (app.documents || {}).pg_degree_certificate || (app.documents || {}).pg_certificate
+          return d?.fileUrl || d?.url || null
+        })(),
+        asi_member_certificate: (() => {
+          const d = (app.documents || {}).asi_member_certificate
+          return d?.fileUrl || d?.url || null
+        })(),
+        mbbs_degree_certificate: (() => {
+          const d = (app.documents || {}).mbbs_degree_certificate
+          return d?.fileUrl || d?.url || null
+        })(),
+        letter_hod: (() => {
+          const d = (app.documents || {}).letter_hod
+          return d?.fileUrl || d?.url || null
+        })(),
+        active_license: (() => {
+          const d = (app.documents || {}).active_license
+          return d?.fileUrl || d?.url || null
+        })(),
+      })
+
+      if (insertError) {
+        console.error("Member insert error:", insertError)
+        return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
+      }
     }
 
     // Update application — Bug 2: use memberId UUID, Bug 5: check update error
@@ -143,9 +176,13 @@ export async function POST(request: NextRequest) {
       .eq("id", applicationId)
 
     if (updateError) {
-      // Rollback: delete the member we just created
-      await supabase.from("members").delete().eq("amasi_number", nextAmasiNumber)
-      console.error("Application update failed, member rolled back:", updateError)
+      if (!alreadyLinked) {
+        // Rollback: delete the member we just created (skip rollback if re-approving an existing member)
+        await supabase.from("members").delete().eq("amasi_number", nextAmasiNumber)
+        console.error("Application update failed, member rolled back:", updateError)
+      } else {
+        console.error("Application update failed (existing member, no rollback needed):", updateError)
+      }
       return Response.json({ status: false, message: "Failed to update application status. Please try again." }, { status: 500 })
     }
 
@@ -242,9 +279,10 @@ export async function POST(request: NextRequest) {
       amasiNumber: nextAmasiNumber,
       message: `Approved! Membership #${nextAmasiNumber} assigned.`,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Approve error:", error)
     Sentry.captureException(error, { tags: { flow: "application_approve" } })
-    return Response.json({ status: false, message: error.message || "Failed to approve application" }, { status: 500 })
+    const msg = error instanceof Error ? error.message : "Failed to approve application"
+    return Response.json({ status: false, message: msg }, { status: 500 })
   }
 }

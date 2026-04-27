@@ -114,6 +114,13 @@ export async function autoApproveApplication(
   supabase: SupabaseClient,
   input: AutoApprovalInput,
 ): Promise<AutoApprovalResult> {
+  // TODO: idempotency — like the manual approve route (fix/approve-route-idempotency), this
+  // helper is non-idempotent against repeated calls for the same application (e.g. a Razorpay
+  // retry on non-2xx). If called twice before the application update commits, it will consume
+  // a second sequence number and fail on the email unique constraint. A similar already-linked
+  // check (member_id non-null → skip RPC + insert) should be added. See CONTEXT.md
+  // "Razorpay payment flow" and "Application → member field copy" fragile areas.
+
   // 1. Reserve AMASI number
   const { data: nextNumRaw, error: seqError } = await supabase.rpc("next_amasi_number")
 

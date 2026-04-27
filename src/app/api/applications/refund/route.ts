@@ -75,8 +75,9 @@ async function refundApplication(
     return Response.json({ status: false, message: "No payment record found for this application. Reconcile manually." }, { status: 400 })
   }
 
-  // Idempotency guard: if refund_id already set, treat as success
-  if (paymentRow.refund_id) {
+  // Idempotency guard: real refund ID already set — treat as success.
+  // 'pending' falls through to the atomic claim below (concurrent in-progress).
+  if (paymentRow.refund_id && paymentRow.refund_id !== "pending") {
     return Response.json({
       status: true,
       alreadyRefunded: true,
@@ -104,6 +105,25 @@ async function refundApplication(
     return Response.json({ status: false, message: "Calculated refund amount is zero or negative" }, { status: 400 })
   }
 
+  // Atomic claim: set refund_id='pending' only if still null — closes the
+  // TOCTOU race between concurrent admin clicks / Razorpay webhook retries.
+  const { data: claimRows, error: claimError } = await supabase
+    .from("membership_payments")
+    .update({ refund_id: "pending" })
+    .eq("gateway_payment_id", app.payment_id)
+    .is("refund_id", null)
+    .select("id")
+
+  if (claimError) {
+    Sentry.captureException(claimError)
+    return Response.json({ status: false, message: "Refund claim failed" }, { status: 500 })
+  }
+
+  if (!claimRows || claimRows.length === 0) {
+    // Already claimed by a concurrent caller
+    return Response.json({ status: true, message: "Refund already in progress or completed" }, { status: 200 })
+  }
+
   // Initiate Razorpay refund
   let refund: any
   try {
@@ -124,6 +144,14 @@ async function refundApplication(
       },
     })
   } catch (razorpayError: any) {
+    // Reset claim so a future retry can reclaim — do NOT leave 'pending' stuck
+    const { error: resetErr } = await supabase
+      .from("membership_payments")
+      .update({ refund_id: null })
+      .eq("gateway_payment_id", app.payment_id)
+      .eq("refund_id", "pending")
+    if (resetErr) console.error("Failed to reset refund claim:", resetErr)
+
     Sentry.captureException(razorpayError, {
       tags: { flow: "application_refund" },
       extra: { applicationId, adminEmail },
@@ -294,6 +322,25 @@ async function refundDraft(draftId: string, adminEmail: string, supabase: Return
     )
   }
 
+  // Atomic claim: transition status 'payment_on_hold' → 'refund_pending' only
+  // if still in 'payment_on_hold' — closes the TOCTOU race.
+  const { data: claimRows, error: claimError } = await supabase
+    .from("draft_applications")
+    .update({ status: "refund_pending" })
+    .eq("id", draftId)
+    .eq("status", "payment_on_hold")
+    .select("id")
+
+  if (claimError) {
+    Sentry.captureException(claimError)
+    return Response.json({ status: false, message: "Refund claim failed" }, { status: 500 })
+  }
+
+  if (!claimRows || claimRows.length === 0) {
+    // Already claimed by a concurrent caller
+    return Response.json({ status: true, message: "Refund already in progress or completed" }, { status: 200 })
+  }
+
   let refund: any
   try {
     const Razorpay = (await import("razorpay")).default
@@ -307,6 +354,14 @@ async function refundDraft(draftId: string, adminEmail: string, supabase: Return
       notes: { reason: "Incomplete application refund", draft_id: draftId },
     })
   } catch (razorpayError: any) {
+    // Reset claim so a future retry can reclaim — do NOT leave 'refund_pending' stuck
+    const { error: resetErr } = await supabase
+      .from("draft_applications")
+      .update({ status: "payment_on_hold" })
+      .eq("id", draftId)
+      .eq("status", "refund_pending")
+    if (resetErr) console.error("Failed to reset refund claim:", resetErr)
+
     Sentry.captureException(razorpayError, {
       tags: { flow: "draft_refund" },
       extra: { draftId, adminEmail },
@@ -357,7 +412,7 @@ async function refundDraft(draftId: string, adminEmail: string, supabase: Return
   if (existingPayment) {
     await supabase
       .from("membership_payments")
-      .update({ status: "refund_initiated", updated_at: new Date().toISOString() })
+      .update({ status: "refund_initiated", refund_id: refund.id, updated_at: new Date().toISOString() })
       .eq("gateway_payment_id", draft.payment_id)
   }
 

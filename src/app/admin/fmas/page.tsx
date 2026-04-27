@@ -194,26 +194,36 @@ function Stat({
   hint?: string
   tone?: "default" | "amber" | "emerald" | "blue"
 }) {
-  const tones = {
+  const cardTones = {
     default: "bg-card",
-    amber: "bg-amber-50/60 dark:bg-amber-500/10 border-amber-200/70 dark:border-amber-400/30",
-    emerald: "bg-emerald-50/60 dark:bg-emerald-500/10 border-emerald-200/70 dark:border-emerald-400/30",
-    blue: "bg-blue-50/60 dark:bg-blue-500/10 border-blue-200/70 dark:border-blue-400/30",
+    amber: "bg-gradient-to-br from-amber-50/80 to-white dark:from-amber-500/10 dark:to-slate-950 border-amber-200/60 dark:border-amber-400/20",
+    emerald: "bg-gradient-to-br from-emerald-50/80 to-white dark:from-emerald-500/10 dark:to-slate-950 border-emerald-200/60 dark:border-emerald-400/20",
+    blue: "bg-gradient-to-br from-blue-50/80 to-white dark:from-blue-500/10 dark:to-slate-950 border-blue-200/60 dark:border-blue-400/20",
   }
-  const iconTones = {
-    default: "text-muted-foreground",
-    amber: "text-amber-600 dark:text-amber-400",
-    emerald: "text-emerald-600 dark:text-emerald-400",
-    blue: "text-blue-600 dark:text-blue-400",
+  const badgeTones = {
+    default: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 ring-slate-200/60 dark:ring-slate-700/60",
+    amber: "bg-gradient-to-br from-amber-100 to-amber-200 text-amber-700 dark:from-amber-500/30 dark:to-amber-700/20 dark:text-amber-300 ring-amber-300/60 dark:ring-amber-400/30",
+    emerald: "bg-gradient-to-br from-emerald-100 to-emerald-200 text-emerald-700 dark:from-emerald-500/30 dark:to-emerald-700/20 dark:text-emerald-300 ring-emerald-300/60 dark:ring-emerald-400/30",
+    blue: "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700 dark:from-blue-500/30 dark:to-blue-700/20 dark:text-blue-300 ring-blue-300/60 dark:ring-blue-400/30",
   }
   return (
-    <div className={`border rounded-xl p-4 card-lift transition-shadow ${tones[tone]}`}>
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-medium">
-        <Icon className={`h-3.5 w-3.5 ${iconTones[tone]}`} />
-        {label}
+    <div className={`relative overflow-hidden border rounded-2xl p-5 card-lift ${cardTones[tone]}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
+            {label}
+          </div>
+          <div className="mt-2 text-3xl font-bold tracking-tight tabular-nums leading-none">
+            {value}
+          </div>
+          {hint && (
+            <div className="text-xs text-muted-foreground mt-2 truncate">{hint}</div>
+          )}
+        </div>
+        <div className={`h-9 w-9 rounded-xl ring-1 flex items-center justify-center shrink-0 ${badgeTones[tone]}`}>
+          <Icon className="h-4 w-4" />
+        </div>
       </div>
-      <div className="mt-1.5 text-2xl font-bold tracking-tight tabular-nums">{value}</div>
-      {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
     </div>
   )
 }
@@ -242,21 +252,30 @@ function Avatar({ name, src }: { name: string | null; src: string | null }) {
   )
 }
 
+function courseBadgeTone(year: number): string {
+  // Year-cohort coloring: recent rounds are warm/amber, older are cooler.
+  if (year >= 2024) return "from-amber-100 to-amber-50 text-amber-800 ring-amber-300/60 dark:from-amber-500/25 dark:to-amber-700/10 dark:text-amber-200 dark:ring-amber-400/30"
+  if (year >= 2020) return "from-blue-100 to-blue-50 text-blue-800 ring-blue-300/60 dark:from-blue-500/25 dark:to-blue-700/10 dark:text-blue-200 dark:ring-blue-400/30"
+  if (year >= 2015) return "from-emerald-100 to-emerald-50 text-emerald-800 ring-emerald-300/60 dark:from-emerald-500/25 dark:to-emerald-700/10 dark:text-emerald-200 dark:ring-emerald-400/30"
+  return "from-slate-100 to-slate-50 text-slate-700 ring-slate-300/60 dark:from-slate-700/30 dark:to-slate-800/10 dark:text-slate-200 dark:ring-slate-600/40"
+}
+
 function CourseBadge({ row }: { row: FmasRow }) {
   if (row.skill_course_id === null) {
     return <span className="text-muted-foreground text-xs">—</span>
   }
+  const tone = courseBadgeTone(row.year)
   return (
-    <div className="inline-flex items-center gap-2">
-      <Badge
-        variant="outline"
-        className="font-mono bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-400/30"
+    <div className="inline-flex items-center gap-2 min-w-0">
+      <span
+        className={`inline-flex items-center gap-1 font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-gradient-to-br ring-1 ${tone}`}
       >
-        #{row.skill_course_id}
-      </Badge>
+        <Hash className="h-2.5 w-2.5 opacity-70" />
+        {row.skill_course_id}
+      </span>
       {row.course_name && (
-        <span className="text-xs text-muted-foreground hidden xl:inline truncate max-w-[200px]">
-          {row.course_name}
+        <span className="text-xs text-muted-foreground hidden xl:inline truncate max-w-[180px]">
+          {row.course_name.replace(/^\d+\s+FMAS Course\s+/i, "")}
         </span>
       )}
     </div>
@@ -398,58 +417,117 @@ function DetailSheet({
         aria-hidden="true"
       />
       <aside
-        className="fixed right-0 top-0 z-50 h-full w-full sm:w-[460px] bg-white dark:bg-slate-950 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300"
+        className="fixed right-0 top-0 z-50 h-full w-full sm:w-[480px] bg-white dark:bg-slate-950 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300"
         role="dialog"
         aria-label="FMAS holder details"
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-white/95 dark:bg-slate-950/95 backdrop-blur px-5 py-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Avatar name={row.name} src={row.profile_photo} />
-            <div className="min-w-0">
-              <h2 className="font-semibold truncate">{row.name ?? "Unknown"}</h2>
-              <p className="text-xs text-muted-foreground font-mono">AMASI #{row.amasi_number}</p>
-            </div>
-          </div>
+        {/* Hero header — gradient cover, large avatar, AMASI seal */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-amber-500 via-amber-400 to-orange-400 dark:from-amber-700 dark:via-amber-800 dark:to-amber-950">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-30"
+            style={{
+              backgroundImage:
+                "radial-gradient(circle at 25% 30%, rgba(255,255,255,0.4) 0%, transparent 40%), radial-gradient(circle at 75% 70%, rgba(255,255,255,0.2) 0%, transparent 35%)",
+            }}
+          />
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors"
+            className="absolute top-3 right-3 z-10 p-1.5 rounded-md bg-white/20 hover:bg-white/30 backdrop-blur text-white transition-colors"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
           </button>
+          <div className="relative px-5 pt-7 pb-5">
+            <div className="flex items-end gap-4">
+              {row.profile_photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={row.profile_photo}
+                  alt={row.name ?? "Member"}
+                  className="h-20 w-20 rounded-full object-cover ring-4 ring-white/80 shadow-xl shrink-0"
+                />
+              ) : (
+                <div className="h-20 w-20 rounded-full bg-white/95 ring-4 ring-white/80 shadow-xl flex items-center justify-center text-amber-700 font-bold text-2xl shrink-0">
+                  {(row.name ?? "?")
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((s) => s[0]?.toUpperCase())
+                    .join("")}
+                </div>
+              )}
+              <div className="min-w-0 pb-1">
+                <h2 className="font-bold text-white text-lg leading-tight drop-shadow-sm truncate">
+                  {row.name ?? "Unknown"}
+                </h2>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[11px] font-mono text-white/90 bg-white/15 backdrop-blur px-1.5 py-0.5 rounded">
+                    #{row.amasi_number}
+                  </span>
+                  {(row.city || row.state) && (
+                    <span className="text-[11px] text-white/85 truncate">
+                      {[row.city, row.state].filter(Boolean).join(", ")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="p-5 space-y-5">
-          {/* Credential card */}
-          <div className="border rounded-xl p-4 bg-gradient-to-br from-amber-50 to-amber-50/30 dark:from-amber-500/10 dark:to-amber-500/5 border-amber-200/70 dark:border-amber-400/30">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider font-semibold text-amber-800 dark:text-amber-300">
-              <Award className="h-3.5 w-3.5" />
-              FMAS Credential
-            </div>
-            <div className="mt-3 space-y-2 text-sm">
-              {row.course_name ? (
-                <div className="font-semibold">{row.course_name}</div>
-              ) : row.skill_course_id !== null ? (
-                <div className="font-semibold">Course #{row.skill_course_id}</div>
-              ) : (
-                <div className="text-muted-foreground">No course linked</div>
-              )}
-              <div className="grid grid-cols-2 gap-2 text-xs">
+          {/* Credential card — designed to feel like a wallet pass */}
+          <div className="relative overflow-hidden border-2 border-amber-200/80 dark:border-amber-400/30 rounded-2xl bg-gradient-to-br from-amber-50 via-white to-amber-50/40 dark:from-amber-500/15 dark:via-slate-950 dark:to-amber-500/5 shadow-sm">
+            {/* Decorative corner */}
+            <div
+              aria-hidden="true"
+              className="absolute -top-12 -right-12 h-32 w-32 rounded-full bg-gradient-to-br from-amber-200/40 to-amber-400/10 blur-2xl"
+            />
+            <div className="relative p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] font-bold text-amber-800 dark:text-amber-300">
+                  <span className="h-6 w-6 rounded-md bg-gradient-to-br from-amber-400 to-amber-600 shadow flex items-center justify-center">
+                    <Award className="h-3 w-3 text-white" />
+                  </span>
+                  FMAS Credential
+                </div>
+                <span className="text-[10px] font-mono text-amber-700/80 dark:text-amber-400/70 bg-amber-100/60 dark:bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-400/20">
+                  Verified
+                </span>
+              </div>
+              <div className="space-y-1">
+                {row.course_name ? (
+                  <div className="font-bold text-base leading-snug">{row.course_name}</div>
+                ) : row.skill_course_id !== null ? (
+                  <div className="font-bold text-base">Course #{row.skill_course_id}</div>
+                ) : (
+                  <div className="text-muted-foreground italic">No course linked</div>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs pt-3 border-t border-amber-200/50 dark:border-amber-400/20">
                 <div>
-                  <div className="text-muted-foreground">Place</div>
-                  <div className="font-medium">{place ?? "—"}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Place
+                  </div>
+                  <div className="font-semibold mt-0.5">{place ?? "—"}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Year</div>
-                  <div className="font-medium tabular-nums">{row.year}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Year
+                  </div>
+                  <div className="font-semibold tabular-nums mt-0.5">{row.year}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Awarded</div>
-                  <div className="font-medium">{formatDate(row.awarded_at)}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Awarded
+                  </div>
+                  <div className="font-semibold mt-0.5">{formatDate(row.awarded_at)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Convocation #</div>
-                  <div className="font-medium font-mono flex items-center gap-1">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Convocation #
+                  </div>
+                  <div className="font-semibold font-mono flex items-center gap-1 mt-0.5">
                     {conv ? (
                       <>
                         <span>{conv}…</span>
@@ -468,8 +546,12 @@ function DetailSheet({
                 </div>
               </div>
             </div>
-            <div className="mt-4 flex gap-2">
-              <Button asChild size="sm" className="flex-1 gap-1.5">
+            <div className="px-4 pb-4 flex gap-2">
+              <Button
+                asChild
+                size="sm"
+                className="flex-1 gap-1.5 bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white border-0 shadow-md shadow-amber-500/30"
+              >
                 <Link href={`/member/fmas-certificate?id=${row.amasi_number}`} target="_blank">
                   <ExternalLink className="h-3.5 w-3.5" />
                   Open certificate
@@ -805,37 +887,52 @@ export default function AdminFmasPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <span className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-500/15 border border-amber-200/70 dark:border-amber-400/30 flex items-center justify-center">
-              <Award className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            </span>
-            FMAS Holders
-          </h1>
-          <p className="text-muted-foreground mt-1.5 text-sm">
-            Verify a member&apos;s Foundations of Minimal Access Surgery credential.
-            <span className="hidden sm:inline">
-              {" "}
-              Press <kbd className="px-1.5 py-0.5 rounded border bg-muted text-xs font-mono">⌘K</kbd> to search.
-            </span>
-          </p>
+      {/* Hero */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-amber-50/80 via-white to-white dark:from-amber-500/10 dark:via-slate-950 dark:to-slate-950 shadow-sm">
+        <div
+          aria-hidden="true"
+          className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-gradient-to-br from-amber-200/50 to-amber-400/20 dark:from-amber-500/20 dark:to-amber-600/5 blur-3xl pointer-events-none"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-gradient-to-br from-amber-100/40 to-orange-200/20 dark:from-amber-700/10 dark:to-orange-500/5 blur-3xl pointer-events-none"
+        />
+        <div className="relative p-6 md:p-7 flex items-start justify-between flex-wrap gap-4">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg shadow-amber-500/30 dark:shadow-amber-500/20 flex items-center justify-center shrink-0 ring-1 ring-amber-300/50">
+              <Award className="h-6 w-6 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400 mb-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Credential Console
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">FMAS Holders</h1>
+              <p className="text-muted-foreground mt-1.5 text-sm">
+                Foundations of Minimal Access Surgery
+                <span className="hidden sm:inline">
+                  {" · "}Press{" "}
+                  <kbd className="px-1.5 py-0.5 rounded border bg-white/70 dark:bg-slate-900/70 text-[11px] font-mono">⌘K</kbd>{" "}
+                  to search
+                </span>
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={filtered.length === 0}
+            className="gap-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+            {filtered.length > 0 && (
+              <Badge variant="outline" className="ml-1 tabular-nums bg-white/70 dark:bg-slate-900/70">
+                {filtered.length.toLocaleString("en-IN")}
+              </Badge>
+            )}
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          onClick={handleExport}
-          disabled={filtered.length === 0}
-          className="gap-2"
-        >
-          <Download className="h-4 w-4" />
-          Export CSV
-          {filtered.length > 0 && (
-            <Badge variant="outline" className="ml-1 tabular-nums">
-              {filtered.length}
-            </Badge>
-          )}
-        </Button>
       </div>
 
       {/* Warnings */}
@@ -886,10 +983,10 @@ export default function AdminFmasPage() {
       </div>
 
       {/* Search + filters */}
-      <div className="border rounded-xl bg-card shadow-sm">
-        <div className="p-4 border-b">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="border rounded-2xl bg-card shadow-sm overflow-hidden">
+        <div className="p-4 border-b bg-gradient-to-b from-muted/30 to-transparent">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-amber-600 transition-colors" />
             <Input
               ref={searchRef}
               placeholder="Search name, AMASI #, mobile, email, course #, place, convocation #…"
@@ -898,20 +995,27 @@ export default function AdminFmasPage() {
                 setQ(e.target.value)
                 setPage(1)
               }}
-              className="pl-9 pr-9 h-10"
+              className="pl-11 pr-20 h-12 text-sm md:text-base bg-background border-slate-200 dark:border-slate-800 focus-visible:ring-amber-500/30 focus-visible:border-amber-500/60 rounded-xl"
             />
-            {q && (
-              <button
-                onClick={() => {
-                  setQ("")
-                  setPage(1)
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {q && (
+                <button
+                  onClick={() => {
+                    setQ("")
+                    setPage(1)
+                  }}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {!q && (
+                <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border bg-muted/60 text-[10px] font-mono text-muted-foreground">
+                  ⌘K
+                </kbd>
+              )}
+            </div>
           </div>
         </div>
         <div className="p-3 flex items-center gap-2 flex-wrap">
@@ -1014,8 +1118,8 @@ export default function AdminFmasPage() {
         <div className="border rounded-xl overflow-hidden shadow-sm bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/60 border-b">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-gradient-to-b from-muted/80 to-muted/40 backdrop-blur border-b">
                   <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Member
                   </th>
@@ -1032,49 +1136,67 @@ export default function AdminFmasPage() {
                     Year
                   </th>
                   <th className="text-left px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden lg:table-cell">
-                    Awarded
+                    Dispatch
                   </th>
                   <th className="text-right px-4 py-3 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {pageRows.map((r) => (
+              <tbody className="divide-y divide-border/60">
+                {pageRows.map((r, i) => (
                   <tr
                     key={`${r.amasi_number}-${r.year}-${r.skill_course_id ?? "x"}`}
-                    className="row-glow hover:bg-primary/5 transition-colors group cursor-pointer"
+                    className={`row-glow transition-colors group cursor-pointer ${
+                      i % 2 === 1 ? "bg-muted/20" : ""
+                    }`}
                     onClick={() => setSelected(r)}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3 min-w-0">
-                        <Avatar name={r.name} src={r.profile_photo} />
+                        <div className="ring-2 ring-transparent group-hover:ring-amber-200 dark:group-hover:ring-amber-400/30 rounded-full transition-all">
+                          <Avatar name={r.name} src={r.profile_photo} />
+                        </div>
                         <div className="min-w-0">
                           <div className="font-semibold truncate">{r.name ?? "Unknown"}</div>
                           <div className="text-xs text-muted-foreground truncate">
                             {r.city ?? ""}
                             {r.city && r.state ? ", " : ""}
                             {r.state ?? ""}
+                            {!r.city && !r.state && r.email && (
+                              <span className="opacity-70">{r.email}</span>
+                            )}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">
-                      <span className="inline-flex items-center gap-1 text-muted-foreground">
-                        <Hash className="h-3 w-3" />
-                        <span className="text-foreground">{r.amasi_number}</span>
-                      </span>
+                    <td className="px-4 py-3.5 font-mono text-xs">
+                      <span className="text-foreground tabular-nums">{r.amasi_number}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <CourseBadge row={r} />
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell">{placeOf(r) ?? "—"}</td>
-                    <td className="px-4 py-3 tabular-nums">{r.year}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground">
-                      {formatDate(r.awarded_at)}
+                    <td className="px-4 py-3.5 hidden md:table-cell text-sm">
+                      {placeOf(r) ?? <span className="text-muted-foreground">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1">
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex items-center justify-center min-w-[3rem] px-2 py-0.5 text-xs font-semibold tabular-nums rounded-md bg-muted text-foreground/80">
+                        {r.year}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 hidden lg:table-cell text-xs text-muted-foreground">
+                      {r.dispatch_status ? (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${dispatchTone(r.dispatch_status)}`}
+                        >
+                          {r.dispatch_status}
+                        </span>
+                      ) : (
+                        <span className="opacity-50">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <div className="flex justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
                           size="sm"

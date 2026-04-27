@@ -79,86 +79,125 @@ export default function VerifyPage({ params }: { params: Promise<{ token: string
   const place = c.course_place
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-slate-50 to-slate-100 dark:from-amber-950/20 dark:via-slate-950 dark:to-slate-900 p-6 flex items-center justify-center">
-      <div className="max-w-md w-full">
-        {/* Verified badge */}
-        <div className="flex items-center justify-center gap-2 mb-6">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">
-            Verified by AMASI
-          </span>
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-amber-50 via-white to-orange-50/30 dark:from-amber-950/30 dark:via-slate-950 dark:to-slate-900 p-6 flex items-center justify-center">
+      {/* Ambient blobs */}
+      <div
+        aria-hidden="true"
+        className="absolute top-0 -left-24 h-96 w-96 rounded-full bg-gradient-to-br from-amber-200/40 to-orange-300/20 dark:from-amber-500/10 dark:to-orange-600/5 blur-3xl pointer-events-none"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute bottom-0 -right-24 h-96 w-96 rounded-full bg-gradient-to-br from-amber-300/30 to-yellow-200/20 dark:from-amber-700/10 dark:to-yellow-500/5 blur-3xl pointer-events-none"
+      />
+
+      <div className="relative max-w-md w-full animate-in fade-in zoom-in-95 duration-500">
+        {/* Verified pill */}
+        <div className="flex items-center justify-center gap-2 mb-5">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 dark:bg-emerald-400/10 border border-emerald-300/50 dark:border-emerald-400/30 backdrop-blur">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-[0.14em]">
+              Verified by AMASI
+            </span>
+          </div>
         </div>
 
         {/* Card */}
-        <div className="bg-white dark:bg-slate-950 border rounded-2xl shadow-xl overflow-hidden">
-          {/* Header band */}
-          <div className="bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-500/20 dark:to-amber-500/5 p-6 border-b border-amber-200/70 dark:border-amber-400/30">
-            <div className="flex items-start gap-4">
+        <div className="relative bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border border-amber-200/40 dark:border-amber-400/20 rounded-3xl shadow-2xl shadow-amber-500/10 dark:shadow-amber-500/5 overflow-hidden">
+          {/* Hero band */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-amber-500 via-amber-400 to-orange-400 dark:from-amber-700 dark:via-amber-800 dark:to-amber-950 p-6 pb-7">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 opacity-30"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle at 25% 30%, rgba(255,255,255,0.5) 0%, transparent 40%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.25) 0%, transparent 35%)",
+              }}
+            />
+            <div className="relative flex items-start gap-4">
               {m.profile_photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={m.profile_photo}
                   alt={m.name ?? "Member"}
-                  className="h-16 w-16 rounded-full object-cover bg-white border-2 border-white shadow"
+                  className="h-20 w-20 rounded-full object-cover ring-4 ring-white/80 shadow-xl shrink-0"
                 />
               ) : (
-                <div className="h-16 w-16 rounded-full bg-white border-2 border-white shadow flex items-center justify-center text-amber-700 font-bold text-lg">
-                  {(m.name ?? "?").split(/\s+/).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("")}
+                <div className="h-20 w-20 rounded-full bg-white ring-4 ring-white/80 shadow-xl flex items-center justify-center text-amber-700 font-bold text-2xl shrink-0">
+                  {(m.name ?? "?")
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((s) => s[0]?.toUpperCase())
+                    .join("")}
                 </div>
               )}
-              <div className="flex-1 min-w-0">
-                <h1 className="font-bold text-lg leading-tight">{m.name ?? "Unknown"}</h1>
-                <p className="text-xs text-muted-foreground font-mono mt-0.5">
+              <div className="flex-1 min-w-0 pt-1">
+                <h1 className="font-bold text-xl text-white leading-tight drop-shadow-sm">
+                  {m.name ?? "Unknown"}
+                </h1>
+                <p className="text-xs text-white/85 font-mono mt-1 inline-block bg-white/15 backdrop-blur px-2 py-0.5 rounded">
                   AMASI #{m.amasi_number}
                 </p>
               </div>
-              <Award className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              <div className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center shrink-0 ring-1 ring-white/30">
+                <Award className="h-5 w-5 text-white" />
+              </div>
             </div>
           </div>
 
           {/* Credential body */}
-          <div className="p-6 space-y-4">
+          <div className="p-6 space-y-5">
             <div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-400 font-bold mb-1.5">
                 Holds
               </div>
-              <div className="text-base font-semibold">{CRED_LABEL[c.type] ?? c.type}</div>
+              <div className="text-lg font-bold leading-snug">{CRED_LABEL[c.type] ?? c.type}</div>
               {c.course_name && (
                 <div className="text-sm text-muted-foreground mt-1">{c.course_name}</div>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-              <div>
-                <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1">
-                  <Calendar className="h-3 w-3" />
+            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-dashed">
+              <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/5 border border-amber-100 dark:border-amber-400/15 p-3">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
+                  <Calendar className="h-3 w-3 text-amber-600 dark:text-amber-400" />
                   Year
                 </div>
-                <div className="font-semibold tabular-nums">{c.year}</div>
+                <div className="font-bold text-base tabular-nums">{c.year}</div>
               </div>
               {place && (
-                <div>
-                  <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1">
-                    <MapPin className="h-3 w-3" />
+                <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/5 border border-amber-100 dark:border-amber-400/15 p-3">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
+                    <MapPin className="h-3 w-3 text-amber-600 dark:text-amber-400" />
                     Place
                   </div>
-                  <div className="font-semibold">{place}</div>
+                  <div className="font-bold text-base">{place}</div>
                 </div>
               )}
             </div>
           </div>
 
           {/* Footer */}
-          <div className="bg-slate-50 dark:bg-slate-900 px-6 py-3 border-t text-xs text-center text-muted-foreground">
-            <p>
-              Verified directly with AMASI&apos;s official member registry.
-              <br />
-              <Link href="https://amasi.org" className="hover:underline text-amber-700 dark:text-amber-400">
-                amasi.org
-              </Link>
+          <div className="bg-gradient-to-b from-slate-50 to-slate-100/80 dark:from-slate-900 dark:to-slate-950 px-6 py-4 border-t text-xs text-center">
+            <p className="text-muted-foreground leading-relaxed">
+              This credential was verified directly with AMASI&apos;s official member registry.
             </p>
+            <Link
+              href="https://amasi.org"
+              className="inline-block mt-2 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:underline tracking-wide"
+            >
+              amasi.org →
+            </Link>
           </div>
         </div>
+
+        {/* Powered-by */}
+        <p className="text-center text-[11px] text-muted-foreground mt-5 tracking-wide">
+          Association of Minimal Access Surgeons of India
+        </p>
       </div>
     </div>
   )

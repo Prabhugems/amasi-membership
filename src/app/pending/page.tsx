@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
@@ -16,7 +17,7 @@ import {
   Search, FileText, Shield, Loader2, Inbox, MessageSquare, RotateCcw, ChevronDown,
   User, GraduationCap, Stethoscope, Camera, ExternalLink,
   Calendar, StickyNote, Filter, ChevronUp,
-  Keyboard, CheckSquare, Square, MinusSquare, X,
+  Keyboard, CheckSquare, Square, MinusSquare, X, RefreshCw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { formatDate, getInitials } from "@/lib/utils"
@@ -195,6 +196,8 @@ export default function PendingPage() {
   const [showCompare, setShowCompare] = useState<string | null>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [nmcResults, setNmcResults] = useState<Record<string, { loading: boolean; reachable?: boolean; verified?: boolean; doctors?: any[]; message?: string }>>({})
+  const [refundDialogApp, setRefundDialogApp] = useState<any | null>(null)
+  const [refundReason, setRefundReason] = useState("")
 
   const verifyNmc = useCallback(async (appId: string, regNo: string, state?: string) => {
     setNmcResults((prev) => ({ ...prev, [appId]: { loading: true } }))
@@ -367,6 +370,31 @@ export default function PendingPage() {
       if (failed > 0) toast.error(`${failed} application(s) failed`)
       queryClient.invalidateQueries({ queryKey: ["applications"] })
       setSelectedIds(new Set())
+    },
+  })
+
+  const refundMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const res = await fetch("/api/applications/refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: id, reason }),
+      })
+      if (!res.ok) throw new Error("Request failed")
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.status) {
+        toast.success(data.message)
+        queryClient.invalidateQueries({ queryKey: ["applications"] })
+        setRefundDialogApp(null)
+        setRefundReason("")
+      } else {
+        toast.error(data.message)
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || "Something went wrong. Please try again.")
     },
   })
 
@@ -878,6 +906,23 @@ export default function PendingPage() {
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("reject"); setRejectReason(""); setApproveNotes(""); setActionMessage(""); setInternalNote(""); setShowNotes(null) }}>
                                 <XCircle className="h-4 w-4" /> Reject
                               </button>
+                              <div className="border-t my-1" />
+                              <button
+                                className={`w-full px-4 py-2.5 text-left text-sm font-medium flex items-center gap-2.5 transition-colors ${
+                                  app.payment_status === "paid"
+                                    ? "hover:bg-orange-50 dark:hover:bg-orange-500/15 text-orange-700 dark:text-orange-300"
+                                    : "text-muted-foreground opacity-40 cursor-not-allowed"
+                                }`}
+                                onClick={() => {
+                                  if (app.payment_status !== "paid") return
+                                  setShowActions(null)
+                                  setRefundDialogApp(app)
+                                  setRefundReason("")
+                                }}
+                                disabled={app.payment_status !== "paid"}
+                              >
+                                <RefreshCw className="h-4 w-4" /> Refund payment
+                              </button>
                             </div>
                           </>
                         )}
@@ -1119,14 +1164,26 @@ export default function PendingPage() {
                             </div>
                           )}
                           <div className="pt-2 border-t">
-                            <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
-                              app.payment_status === "paid"
-                                ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30"
-                                : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30"
-                            }`}>
-                              {app.payment_status === "paid" ? "Payment Received" : "Payment Pending"}
-                            </span>
-                            {app.payment_id && <span className="ml-2 text-xs text-muted-foreground font-mono">{app.payment_id}</span>}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
+                                app.payment_status === "paid"
+                                  ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30"
+                                  : app.payment_status === "refunded"
+                                  ? "bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-400/30"
+                                  : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30"
+                              }`}>
+                                {app.payment_status === "paid" ? "Payment Received" : app.payment_status === "refunded" ? "Refunded" : "Payment Pending"}
+                              </span>
+                              {app.payment_id && <span className="text-xs text-muted-foreground font-mono">{app.payment_id}</span>}
+                              {app.payment_status === "paid" && app.payment_id && (
+                                <button
+                                  onClick={() => { setRefundDialogApp(app); setRefundReason("") }}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-400/30 hover:bg-orange-100 dark:hover:bg-orange-500/25 transition-colors"
+                                >
+                                  <RefreshCw className="h-3 w-3" /> Refund
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -1534,6 +1591,56 @@ export default function PendingPage() {
               ) : (
                 <img src={lightboxUrl} alt="Document" className="max-w-full max-h-[70vh] object-contain rounded-lg" />
               )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Refund Payment Dialog */}
+      <Dialog open={!!refundDialogApp} onOpenChange={(open) => { if (!open) { setRefundDialogApp(null); setRefundReason("") } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-700 dark:text-orange-300">
+              <RefreshCw className="h-5 w-5" /> Refund Payment
+            </DialogTitle>
+          </DialogHeader>
+          {refundDialogApp && (
+            <div className="space-y-4">
+              <div className="bg-orange-50 dark:bg-orange-500/15 border border-orange-200 dark:border-orange-400/30 rounded-lg p-3 text-sm space-y-1.5">
+                <p><span className="font-semibold text-muted-foreground">Applicant:</span> {refundDialogApp.email}</p>
+                <p><span className="font-semibold text-muted-foreground">Reference:</span> <span className="font-mono">{refundDialogApp.reference_number}</span></p>
+                <p><span className="font-semibold text-muted-foreground">Payment ID:</span> <span className="font-mono text-xs">{refundDialogApp.payment_id}</span></p>
+                {refundDialogApp.membership_type !== "ILM" && (
+                  <p className="text-xs text-orange-600 dark:text-orange-400 pt-1 border-t border-orange-200 dark:border-orange-400/30">
+                    The &#8377;100 processing fee is non-refundable. Only the membership fee will be refunded.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Reason for refund <span className="text-destructive">*</span></Label>
+                <Textarea
+                  value={refundReason}
+                  onChange={e => setRefundReason(e.target.value)}
+                  placeholder="e.g. Application rejected — documents could not be verified..."
+                  className="min-h-[80px]"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="bg-orange-600 hover:bg-orange-700 text-white shadow-sm"
+                  onClick={() => refundMutation.mutate({ id: refundDialogApp.id, reason: refundReason })}
+                  disabled={!refundReason.trim() || refundMutation.isPending}
+                >
+                  {refundMutation.isPending
+                    ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                    : <RefreshCw className="h-4 w-4 mr-1.5" />}
+                  Issue Refund
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setRefundDialogApp(null); setRefundReason("") }}>
+                  Cancel
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>

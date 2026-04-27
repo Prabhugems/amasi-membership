@@ -28,6 +28,7 @@ async function verifyToken(token: string) {
 const PUBLIC_ROUTES = [
   "/login",
   "/apply",
+  "/track",
   "/member",
   "/membership",
   "/verify",
@@ -53,6 +54,7 @@ const PUBLIC_API_ROUTES = [
   // short-link redirect that expands /r/<code> to the full /apply?resume=... url
   "/api/r/",
   "/api/otp/",
+  "/api/track/",
   "/api/payments/",
   "/api/pincode",
   "/api/ocr",

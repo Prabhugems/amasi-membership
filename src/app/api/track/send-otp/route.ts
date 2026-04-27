@@ -1,0 +1,136 @@
+import { NextRequest } from "next/server"
+import { Resend } from "resend"
+import { createAdminClient } from "@/lib/supabase"
+import { checkRateLimit } from "@/lib/rate-limit"
+import { randomInt } from "node:crypto"
+
+function generateOTP(): string {
+  return String(randomInt(100000, 999999))
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@")
+  const visible = local.slice(0, 2)
+  return `${visible}***@${domain}`
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const rl = await checkRateLimit(`track-otp:${ip}`, 5, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests. Please try again later." }, { status: 429 })
+    }
+
+    const body = await request.json()
+    const { email: emailInput, referenceNumber } = body
+
+    const supabase = createAdminClient()
+    let resolvedEmail: string | null = null
+
+    if (referenceNumber?.trim()) {
+      const ref = referenceNumber.trim().toUpperCase()
+      const { data: app } = await supabase
+        .from("membership_applications")
+        .select("email")
+        .eq("reference_number", ref)
+        .maybeSingle()
+
+      if (!app) {
+        return Response.json(
+          { status: false, message: "No application found with this reference number." },
+          { status: 404 }
+        )
+      }
+      resolvedEmail = app.email.toLowerCase().trim()
+    } else if (emailInput?.includes("@")) {
+      resolvedEmail = emailInput.toLowerCase().trim()
+      const { data: app } = await supabase
+        .from("membership_applications")
+        .select("id")
+        .eq("email", resolvedEmail)
+        .maybeSingle()
+
+      if (!app) {
+        return Response.json(
+          { status: false, message: "No application found for this email address." },
+          { status: 404 }
+        )
+      }
+    } else {
+      return Response.json(
+        { status: false, message: "Please provide a valid email or reference number." },
+        { status: 400 }
+      )
+    }
+
+    // Rate limit: max 3 OTPs per email per 10 minutes
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    const { count } = await supabase
+      .from("otp_codes")
+      .select("*", { count: "exact", head: true })
+      .eq("email", resolvedEmail)
+      .gte("created_at", tenMinAgo)
+
+    if ((count || 0) >= 3) {
+      return Response.json(
+        { status: false, message: "Too many OTP requests. Please wait 10 minutes." },
+        { status: 429 }
+      )
+    }
+
+    const code = generateOTP()
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+    const { error: insertError } = await supabase.from("otp_codes").insert({
+      email: resolvedEmail,
+      code,
+      expires_at: expiresAt.toISOString(),
+    })
+
+    if (insertError) {
+      console.error("[track/send-otp] insert error:", insertError)
+      return Response.json({ status: false, message: "Failed to generate OTP." }, { status: 500 })
+    }
+
+    const resendKey = process.env.RESEND_API_KEY?.trim()
+    if (!resendKey) {
+      console.error("[track/send-otp] RESEND_API_KEY not set")
+      return Response.json({ status: false, message: "Email service not configured." }, { status: 500 })
+    }
+
+    const resend = new Resend(resendKey)
+    const { error: emailError } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
+      to: resolvedEmail as string,
+      subject: "Track your AMASI application — verification code",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #1a1a1a; margin-bottom: 16px;">Track Your Application</h2>
+          <p style="color: #555; font-size: 15px;">Enter this code to view your AMASI membership application status:</p>
+          <div style="background: #f4f4f5; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1a1a1a;">${code}</span>
+          </div>
+          <p style="color: #555; font-size: 14px;">This code expires in 10 minutes. Do not share it with anyone.</p>
+          <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
+          <p style="color: #999; font-size: 12px;">Association of Minimal Access Surgeons of India</p>
+        </div>
+      `,
+    })
+
+    if (emailError) {
+      console.error("[track/send-otp] email send error:", emailError)
+      return Response.json({ status: false, message: "Failed to send verification email." }, { status: 500 })
+    }
+
+    return Response.json({
+      status: true,
+      message: "Verification code sent to your email.",
+      email: resolvedEmail as string,
+      maskedEmail: maskEmail(resolvedEmail as string),
+    })
+  } catch (error: unknown) {
+    console.error("[track/send-otp] unexpected error:", error)
+    return Response.json({ status: false, message: "Something went wrong. Please try again." }, { status: 500 })
+  }
+}

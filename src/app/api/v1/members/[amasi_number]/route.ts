@@ -44,7 +44,7 @@ export async function GET(
   const supabase = createAdminClient()
   const { data: member, error } = await supabase
     .from("members")
-    .select("amasi_number, name, email, phone, mobile_code, city, state")
+    .select("amasi_number, name, first_name, last_name, email, phone, mobile_code, city, state")
     .eq("amasi_number", amasiNumber)
     .eq("status", "active")
     .limit(1)
@@ -62,6 +62,8 @@ export async function GET(
     data: {
       amasi_number: member.amasi_number,
       name: member.name,
+      first_name: member.first_name,
+      last_name: member.last_name,
       email: member.email,
       mobile: formatMobile(member.phone, member.mobile_code),
       city: member.city,

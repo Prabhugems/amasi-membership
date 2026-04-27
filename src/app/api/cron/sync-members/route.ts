@@ -84,9 +84,12 @@ export async function GET(request: Request) {
 
         // Build record
         const name = [d.first_name, d.middle_name, d.last_name].filter(Boolean).join(" ").trim()
-        const record: Record<string, any> = {
+        const record: Record<string, unknown> = {
           amasi_number: num,
           name: name || "Unknown",
+          first_name: d.first_name || null,
+          middle_name: d.middle_name || null,
+          last_name: d.last_name || null,
           email: d.email || `member${num}@amasi.org`,
           phone: String(d.mobile || ""),
           status: "active",
@@ -144,9 +147,10 @@ export async function GET(request: Request) {
         } else {
           imported.push({ amasi: num, name, email: d.email || "" })
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         consecutiveNotFound++
-        console.error(`Sync: error fetching #${num}:`, err.message)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`Sync: error fetching #${num}:`, msg)
       }
     }
 
@@ -160,7 +164,7 @@ export async function GET(request: Request) {
       imported: imported.length,
       members: imported,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Sync error:", error)
     return Response.json({ error: "Sync failed" }, { status: 500 })
   }

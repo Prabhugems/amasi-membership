@@ -1,16 +1,17 @@
 /**
- * Supabase database type definitions — partial, hand-authored for schema
- * changes introduced in sql/025_reference_number_propagation.sql.
+ * TODO(hard — AUDIT-2026-04.md §2.4): This is a PARTIAL, hand-authored stub,
+ * NOT a generated schema. The SupabaseClient is NOT typed with Database<...>,
+ * so type mismatches between queries and DB columns are silent at compile time.
+ * This is fragile-area #5 (schema-drift via stale types) from CONTEXT.md.
  *
- * HOW TO REGENERATE (requires SUPABASE_ACCESS_TOKEN):
- *   npx supabase gen types typescript \
+ * Replace with a fully generated schema before adding more tables or columns:
+ *   SUPABASE_ACCESS_TOKEN=<token> npx supabase gen types typescript \
  *     --project-id jmdwxymbgxwdsmcwbahp \
  *     --schema public \
  *     > src/types/database.types.ts
+ * Then wire `Database` into `createClient<Database>(url, key)` in src/lib/supabase.ts.
  *
- * Until the full schema is generated and the SupabaseClient is typed with
- * Database (see AUDIT-2026-04.md §2.4 / Pattern 4), this file documents the
- * columns added in this PR so future migrations have a reference point.
+ * DO NOT add more hand-authored table types to this file — generate instead.
  */
 
 export type Json =

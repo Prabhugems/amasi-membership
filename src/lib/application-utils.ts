@@ -1,7 +1,7 @@
 // Application utilities: reference numbers, confirmation emails, duplicate detection
 
-import { randomBytes } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase"
+export { generateRefNumber } from "@/lib/reference-number"
 
 /**
  * Values containing PostgREST filter-syntax characters (`,` `(` `)` `.` `\` `"`)
@@ -10,14 +10,6 @@ import { createAdminClient } from "@/lib/supabase"
  */
 function isUnsafeForOrFilter(value: string): boolean {
   return /[,()."\\]/.test(value)
-}
-
-/** Generate a unique application reference number: AMASI-2026-XXXXXXXX (10 hex chars) */
-export function generateRefNumber(): string {
-  const year = new Date().getFullYear()
-  // 5 bytes → 10 hex chars → 16^10 ≈ 1.1 trillion values per year
-  const random = randomBytes(5).toString("hex").toUpperCase()
-  return `AMASI-${year}-${random}`
 }
 
 /** Check if an application already exists for this email, phone, or registration number */

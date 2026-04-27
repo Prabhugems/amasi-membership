@@ -6,6 +6,10 @@ interface CredRow {
   year: number
   skill_course_id: number | null
   awarded_at: string | null
+  dispatch_status: string | null
+  tracking_number: string | null
+  dispatched_at: string | null
+  notes: string | null
 }
 
 interface MemberRow {
@@ -41,6 +45,10 @@ interface FmasResponseRow {
   // legacy per-year fallback (one place per year, often wrong for years
   // that had multiple courses); UI uses it only when course_place is null.
   fallback_place: string | null
+  dispatch_status: string | null
+  tracking_number: string | null
+  dispatched_at: string | null
+  notes: string | null
 }
 
 interface FmasResponse {
@@ -65,7 +73,9 @@ async function fetchAllCredentials(db: SupabaseClient): Promise<CredRow[]> {
   for (;;) {
     const { data, error } = await db
       .from("member_credentials")
-      .select("amasi_number, year, skill_course_id, awarded_at")
+      .select(
+        "amasi_number, year, skill_course_id, awarded_at, dispatch_status, tracking_number, dispatched_at, notes"
+      )
       .eq("credential_type", "FMAS")
       .order("year", { ascending: false })
       .order("amasi_number", { ascending: true })
@@ -170,6 +180,10 @@ export async function GET() {
         course_name: course?.name ?? null,
         course_place: course?.place ?? null,
         fallback_place: fallbackPlaceByYear.get(c.year) ?? null,
+        dispatch_status: c.dispatch_status,
+        tracking_number: c.tracking_number,
+        dispatched_at: c.dispatched_at,
+        notes: c.notes,
       }
     })
 

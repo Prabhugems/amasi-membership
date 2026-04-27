@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Search,
   Loader2,
@@ -19,6 +19,11 @@ import {
   Filter,
   Users,
   Building2,
+  Send,
+  Truck,
+  Link2,
+  Check,
+  StickyNote,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -40,6 +45,19 @@ interface FmasRow {
   course_name: string | null
   course_place: string | null
   fallback_place: string | null
+  dispatch_status: string | null
+  tracking_number: string | null
+  dispatched_at: string | null
+  notes: string | null
+}
+
+interface OtherCredential {
+  credential_type: "FMAS" | "MMAS" | "DIPMAS" | "COURSE_CERT"
+  year: number
+  skill_course_id: number | null
+  course_name: string | null
+  course_place: string | null
+  awarded_at: string | null
 }
 
 interface FmasApiResponse {
@@ -245,28 +263,132 @@ function CourseBadge({ row }: { row: FmasRow }) {
   )
 }
 
+const DISPATCH_OPTIONS = [
+  { value: "", label: "Not set" },
+  { value: "pending", label: "Pending" },
+  { value: "shipped", label: "Shipped" },
+  { value: "delivered", label: "Delivered" },
+  { value: "rto", label: "RTO" },
+  { value: "n/a", label: "N/A" },
+] as const
+
+function dispatchTone(s: string | null): string {
+  switch (s) {
+    case "delivered":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-400/30"
+    case "shipped":
+      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30"
+    case "pending":
+      return "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-400/30"
+    case "rto":
+      return "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-400/30"
+    case "n/a":
+      return "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+    default:
+      return "bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700"
+  }
+}
+
 function DetailSheet({
   row,
-  open,
   onClose,
 }: {
-  row: FmasRow | null
-  open: boolean
+  // Parent gates rendering with a key={amasi-year}; this component owns its
+  // form state from mount and is remounted when the selected row changes.
+  row: FmasRow
   onClose: () => void
 }) {
+  const qc = useQueryClient()
+  const [dispatchStatus, setDispatchStatus] = useState<string>(row.dispatch_status ?? "")
+  const [trackingNumber, setTrackingNumber] = useState<string>(row.tracking_number ?? "")
+  const [notes, setNotes] = useState<string>(row.notes ?? "")
+  const [verifyExpiry, setVerifyExpiry] = useState<"7d" | "30d" | "90d" | "1y">("30d")
+  const [verifyUrl, setVerifyUrl] = useState<string | null>(null)
+
   useEffect(() => {
-    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose])
+  }, [onClose])
 
-  if (!open || !row) return null
+  const otherCreds = useQuery<{ credentials: OtherCredential[] }>({
+    queryKey: ["admin-credentials", row.amasi_number],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/credentials/${row.amasi_number}`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+  })
+
+  const emailCert = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/fmas/email-cert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amasi_number: row.amasi_number }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? "Failed to send")
+      return json
+    },
+    onSuccess: (json: { sent_to: string }) => {
+      toast.success(`Certificate sent to ${json.sent_to}`)
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const saveDispatch = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/fmas/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amasi_number: row.amasi_number,
+          year: row!.year,
+          dispatch_status: dispatchStatus || null,
+          tracking_number: trackingNumber || null,
+          notes: notes || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? "Failed to save")
+      return json
+    },
+    onSuccess: () => {
+      toast.success("Dispatch saved")
+      qc.invalidateQueries({ queryKey: ["admin-fmas-list"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const generateVerifyLink = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/fmas/verify-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amasi_number: row.amasi_number,
+          expiresIn: verifyExpiry,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? "Failed to generate link")
+      return json
+    },
+    onSuccess: (json: { url: string }) => {
+      setVerifyUrl(json.url)
+      copyToClipboard(json.url, "Verify link")
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
 
   const place = placeOf(row)
   const conv = convocationNumber(row)
+  const others = (otherCreds.data?.credentials ?? []).filter(
+    (c) => !(c.credential_type === "FMAS" && c.year === row.year)
+  )
 
   return (
     <>
@@ -363,6 +485,183 @@ function DetailSheet({
                 Copy #
               </Button>
             </div>
+          </div>
+
+          {/* Actions */}
+          <div>
+            <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+              Actions
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 justify-start"
+                disabled={!row.email || emailCert.isPending}
+                onClick={() => emailCert.mutate()}
+                title={row.email ? `Send to ${row.email}` : "Member has no email on file"}
+              >
+                {emailCert.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                Email cert
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 justify-start"
+                disabled={generateVerifyLink.isPending}
+                onClick={() => generateVerifyLink.mutate()}
+                title="Generate a public verification link"
+              >
+                {generateVerifyLink.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Link2 className="h-3.5 w-3.5" />
+                )}
+                Verify link
+              </Button>
+            </div>
+            {verifyUrl && (
+              <div className="mt-2 border rounded-lg p-2.5 bg-emerald-50/40 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-400/30 text-xs">
+                <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-medium mb-1">
+                  <Check className="h-3 w-3" />
+                  Link copied — expires in {verifyExpiry}
+                </div>
+                <div className="flex items-center gap-1">
+                  <code className="flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                    {verifyUrl}
+                  </code>
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => copyToClipboard(verifyUrl, "Verify link")}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Link expires in</span>
+              <select
+                value={verifyExpiry}
+                onChange={(e) =>
+                  setVerifyExpiry(e.target.value as "7d" | "30d" | "90d" | "1y")
+                }
+                className="h-7 border rounded px-1.5 bg-background"
+              >
+                <option value="7d">7 days</option>
+                <option value="30d">30 days</option>
+                <option value="90d">90 days</option>
+                <option value="1y">1 year</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Dispatch */}
+          <div>
+            <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Truck className="h-3 w-3" /> Dispatch
+            </h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span
+                  className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${dispatchTone(row.dispatch_status)}`}
+                >
+                  {row.dispatch_status ?? "Not set"}
+                </span>
+                {row.dispatched_at && (
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(row.dispatched_at)}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={dispatchStatus}
+                  onChange={(e) => setDispatchStatus(e.target.value)}
+                  className="h-9 border rounded-md px-2 text-sm bg-background"
+                >
+                  {DISPATCH_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  placeholder="Tracking #"
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div className="relative">
+                <StickyNote className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <textarea
+                  placeholder="Internal note (optional)"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className="w-full pl-8 pr-2 py-2 text-sm border rounded-md bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <Button
+                size="sm"
+                className="w-full gap-1.5"
+                disabled={saveDispatch.isPending}
+                onClick={() => saveDispatch.mutate()}
+              >
+                {saveDispatch.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                Save dispatch
+              </Button>
+            </div>
+          </div>
+
+          {/* Other credentials */}
+          <div>
+            <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+              All credentials
+            </h3>
+            {otherCreds.isLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+              </div>
+            ) : others.length === 0 ? (
+              <div className="text-xs text-muted-foreground italic">
+                No other credentials on file.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {others.map((c) => (
+                  <div
+                    key={`${c.credential_type}-${c.year}`}
+                    className="border rounded-lg px-3 py-2 text-sm flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-xs">
+                        {c.credential_type} · {c.year}
+                      </div>
+                      {c.course_name && (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {c.course_name}
+                        </div>
+                      )}
+                    </div>
+                    {c.course_place && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {c.course_place}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Contact */}
@@ -841,7 +1140,13 @@ export default function AdminFmasPage() {
         </div>
       )}
 
-      <DetailSheet row={selected} open={!!selected} onClose={() => setSelected(null)} />
+      {selected && (
+        <DetailSheet
+          key={`${selected.amasi_number}-${selected.year}`}
+          row={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }

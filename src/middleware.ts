@@ -31,6 +31,7 @@ const PUBLIC_ROUTES = [
   "/member",
   "/membership",
   "/verify",
+  "/v",
   "/support",
   "/card",
   "/profile",
@@ -67,6 +68,7 @@ const PUBLIC_API_ROUTES = [
   "/api/zoho/callback",
   "/api/member/refresh-token",
   "/api/sentry-test",
+  "/api/verify/",
   // Cron endpoints — Bearer CRON_SECRET enforced inside each route handler.
   // Allowlist required because Vercel cron requests carry no admin cookie;
   // without this, every scheduled invocation 401s at middleware before

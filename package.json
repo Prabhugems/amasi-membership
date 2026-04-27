@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "prepare": "husky"
+    "prepare": "husky",
+    "gen:types": "supabase gen types typescript --project-id jmdwxymbgxwdsmcwbahp --schema public > src/types/database.types.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

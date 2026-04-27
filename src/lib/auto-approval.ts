@@ -114,12 +114,80 @@ export async function autoApproveApplication(
   supabase: SupabaseClient,
   input: AutoApprovalInput,
 ): Promise<AutoApprovalResult> {
-  // TODO: idempotency — like the manual approve route (fix/approve-route-idempotency), this
-  // helper is non-idempotent against repeated calls for the same application (e.g. a Razorpay
-  // retry on non-2xx). If called twice before the application update commits, it will consume
-  // a second sequence number and fail on the email unique constraint. A similar already-linked
-  // check (member_id non-null → skip RPC + insert) should be added. See CONTEXT.md
-  // "Razorpay payment flow" and "Application → member field copy" fragile areas.
+  // Idempotency. Before this guard, a Razorpay webhook retry (it retries up
+  // to 4× on non-2xx) would call nextval('amasi_number_seq') again, burn a
+  // fresh AMASI number, then fail on the members.email unique constraint and
+  // return non-2xx — repeating the cycle and leaving 1-4 lost numbers in the
+  // sequence per failed application (see gaps 18260-61, 18278-81). The two
+  // checks below short-circuit retries:
+  //
+  //   1. application.status='approved' AND assigned_amasi_number set:
+  //      previous run completed all DB writes — return that number.
+  //   2. members row already exists for input.email:
+  //      previous run got past member insert but stalled before updating the
+  //      application row. Link the application now and return the existing #.
+  //
+  // Both paths are safe to repeat: they only read or update existing rows;
+  // they never advance the sequence.
+
+  const { data: existingApp, error: appLookupError } = await supabase
+    .from("membership_applications")
+    .select("status, assigned_amasi_number")
+    .eq("id", input.applicationId)
+    .maybeSingle()
+
+  if (appLookupError) {
+    console.error("[auto-approval] application lookup failed:", appLookupError)
+    return {
+      success: false,
+      reason: `application lookup failed: ${appLookupError.message}`,
+      stage: "sequence",
+    }
+  }
+
+  if (
+    existingApp?.status === "approved" &&
+    typeof existingApp.assigned_amasi_number === "number"
+  ) {
+    console.log(
+      `[auto-approval] retry detected — application ${input.applicationId} already approved as #${existingApp.assigned_amasi_number}, short-circuiting`,
+    )
+    return { success: true, amasiNumber: existingApp.assigned_amasi_number }
+  }
+
+  // Recovery path: member row already created in a prior partial run but the
+  // application update never committed. Link the row now without burning a
+  // new sequence number.
+  const { data: priorMember } = await supabase
+    .from("members")
+    .select("amasi_number")
+    .eq("email", input.email)
+    .maybeSingle()
+
+  if (priorMember && typeof priorMember.amasi_number === "number") {
+    console.log(
+      `[auto-approval] recovery — member already exists for ${input.email} as #${priorMember.amasi_number}, linking application ${input.applicationId}`,
+    )
+    const { error: linkError } = await supabase
+      .from("membership_applications")
+      .update({
+        status: "approved",
+        assigned_amasi_number: priorMember.amasi_number,
+        reviewed_at: new Date().toISOString(),
+        review_notes: input.reviewNotes,
+      })
+      .eq("id", input.applicationId)
+
+    if (linkError) {
+      console.error(
+        "[auto-approval] linking existing member to application failed:",
+        linkError,
+      )
+      // Member is real; do not roll back. Caller can retry — the next call will
+      // hit this branch again until the application update finally commits.
+    }
+    return { success: true, amasiNumber: priorMember.amasi_number }
+  }
 
   // 1. Reserve AMASI number
   const { data: nextNumRaw, error: seqError } = await supabase.rpc("next_amasi_number")

@@ -67,3 +67,6 @@ next-env.d.ts
 
 # security: never commit import scripts with hardcoded keys
 import_members.js
+
+# Sentry Config File
+.env.sentry-build-plugin

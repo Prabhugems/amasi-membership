@@ -7,6 +7,22 @@ on:
     branches: [main]
 
 jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # Lint job intentionally not added here yet — repo has 304 pre-existing
+  # ESLint errors (mostly @typescript-eslint/no-explicit-any in fragile payment
+  # and zoho code). Add a `lint` job to CI once that baseline is cleaned up.
+
   test:
     runs-on: ubuntu-latest
     steps:

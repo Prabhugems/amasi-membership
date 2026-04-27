@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# .env.example IS committed (template, no secrets). The negation must come
+# AFTER `.env*` so it re-includes the file.
+!.env.example
 
 # vercel
 .vercel

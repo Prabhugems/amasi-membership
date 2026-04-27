@@ -1175,7 +1175,7 @@ export default function PendingPage() {
                                 {app.payment_status === "paid" ? "Payment Received" : app.payment_status === "refunded" ? "Refunded" : "Payment Pending"}
                               </span>
                               {app.payment_id && <span className="text-xs text-muted-foreground font-mono">{app.payment_id}</span>}
-                              {app.payment_status === "paid" && app.payment_id && (
+                              {app.payment_status === "paid" && app.payment_id && ["submitted", "pending_review", "ai_approved", "need_clarification", "resubmit_requested", "documents_unreadable", "rejected"].includes(app.status) && (
                                 <button
                                   onClick={() => { setRefundDialogApp(app); setRefundReason("") }}
                                   className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-400/30 hover:bg-orange-100 dark:hover:bg-orange-500/25 transition-colors"

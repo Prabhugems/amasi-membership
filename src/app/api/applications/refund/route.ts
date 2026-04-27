@@ -69,8 +69,14 @@ async function refundApplication(
     .eq("gateway_payment_id", app.payment_id)
     .maybeSingle()
 
+  // Hard precondition: no payment row means we cannot determine the amount or check idempotency
+  if (!paymentRow) {
+    Sentry.captureException(new Error(`Refund attempted on application ${app.id} with no membership_payments row`))
+    return Response.json({ status: false, message: "No payment record found for this application. Reconcile manually." }, { status: 400 })
+  }
+
   // Idempotency guard: if refund_id already set, treat as success
-  if (paymentRow?.refund_id) {
+  if (paymentRow.refund_id) {
     return Response.json({
       status: true,
       alreadyRefunded: true,
@@ -80,9 +86,9 @@ async function refundApplication(
   }
 
   // Determine refund amount — membership fee only (exclude ₹100 processing fee for INR)
-  const totalAmount = paymentRow?.amount ?? 0
-  const currency = paymentRow?.currency ?? "INR"
-  const feeBreakdown = paymentRow?.fee_breakdown as Record<string, any> | null
+  const totalAmount = paymentRow.amount ?? 0
+  const currency = paymentRow.currency ?? "INR"
+  const feeBreakdown = paymentRow.fee_breakdown as Record<string, any> | null
 
   let refundAmount: number
   if (currency === "INR") {
@@ -301,6 +307,10 @@ async function refundDraft(draftId: string, adminEmail: string, supabase: Return
       notes: { reason: "Incomplete application refund", draft_id: draftId },
     })
   } catch (razorpayError: any) {
+    Sentry.captureException(razorpayError, {
+      tags: { flow: "draft_refund" },
+      extra: { draftId, adminEmail },
+    })
     console.error("Razorpay refund error:", razorpayError)
 
     await logMembershipAuditEvent({

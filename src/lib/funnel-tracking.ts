@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 
 export type FunnelEventType =
   | "step_entered"
+  | "stage_1_complete"
   | "doc_upload"
   | "payment"
   | "submit"

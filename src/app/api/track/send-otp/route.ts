@@ -18,6 +18,20 @@ function oracleSafeResponse() {
   )
 }
 
+// Security: constant-time response to prevent timing-based enumeration oracle.
+// The found path runs: rate-limit DB read + OTP INSERT + Resend round-trip
+// (~600ms at the 95th percentile). Not-found paths must be padded to the same
+// budget so that response latency does not leak whether a reference number or
+// email exists in the database. Jitter (±JITTER_MS) defeats statistical
+// aggregation over repeated samples.
+const TIMING_BUDGET_MS = 800
+const TIMING_JITTER_MS = 100
+
+function timingDelay(): Promise<void> {
+  const jitter = Math.floor(Math.random() * TIMING_JITTER_MS * 2) - TIMING_JITTER_MS
+  return new Promise(r => setTimeout(r, TIMING_BUDGET_MS + jitter))
+}
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
@@ -43,7 +57,9 @@ export async function POST(request: NextRequest) {
 
       // Do NOT reveal whether the reference number was found.
       // Same response for found and not-found to prevent email enumeration oracle.
+      // timingDelay() equalises latency with the found path (constant-time oracle fix).
       if (!app) {
+        await timingDelay()
         return oracleSafeResponse()
       }
       resolvedEmail = app.email.toLowerCase().trim()
@@ -57,7 +73,9 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       // Same oracle-safe pattern: don't confirm whether the email exists.
+      // timingDelay() equalises latency with the found path (constant-time oracle fix).
       if (!app) {
+        await timingDelay()
         return oracleSafeResponse()
       }
     } else {

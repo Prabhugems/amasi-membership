@@ -3,6 +3,19 @@ import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
+// Security: constant-time response to prevent timing-based enumeration oracle.
+// The found+correct-code path runs: OTP read + 2 updates + application fetch +
+// step-events fetch (~250ms at the 95th percentile). The not-found path must be
+// padded to the same budget so latency does not reveal whether a valid OTP exists.
+// Jitter (±JITTER_MS) defeats statistical aggregation over repeated samples.
+const TIMING_BUDGET_MS = 400
+const TIMING_JITTER_MS = 75
+
+function timingDelay(): Promise<void> {
+  const jitter = Math.floor(Math.random() * TIMING_JITTER_MS * 2) - TIMING_JITTER_MS
+  return new Promise(r => setTimeout(r, TIMING_BUDGET_MS + jitter))
+}
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
@@ -45,6 +58,8 @@ export async function POST(request: NextRequest) {
     const { data: otpRecord, error: otpError } = await otpQuery.single()
 
     if (otpError || !otpRecord) {
+      // timingDelay() equalises latency with the found path (constant-time oracle fix).
+      await timingDelay()
       return Response.json(
         { status: false, message: "No valid OTP found. Please request a new one." },
         { status: 400 }

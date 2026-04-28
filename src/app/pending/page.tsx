@@ -854,6 +854,12 @@ export default function PendingPage() {
                             label: "User-submitted",
                             cls: "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-400/30",
                           },
+                          // Neutral grey: face-detection bypass is a user condition (no clear face
+                          // in the photo), not a service problem. Reviewer manually verifies.
+                          face_detection_failed: {
+                            label: "Face check failed",
+                            cls: "bg-gray-50 dark:bg-gray-500/15 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-400/30",
+                          },
                         }
                         const m = meta[code]
                         return (

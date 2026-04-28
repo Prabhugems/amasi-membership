@@ -256,6 +256,36 @@ describe("manual-review bypass (PR 0)", () => {
     expect(parseManualReviewReason("")).toBeNull()
   })
 
+  it("face_detection_failed is in MANUAL_REVIEW_REASON_CODES (PR 1)", () => {
+    // PR 1: profile photo's "Submit anyway for review" path writes this code.
+    // If a future PR removes it, the apply page's bypass write will be silently
+    // rejected by validateRequiredDocuments — catch that drift here.
+    expect(MANUAL_REVIEW_REASON_CODES).toContain("face_detection_failed")
+  })
+
+  it("validateRequiredDocuments accepts a profile bypass with face_detection_failed", () => {
+    // Profile is excluded from required-doc validation today (UI-required only),
+    // but a bypass on a NON-profile slot using face_detection_failed must also
+    // be accepted by the validator — same code path. Lock the rule.
+    const result = validateRequiredDocuments(
+      {
+        mci_certificate: {
+          status: "uploaded",
+          fileUrl: "https://x/mci.jpg",
+          bypass: true,
+          bypassReason: "face_detection_failed",
+        },
+      },
+      ["mci_certificate"]
+    )
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.bypassedDocs).toEqual([
+        { key: "mci_certificate", reason: "face_detection_failed" },
+      ])
+    }
+  })
+
   it("manualReviewReasonForExtractionFailure routes engineError correctly", () => {
     // engineError=true means the OCR pipeline itself failed (Claude+OCR.space
     // both down, sharp threw, JSON parse failed). Reviewer should retry OCR

@@ -116,6 +116,9 @@ export const MANUAL_REVIEW_REASON_CODES = [
   "ocr_below_threshold",
   "ocr_service_error",
   "user_bypass",
+  // PR 1: profile photo passed face-detection bypass after 2 failed retries.
+  // Distinct from ocr_service_error so reviewer triage isn't misled.
+  "face_detection_failed",
 ] as const
 export type ManualReviewReasonCode = typeof MANUAL_REVIEW_REASON_CODES[number]
 

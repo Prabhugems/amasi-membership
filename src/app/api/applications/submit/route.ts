@@ -503,6 +503,14 @@ export async function POST(request: NextRequest) {
               <p style="color: #92400e; font-weight: bold; margin: 0;">Status: Under Manual Review</p>
               <p style="color: #92400e; font-size: 14px; margin: 4px 0 0;">Some documents require manual verification. We'll notify you once approved.</p>
             </div>
+            ${(hasUserBypass || documentsUnreadable) ? `
+              <div style="background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="color: #155e75; font-weight: 600; margin: 0; font-size: 14px;">Manual review SLA</p>
+                <p style="color: #155e75; font-size: 13px; margin: 6px 0 0;">
+                  Some of your documents were flagged for manual verification. Our team will review them within 2 business days and contact you if anything is needed.
+                </p>
+              </div>
+            ` : ""}
             <p style="color: #999; font-size: 12px;">Association of Minimal Access Surgeons of India</p>
           </div>
         `,

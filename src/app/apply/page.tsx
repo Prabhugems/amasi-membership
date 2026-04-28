@@ -24,6 +24,8 @@ import { applyExtractions } from "@/lib/ai-extract"
 import type { ExtractionResult } from "@/lib/ai-extract"
 import { validatePersonalDetails, validateEducation, validateRegistration } from "@/lib/validators"
 import { detectFace, preloadFaceDetection } from "@/lib/face-detect"
+import { prepareFileForUpload } from "@/lib/upload-prep"
+import type { ManualReviewReasonCode } from "@/lib/document-keys"
 import type { MemberData } from "@/lib/api"
 import { Autocomplete } from "@/components/ui/autocomplete"
 import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
@@ -152,6 +154,64 @@ type UploadEntry = {
   eligibility?: { eligible: boolean; reason: string } | null
   message?: string
   fileUrl?: string | null
+  // PR 1: manual-review bypass markers. status === "uploaded" + bypass === true
+  // + non-empty fileUrl is what validateRequiredDocuments accepts as a passing
+  // "queued for review" slot. bypassReason must match a code from
+  // src/lib/document-keys.ts MANUAL_REVIEW_REASON_CODES.
+  bypass?: boolean
+  bypassReason?: ManualReviewReasonCode
+}
+
+// =====================================================================
+// DO NOT MERGE THESE TWO HELPERS INTO ONE.
+//
+// They look near-identical but encode a structural difference between
+// required documents (mci, pg, asi, mbbs, hod, active_license) and the
+// profile photo. The PR 0 server contract routes uploads down two
+// different /api/ocr outcome paths:
+//
+//   Required docs:
+//     outcome:"extracted"               -> client writes status:"extracted"
+//     outcome:"manual_review_required"  -> client writes status:"uploaded"
+//                                          + bypass:true + bypassReason
+//
+//   Profile photo:
+//     outcome:"stored"                  -> client writes status:"uploaded"
+//                                          + fileUrl, NO bypass marker
+//                                          (profile is not OCR-extracted)
+//     bypass via face_detection_failed  -> status:"uploaded" + bypass:true
+//
+// A unified helper that requires status:"extracted" OR (status:"uploaded"
+// + bypass===true) — which is what PR 1 originally shipped before
+// mid-implementation testing — would FALSELY REJECT the profile happy
+// path (status:"uploaded" without bypass), blocking every applicant at
+// the Continue button regardless of upload success.
+//
+// If you find yourself wanting to consolidate these, first delete this
+// comment AND change the /api/ocr profile branch to return
+// outcome:"extracted". Otherwise: leave them split.
+//
+// PR 1 also closes the latent fileUrl gap c6aa4c9 first identified:
+// status:"uploaded" without a real fileUrl is no longer accepted by
+// either helper.
+// =====================================================================
+function isRequiredSlotValid(u: UploadEntry | undefined): boolean {
+  if (!u) return false
+  const url = typeof u.fileUrl === "string" ? u.fileUrl.trim() : ""
+  if (!url) return false
+  if (u.status === "extracted") return true
+  if (u.status === "uploaded" && u.bypass === true) return true
+  return false
+}
+
+function isProfileSlotValid(u: UploadEntry | undefined): boolean {
+  if (!u) return false
+  const url = typeof u.fileUrl === "string" ? u.fileUrl.trim() : ""
+  if (!url) return false
+  // Happy path (face detected + stored) and bypass path (face_detection_failed)
+  // both land at status:"uploaded" with fileUrl. "extracted" is unreachable
+  // for profile since /api/ocr skips OCR for it.
+  return u.status === "uploaded"
 }
 
 interface ServerDraft {
@@ -286,6 +346,17 @@ function ApplyForm() {
   const [uploads, setUploads] = useState<Record<string, UploadEntry>>({})
   const [expandedTips, setExpandedTips] = useState<Record<string, boolean>>({})
   const [processing, setProcessing] = useState(false)
+  // PR 1: profile-photo face-detection retry counter. After 2 failures the
+  // UI offers a "Submit anyway for review" escape hatch. Reset on success
+  // or on explicit "Try a different photo".
+  const [profileFaceRetries, setProfileFaceRetries] = useState(0)
+  // The most recent profile photo that failed face detection. When non-null
+  // and retries >= 2, the UI renders the bypass button alongside retry.
+  const [profileFaceFailedFile, setProfileFaceFailedFile] = useState<{
+    file: File
+    preview: string
+    message: string
+  } | null>(null)
   const [selectedType, setSelectedType] = useState<MembershipType | null>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("amasi_apply_type")
@@ -441,7 +512,16 @@ function ApplyForm() {
               safeExtracted[ek] = ev
             }
           }
-          return [k, { status: v.status, extracted: safeExtracted, message: v.message, fileUrl: v.fileUrl || null }]
+          // PR 1: preserve bypass markers so a draft resume keeps the user
+          // out of the OCR-rejection limbo their flagged docs were already
+          // bypassed past.
+          return [k, {
+            status: v.status,
+            extracted: safeExtracted,
+            message: v.message,
+            fileUrl: v.fileUrl || null,
+            ...(v.bypass === true ? { bypass: true, bypassReason: v.bypassReason } : {}),
+          }]
         })
       )
       const body: {
@@ -574,33 +654,145 @@ function ApplyForm() {
     preloadFaceDetection()
   }, [])
 
-  const handleFileUpload = useCallback(async (docType: string, file: File) => {
-    const preview = URL.createObjectURL(file)
+  const handleFileUpload = useCallback(async (docType: string, originalFile: File) => {
+    // Show processing card immediately, with the user's original file as the
+    // preview source. `prepareFileForUpload` may rewrite the file (HEIC->JPEG
+    // or compression); we'll regenerate the preview if so.
+    const earlyPreview = URL.createObjectURL(originalFile)
     setUploads((prev) => ({
       ...prev,
-      [docType]: { file, preview, status: "processing", extracted: {} },
+      [docType]: { file: originalFile, preview: earlyPreview, status: "processing", extracted: {} },
     }))
 
+    // PR 1: client-side prep — HEIC->JPEG, compression, format/size guards.
+    // Fixes the silent rejection of iPhone HEIC photos and the Vercel 4.5 MB
+    // body-size cliff.
+    const prepped = await prepareFileForUpload(originalFile)
+    if (!prepped.ok) {
+      setUploads((prev) => ({
+        ...prev,
+        [docType]: { file: originalFile, preview: earlyPreview, status: "rejected", extracted: {}, message: prepped.userMessage },
+      }))
+      toast.error(prepped.userMessage)
+      return
+    }
+    const file = prepped.file
+    let preview = earlyPreview
+    if (file !== originalFile) {
+      URL.revokeObjectURL(earlyPreview)
+      preview = URL.createObjectURL(file)
+    }
+
+    // PR 1: fetch with 60s timeout — was unbounded.
+    let res: Response
     try {
       const uploadData = new FormData()
       uploadData.append("file", file)
       uploadData.append("docType", docType)
+      res = await fetch("/api/ocr", {
+        method: "POST",
+        body: uploadData,
+        signal: AbortSignal.timeout(60_000),
+      })
+    } catch (err: unknown) {
+      const name = err instanceof Error ? err.name : ""
+      const isAbort = name === "TimeoutError" || name === "AbortError"
+      const isNetwork = err instanceof TypeError
+      const message = isAbort
+        ? "Upload took too long. Please check your connection and try again."
+        : isNetwork
+        ? "Connection problem. Please try again in a moment."
+        : "Could not upload this document. Please try again or contact support."
+      setUploads((prev) => ({
+        ...prev,
+        [docType]: { file, preview, status: "rejected", extracted: {}, message },
+      }))
+      toast.error(message)
+      return
+    }
 
-      const res = await fetch("/api/ocr", { method: "POST", body: uploadData })
-      const result = await res.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let result: any
+    try {
+      result = await res.json()
+    } catch {
+      const message = "Server response problem. Please try again."
+      setUploads((prev) => ({
+        ...prev,
+        [docType]: { file, preview, status: "rejected", extracted: {}, message },
+      }))
+      toast.error(message)
+      return
+    }
 
-      // Reject irrelevant documents — show as red rejected card
-      if (result.isIrrelevant || !result.success) {
-        const rejectMessage = result.message || result.error || "This doesn't appear to be a valid medical document. Please upload the correct certificate."
-        setUploads((prev) => ({
-          ...prev,
-          [docType]: { file, preview, status: "rejected", extracted: {}, message: rejectMessage },
-        }))
-        toast.error(rejectMessage)
-        return
-      }
+    // PR 1: branch on outcome (the PR 0 contract). Three terminal cases:
+    //   "extracted"               -> happy path, fall through to field-fill
+    //   "manual_review_required"  -> file IS in storage, route to bypass slot
+    //   "rejected"                -> no file in storage, hard retry
+    const outcome = typeof result.outcome === "string" ? result.outcome : ""
+    const responseReason = typeof result.reason === "string" ? result.reason : ""
 
-      const extracted = result.extracted || {}
+    // (1) Hard reject — switch on (outcome,reason). User must retry; no file
+    // exists for a reviewer to look at.
+    if (outcome === "rejected") {
+      const message = (() => {
+        switch (responseReason) {
+          case "file_too_large":    return "This file is too large. Try a clearer phone photo or compress the image first."
+          case "invalid_format":    return "This format isn't supported. Please upload a JPG, PNG, HEIC, or PDF."
+          case "rate_limit":        return "Too many uploads. Please wait a few minutes and try again."
+          case "auth":              return "Your session expired. Please refresh and verify your email again."
+          case "missing_input":     return "Something went wrong reading the file. Please try again."
+          case "ocr_service_error": return "We couldn't save your document. Please try again in a moment."
+          default: {
+            const fallback = typeof result.error === "string" ? result.error
+              : typeof result.message === "string" ? result.message
+              : "Could not upload this document. Please try again or contact support."
+            return fallback
+          }
+        }
+      })()
+      setUploads((prev) => ({
+        ...prev,
+        [docType]: { file, preview, status: "rejected", extracted: {}, message },
+      }))
+      toast.error(message)
+      return
+    }
+
+    // (2) Manual review — AI couldn't auto-pass but file IS durable in
+    // Supabase (PR 0 storage-before-classify). Route to the bypass slot.
+    // Distinct from (1) on the (outcome,reason) tuple: same reason
+    // "ocr_service_error" can mean "storage failed, hard retry" under
+    // outcome:"rejected" or "AI engine threw, file is safe" under
+    // outcome:"manual_review_required".
+    if (outcome === "manual_review_required") {
+      const bypassReason: ManualReviewReasonCode =
+        responseReason === "ocr_service_error" ? "ocr_service_error" : "ocr_below_threshold"
+      const aiMessage = typeof result.message === "string" ? result.message
+        : typeof result.error === "string" ? result.error
+        : "Could not read this clearly. Our team will review it."
+      const fileUrl = typeof result.fileUrl === "string" ? result.fileUrl : null
+      setUploads((prev) => ({
+        ...prev,
+        [docType]: {
+          file, preview,
+          status: "uploaded",
+          extracted: {},
+          bypass: true,
+          bypassReason,
+          message: aiMessage,
+          fileUrl,
+        },
+      }))
+      toast.success("Document received — our team will review it")
+      saveDraftToServer(3)
+      return
+    }
+
+    // (3) outcome === "extracted" — happy path. Existing rich field-fill
+    // logic continues below, unchanged from pre-PR-1 except that result
+    // accesses are now typed as Record<string, unknown> with safe casts.
+    const extracted = result.extracted || {}
 
       // Check eligibility for PG degree
       if (result.eligibility && !result.eligibility.eligible) {
@@ -805,13 +997,6 @@ function ApplyForm() {
       } else {
         toast.success(`${DOC_LABELS[docType as DocType]} verified`)
       }
-    } catch {
-      setUploads((prev) => ({
-        ...prev,
-        [docType]: { file, preview, status: "uploaded", extracted: {}, message: "Could not read this document. Please try a clearer photo." },
-      }))
-      toast.error("Could not read this document. Please try uploading a clearer photo.")
-    }
   }, [formData, uploads])
 
   const handleRemoveFile = (docType: string) => {
@@ -890,7 +1075,15 @@ function ApplyForm() {
       if (!refNumber) setRefNumber(ref)
 
       const uploadData = Object.fromEntries(
-        Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
+        // PR 1: include bypass markers in the submit payload so the server's
+        // validateRequiredDocuments helper accepts the bypass slots.
+        Object.entries(uploads).map(([k, v]) => [k, {
+          status: v.status,
+          extracted: v.extracted,
+          message: v.message,
+          fileUrl: v.fileUrl || null,
+          ...(v.bypass === true ? { bypass: true, bypassReason: v.bypassReason } : {}),
+        }])
       )
 
       try {
@@ -1094,7 +1287,15 @@ function ApplyForm() {
 
           // Step 4: Submit application with retry (up to 3 attempts)
           const uploadData = Object.fromEntries(
-            Object.entries(uploads).map(([k, v]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
+            // PR 1: include bypass markers in the submit payload so the server's
+        // validateRequiredDocuments helper accepts the bypass slots.
+        Object.entries(uploads).map(([k, v]) => [k, {
+          status: v.status,
+          extracted: v.extracted,
+          message: v.message,
+          fileUrl: v.fileUrl || null,
+          ...(v.bypass === true ? { bypass: true, bypassReason: v.bypassReason } : {}),
+        }])
           )
 
           const submitPayload = {
@@ -1167,11 +1368,13 @@ function ApplyForm() {
         if (phase === "upload") {
           const type = selectedType || getMembershipType(formData.membershipType)
           const requiredDocs = type?.requiredDocs.filter((d: string) => d !== "profile") || []
-          const allUploaded = requiredDocs.every((d: string) => uploads[d]?.file) && uploads.profile?.file
-          const allVerified = requiredDocs.every((d: string) => uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded")
-          const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked" || u.status === "rejected")
+          // PR 1: same isRequiredSlotValid / isProfileSlotValid rules as
+          // the button gate, so the two can't drift.
+          const allRequiredOK = requiredDocs.every((d: string) => isRequiredSlotValid(uploads[d]))
+          const profileOK = isProfileSlotValid(uploads.profile)
           const isProcessing = Object.values(uploads).some((u) => u.status === "processing")
-          if (allUploaded && allVerified && !hasBlockedDoc && !isProcessing) {
+          const hasHardError = Object.values(uploads).some((u) => u.status === "rejected" || u.status === "blocked")
+          if (allRequiredOK && profileOK && !isProcessing && !hasHardError) {
             handleProcessAll()
           }
         } else if (phase === "review") {
@@ -1872,12 +2075,21 @@ function ApplyForm() {
   if (phase === "upload") {
     const type = selectedType || getMembershipType(formData.membershipType)
     const requiredDocs = type?.requiredDocs.filter((d) => d !== "profile") || []
-    const allUploaded = requiredDocs.every((d) => uploads[d]?.file || uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded") && (uploads.profile?.file || uploads.profile?.status === "uploaded" || uploads.profile?.status === "extracted")
-    const allVerified = requiredDocs.every((d) => uploads[d]?.status === "extracted" || uploads[d]?.status === "uploaded")
-    const hasBlockedDoc = Object.values(uploads).some((u) => u.status === "blocked" || u.status === "rejected")
+    // PR 1: tightened gate. Every required slot must be a "valid" slot, where
+    // valid = (status="extracted" + fileUrl) OR (status="uploaded" + bypass=true + fileUrl).
+    // Closes the latent fileUrl gap that c6aa4c9 partly addressed: the
+    // pre-PR-1 catch fallback wrote status="uploaded" with no fileUrl and
+    // would have been accepted. See isRequiredSlotValid / isProfileSlotValid
+    // above for the canonical rules; same helpers drive the keyboard
+    // shortcut gate.
+    const allRequiredOK = requiredDocs.every((d) => isRequiredSlotValid(uploads[d]))
+    const profileOK = isProfileSlotValid(uploads.profile)
     const isProcessing = Object.values(uploads).some((u) => u.status === "processing")
-    const hasPendingReview = Object.values(uploads).some((u) => u.status === "uploaded")
-    const canContinue = allUploaded && allVerified && !hasBlockedDoc && !isProcessing
+    const flaggedForReview = Object.values(uploads).some((u) => u.status === "uploaded" && u.bypass === true && !!u.fileUrl)
+    const hasHardError = Object.values(uploads).some((u) => u.status === "rejected" || u.status === "blocked")
+    // Retained for the "still needed" hint copy below.
+    const missingSlots = requiredDocs.filter((d) => !uploads[d] || !isRequiredSlotValid(uploads[d]))
+    const canContinue = allRequiredOK && profileOK && !isProcessing && !hasHardError
 
     return (
       <div>
@@ -2113,11 +2325,22 @@ function ApplyForm() {
                           </div>
                         )}
                         {upload.status === "uploaded" && (
-                          <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                            <div className="flex items-center gap-1.5 text-amber-700 text-sm font-medium">
-                              <Clock className="h-4 w-4" /> Pending Admin Review
+                          /* PR 1: yellow review card. Replaces the bare "Pending
+                              Admin Review" line. Mutually exclusive with the
+                              red "rejected" branch above — a doc has exactly
+                              one terminal status. */
+                          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1">
+                            <div className="flex items-center gap-1.5 text-amber-800 text-sm font-semibold">
+                              <Clock className="h-4 w-4" /> Document received
                             </div>
-                            <p className="text-xs text-amber-600 mt-1">{upload.message || "This document will be manually verified by our admin team."}</p>
+                            <p className="text-xs text-amber-700 leading-relaxed">
+                              We couldn&apos;t automatically verify this document, but we&apos;ve saved it for our team to review. You can continue. Reviewed within 2 business days.
+                            </p>
+                            {upload.message && (
+                              <p className="text-[11px] text-amber-700/80 italic mt-1">
+                                Why: {upload.message}
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2145,11 +2368,21 @@ function ApplyForm() {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
+                  onChange={async (e) => {
+                    const picked = e.target.files?.[0]
+                    e.currentTarget.value = ""
+                    if (!picked) return
 
-                    // Validate profile photo with MediaPipe face detection
+                    // PR 1: client-side prep (HEIC/compress/format guard) before
+                    // any face-detection or upload work. Profile photos hit the
+                    // same Vercel 4.5 MB cliff as other docs.
+                    const prepped = await prepareFileForUpload(picked)
+                    if (!prepped.ok) {
+                      toast.error(prepped.userMessage)
+                      return
+                    }
+                    const file = prepped.file
+
                     const preview = URL.createObjectURL(file)
                     setUploads((prev) => ({ ...prev, profile: { file, preview, status: "processing", extracted: {} } }))
 
@@ -2158,36 +2391,67 @@ function ApplyForm() {
                     img.onload = async () => {
                       const result = await detectFace(img)
 
-                      if (!result.hasFace) {
+                      // PR 1: face-detection failure → retry-then-bypass.
+                      // First failure → toast + clear the slot, user can pick again.
+                      // Second failure → keep the file in profileFaceFailedFile
+                      // so the UI offers "Submit anyway for review" alongside retry.
+                      if (!result.hasFace || result.faceCount > 1) {
                         URL.revokeObjectURL(preview)
                         setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
-                        toast.error(result.message)
+                        const next = profileFaceRetries + 1
+                        setProfileFaceRetries(next)
+                        if (next >= 2) {
+                          // Stash the file (and a fresh preview the bypass UI owns)
+                          // so the user can either retry or submit-for-review.
+                          const stashedPreview = URL.createObjectURL(file)
+                          setProfileFaceFailedFile({ file, preview: stashedPreview, message: result.message })
+                          toast.error(`${result.message} You can try once more or submit this photo for manual review.`)
+                        } else {
+                          toast.error(`${result.message} (Attempt ${next} of 2 — try a clearer photo.)`)
+                        }
                         return
                       }
 
-                      if (result.faceCount > 1) {
-                        URL.revokeObjectURL(preview)
-                        setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
-                        toast.error(result.message)
-                        return
+                      // Happy path: face detected. Reset retry state and upload.
+                      setProfileFaceRetries(0)
+                      if (profileFaceFailedFile) {
+                        URL.revokeObjectURL(profileFaceFailedFile.preview)
+                        setProfileFaceFailedFile(null)
                       }
-
-                      // Upload to server storage via /api/ocr (handles photo storage, returns fileUrl)
                       try {
                         const uploadData = new FormData()
                         uploadData.append("file", file)
                         uploadData.append("docType", "profile")
-                        const uploadRes = await fetch("/api/ocr", { method: "POST", body: uploadData })
+                        const uploadRes = await fetch("/api/ocr", {
+                          method: "POST",
+                          body: uploadData,
+                          signal: AbortSignal.timeout(60_000),
+                        })
                         const uploadResult = await uploadRes.json()
+                        const fileUrl = typeof uploadResult.fileUrl === "string" ? uploadResult.fileUrl : null
+                        if (!fileUrl) {
+                          // Storage didn't return a URL — treat as a hard failure
+                          // for the profile slot rather than silently writing
+                          // status:"uploaded" with no fileUrl (the c6aa4c9 bug class).
+                          URL.revokeObjectURL(preview)
+                          setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                          toast.error("Could not save your photo. Please try again in a moment.")
+                          return
+                        }
                         setUploads((prev) => ({
                           ...prev,
-                          profile: { file, preview, status: "uploaded", extracted: {}, fileUrl: uploadResult.fileUrl || null },
+                          profile: { file, preview, status: "uploaded", extracted: {}, fileUrl },
                         }))
-                      } catch {
-                        // Storage upload failed — still keep the local file for submission
-                        setUploads((prev) => ({ ...prev, profile: { file, preview, status: "uploaded", extracted: {} } }))
+                        toast.success("Profile photo verified — face detected")
+                      } catch (err: unknown) {
+                        const name = err instanceof Error ? err.name : ""
+                        const isAbort = name === "TimeoutError" || name === "AbortError"
+                        URL.revokeObjectURL(preview)
+                        setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                        toast.error(isAbort
+                          ? "Upload took too long. Please check your connection and try again."
+                          : "Could not save your photo. Please try again in a moment.")
                       }
-                      toast.success("Profile photo verified — face detected")
                     }
                     img.onerror = () => {
                       URL.revokeObjectURL(preview)
@@ -2198,6 +2462,143 @@ function ApplyForm() {
                   }}
                 />
               </label>
+
+              {/* PR 1: face-detection retry-then-bypass.
+                  After 2 face-detection failures we keep the user's last picked
+                  photo around and offer a choice: retry once more, or submit
+                  for manual review. Reviewer manually verifies the photo. */}
+              {profileFaceFailedFile && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 mt-2 space-y-2">
+                  <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={profileFaceFailedFile.preview}
+                      alt="Photo pending review"
+                      className="h-12 w-12 rounded-lg object-cover border"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">We couldn&apos;t detect a clear face</p>
+                      <p className="text-xs text-gray-600 truncate">{profileFaceFailedFile.message}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
+                      <Upload className="h-3 w-3 mr-1.5" /> Try a different photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const next = e.target.files?.[0]
+                          e.currentTarget.value = ""
+                          if (!next) return
+                          // Clear stash; the "no upload" branch above re-runs face detection
+                          // with the standard retry counter still incrementing.
+                          if (profileFaceFailedFile) URL.revokeObjectURL(profileFaceFailedFile.preview)
+                          setProfileFaceFailedFile(null)
+                          // TODO(prabhu): consolidate this with the onChange handler above.
+                          // The two pipelines are near-identical (prep -> face detect ->
+                          // upload -> bypass-or-success). Inlined for PR 1 to keep the diff
+                          // focused; should be extracted to a shared async helper in a
+                          // follow-up cleanup PR. Drift between the two is a regression risk.
+                          ;(async () => {
+                            const prepped = await prepareFileForUpload(next)
+                            if (!prepped.ok) { toast.error(prepped.userMessage); return }
+                            const file = prepped.file
+                            const preview = URL.createObjectURL(file)
+                            setUploads((prev) => ({ ...prev, profile: { file, preview, status: "processing", extracted: {} } }))
+                            const img = new Image()
+                            img.crossOrigin = "anonymous"
+                            img.onload = async () => {
+                              const result = await detectFace(img)
+                              if (!result.hasFace || result.faceCount > 1) {
+                                URL.revokeObjectURL(preview)
+                                setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                                const nextRetries = profileFaceRetries + 1
+                                setProfileFaceRetries(nextRetries)
+                                const stashedPreview = URL.createObjectURL(file)
+                                setProfileFaceFailedFile({ file, preview: stashedPreview, message: result.message })
+                                toast.error(`${result.message} You can try again or submit this photo for manual review.`)
+                                return
+                              }
+                              setProfileFaceRetries(0)
+                              try {
+                                const fd = new FormData()
+                                fd.append("file", file); fd.append("docType", "profile")
+                                const r = await fetch("/api/ocr", { method: "POST", body: fd, signal: AbortSignal.timeout(60_000) })
+                                const rj = await r.json()
+                                const fileUrl = typeof rj.fileUrl === "string" ? rj.fileUrl : null
+                                if (!fileUrl) {
+                                  URL.revokeObjectURL(preview)
+                                  setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                                  toast.error("Could not save your photo. Please try again in a moment.")
+                                  return
+                                }
+                                setUploads((prev) => ({ ...prev, profile: { file, preview, status: "uploaded", extracted: {}, fileUrl } }))
+                                toast.success("Profile photo verified — face detected")
+                              } catch {
+                                URL.revokeObjectURL(preview)
+                                setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                                toast.error("Could not save your photo. Please try again in a moment.")
+                              }
+                            }
+                            img.onerror = () => {
+                              URL.revokeObjectURL(preview)
+                              setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
+                              toast.error("Could not read image. Please upload a valid photo file.")
+                            }
+                            img.src = preview
+                          })()
+                        }}
+                      />
+                    </label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={async () => {
+                        const stash = profileFaceFailedFile
+                        if (!stash) return
+                        // Upload to /api/ocr (which stores the file but skips OCR
+                        // for profile docType; returns fileUrl). Then write a
+                        // bypass slot using the face_detection_failed reason.
+                        try {
+                          const fd = new FormData()
+                          fd.append("file", stash.file); fd.append("docType", "profile")
+                          const r = await fetch("/api/ocr", { method: "POST", body: fd, signal: AbortSignal.timeout(60_000) })
+                          const rj = await r.json()
+                          const fileUrl = typeof rj.fileUrl === "string" ? rj.fileUrl : null
+                          if (!fileUrl) {
+                            toast.error("Could not save your photo. Please try again in a moment.")
+                            return
+                          }
+                          setUploads((prev) => ({
+                            ...prev,
+                            profile: {
+                              file: stash.file,
+                              preview: stash.preview,
+                              status: "uploaded",
+                              extracted: {},
+                              bypass: true,
+                              bypassReason: "face_detection_failed",
+                              message: stash.message,
+                              fileUrl,
+                            },
+                          }))
+                          setProfileFaceFailedFile(null)
+                          setProfileFaceRetries(0)
+                          toast.success("Photo received — our team will verify it")
+                        } catch {
+                          toast.error("Could not save your photo. Please try again in a moment.")
+                        }
+                      }}
+                    >
+                      Submit anyway for review
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {UPLOAD_TIPS.profile && (
                 <div className="px-1">
                   <button
@@ -2296,10 +2697,20 @@ function ApplyForm() {
           </Card>
         )}
 
-        {hasPendingReview && (
+        {/* PR 1: bottom-of-form notice. Yellow review notice and red hard-error
+            text are now mutually exclusive — never both, regardless of how many
+            docs are flagged or rejected. flaggedForReview is the new bypass
+            signal; it suppresses when there's a hard error to keep the action
+            unambiguous. */}
+        {hasHardError && (
+          <div className="text-center text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="font-medium">Some documents need to be re-uploaded. Please fix the red cards above to continue.</p>
+          </div>
+        )}
+        {!hasHardError && flaggedForReview && (
           <div className="text-center text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="font-medium">Some documents will be manually reviewed by our admin team.</p>
-            <p className="text-xs mt-1">You can still submit your application. Processing may take a little longer.</p>
+            <p className="text-xs mt-1">You can still submit your application. Reviewed within 2 business days.</p>
           </div>
         )}
 
@@ -2324,15 +2735,18 @@ function ApplyForm() {
 
         {!canContinue && (
           <div className="text-center text-sm text-muted-foreground bg-muted/60 border rounded-xl p-4">
-            {hasBlockedDoc
-              ? <span className="text-red-600 font-medium">Remove rejected documents and upload valid ones to proceed</span>
+            {hasHardError
+              ? null /* the red banner above already explains; no duplicate copy */
               : isProcessing
               ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> AI is verifying your documents...</span>
-              : !allUploaded
-              ? <span>Still needed: <strong>{requiredDocs.filter(d => !uploads[d]?.file).map(d => DOC_LABELS[d as DocType]).join(", ")}{!uploads.profile?.file ? ", Profile Photo" : ""}</strong></span>
-              : !allVerified
-              ? <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Waiting for AI to verify all documents...</span>
-              : <span>Upload all required documents to continue</span>}
+              : !profileOK
+              ? <span>Still needed: <strong>{[
+                  ...missingSlots.map(d => DOC_LABELS[d as DocType]),
+                  ...(!uploads.profile ? ["Profile Photo"] : []),
+                ].join(", ")}</strong></span>
+              : missingSlots.length > 0
+              ? <span>Still needed: <strong>{missingSlots.map(d => DOC_LABELS[d as DocType]).join(", ")}</strong></span>
+              : <span className="flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Waiting for AI to verify all documents...</span>}
           </div>
         )}
       </motion.div>

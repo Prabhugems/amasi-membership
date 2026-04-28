@@ -67,6 +67,8 @@ next-env.d.ts
 
 # test results (generated screenshots, archives, snapshots)
 /test-results/
+/playwright-report/
+/playwright/.auth/
 
 # security: never commit import scripts with hardcoded keys
 import_members.js

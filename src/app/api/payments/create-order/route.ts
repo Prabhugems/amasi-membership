@@ -78,6 +78,13 @@ export async function POST(request: NextRequest) {
         message: "Please upload your documents before proceeding to payment.",
       }, { status: 400 })
     }
+    // PR 0: validateRequiredDocuments accepts manual-review bypass docs as
+    // valid (status='uploaded' + bypass=true + fileUrl). The bypass list in
+    // docCheck.bypassedDocs is intentionally NOT consulted here — payment
+    // flow is unchanged regardless of how the doc passed the gate. The
+    // submit route is the place where bypass docs force needs_manual_review;
+    // see src/lib/document-keys.ts for the canonical rule and the three
+    // call sites that share it.
     const docCheck = validateRequiredDocuments(draftUploads, membershipTypeConfig.requiredDocs)
     if (!docCheck.valid) {
       return Response.json({

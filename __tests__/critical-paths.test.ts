@@ -13,6 +13,10 @@ import {
   requiresExtraction,
   validateRequiredDocuments,
   DOCUMENT_TYPES,
+  formatManualReviewReason,
+  parseManualReviewReason,
+  MANUAL_REVIEW_REASON_CODES,
+  manualReviewReasonForExtractionFailure,
 } from "@/lib/document-keys"
 import { validatePersonalDetails } from "@/lib/validators"
 import type { ApplicationFormData } from "@/lib/membership-types"
@@ -187,6 +191,77 @@ describe("required documents validation", () => {
       ["pg_degree_certificate"]
     )
     expect(result.valid).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3b. PR 0 — manual-review bypass path
+//
+// Catches: regressions in the bypass rule lifted into validateRequiredDocuments.
+// All three server gates (ocr, create-order, submit) depend on this; if the
+// helper rejects a properly-flagged bypass doc, users get blocked from paying
+// — the exact failure mode PR 0 was built to fix.
+// ---------------------------------------------------------------------------
+describe("manual-review bypass (PR 0)", () => {
+  it("accepts a doc with status='uploaded', bypass=true, valid bypassReason, and fileUrl — and surfaces it in bypassedDocs", () => {
+    const result = validateRequiredDocuments(
+      {
+        mci_certificate: {
+          status: "uploaded",
+          fileUrl: "https://x/mci.jpg",
+          bypass: true,
+          bypassReason: "ocr_below_threshold",
+        },
+        pg_degree_certificate: { status: "extracted", fileUrl: "https://x/pg.jpg" },
+      },
+      ["mci_certificate", "pg_degree_certificate"]
+    )
+    expect(result.valid).toBe(true)
+    if (result.valid) {
+      expect(result.bypassedDocs).toEqual([
+        { key: "mci_certificate", reason: "ocr_below_threshold" },
+      ])
+    }
+  })
+
+  it("rejects a doc whose bypassReason is not a recognised code (drift guard)", () => {
+    const result = validateRequiredDocuments(
+      {
+        mci_certificate: {
+          status: "uploaded",
+          fileUrl: "https://x/mci.jpg",
+          bypass: true,
+          bypassReason: "user_was_in_a_hurry", // not in MANUAL_REVIEW_REASON_CODES
+        },
+      },
+      ["mci_certificate"]
+    )
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.missing).toContain("mci_certificate")
+    }
+  })
+
+  it("formatManualReviewReason / parseManualReviewReason round-trip; legacy free text parses to null", () => {
+    for (const code of MANUAL_REVIEW_REASON_CODES) {
+      const written = formatManualReviewReason(code, "details here")
+      expect(written.startsWith(`${code}:`)).toBe(true)
+      expect(parseManualReviewReason(written)).toBe(code)
+    }
+    // Legacy free-text values (pre-PR-0 rows) must parse to null so the chip
+    // renders nothing rather than misclassifying.
+    expect(parseManualReviewReason("Score: 32%. Could not verify name…")).toBeNull()
+    expect(parseManualReviewReason("Migrated from legacy platform")).toBeNull()
+    expect(parseManualReviewReason(null)).toBeNull()
+    expect(parseManualReviewReason("")).toBeNull()
+  })
+
+  it("manualReviewReasonForExtractionFailure routes engineError correctly", () => {
+    // engineError=true means the OCR pipeline itself failed (Claude+OCR.space
+    // both down, sharp threw, JSON parse failed). Reviewer should retry OCR
+    // or read by eye — distinct from a semantic AI rejection.
+    expect(manualReviewReasonForExtractionFailure(true)).toBe("ocr_service_error")
+    expect(manualReviewReasonForExtractionFailure(false)).toBe("ocr_below_threshold")
   })
 })
 

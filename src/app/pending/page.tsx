@@ -22,6 +22,7 @@ import { toast } from "sonner"
 import { formatDate, getInitials } from "@/lib/utils"
 import { DOC_LABELS } from "@/lib/membership-types"
 import type { DocType } from "@/lib/membership-types"
+import { parseManualReviewReason, type ManualReviewReasonCode } from "@/lib/document-keys"
 
 type TabFilter = "pending" | "ai_approved" | "approved" | "rejected" | "clarification" | "all"
 type ActionMode = null | "reject" | "clarification" | "resubmit"
@@ -832,6 +833,35 @@ export default function PendingPage() {
                           Manual Review
                         </span>
                       )}
+                      {/* PR 0: structured manual_review_reason chip. Renders only for
+                          PR-0+ rows whose reason starts with a known code. Legacy
+                          free-text values (Score: 32%..., Migrated from legacy...)
+                          parse to null and silently render nothing. */}
+                      {app.needs_manual_review && (() => {
+                        const code: ManualReviewReasonCode | null =
+                          parseManualReviewReason(app.manual_review_reason)
+                        if (!code) return null
+                        const meta: Record<ManualReviewReasonCode, { label: string; cls: string }> = {
+                          ocr_below_threshold: {
+                            label: "Low OCR confidence",
+                            cls: "bg-yellow-50 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-400/30",
+                          },
+                          ocr_service_error: {
+                            label: "OCR service error",
+                            cls: "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-400/30",
+                          },
+                          user_bypass: {
+                            label: "User-submitted",
+                            cls: "bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-400/30",
+                          },
+                        }
+                        const m = meta[code]
+                        return (
+                          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${m.cls}`}>
+                            {m.label}
+                          </span>
+                        )
+                      })()}
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground flex-wrap">
                       <span className="font-medium">{app.email}</span>

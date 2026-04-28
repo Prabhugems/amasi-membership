@@ -7,7 +7,12 @@ import { recordStepEvent } from "@/lib/funnel-tracking"
 import { sendApplicationSubmittedWhatsApp } from "@/lib/whatsapp"
 import { autoApproveApplication } from "@/lib/auto-approval"
 import { logAiDecision, updateAiDecisionOutcome, type AiDecisionInput } from "@/lib/ai-decision-log"
-import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
+import {
+  validateRequiredDocuments,
+  lookupDocumentLabel,
+  formatManualReviewReason,
+  type ManualReviewReasonCode,
+} from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
 import { escapeHtml } from "@/lib/html-escape"
 
@@ -152,6 +157,12 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Auth gate 3: verify required documents are present, uploaded, and OCR-extracted ---
+    // PR 0: validateRequiredDocuments now also accepts docs that came through
+    // the manual-review bypass path (status='uploaded' + bypass=true + fileUrl).
+    // Bypass docs surface in `bypassedDocs`; the application MUST be flagged
+    // for manual review and skip auto-approve. See document-keys.ts for the
+    // canonical rule and the list of three call sites.
+    let bypassedDocsFromValidator: { key: string; reason: ManualReviewReasonCode }[] = []
     const membershipType = getMembershipType(formData.membershipType)
     if (membershipType) {
       const docValidation = validateRequiredDocuments(uploads || {}, membershipType.requiredDocs)
@@ -175,6 +186,7 @@ export async function POST(request: NextRequest) {
           message: `These documents need a clearer upload before we can submit your application: ${missingLabels.join(", ")}.`,
         }, { status: 400 })
       }
+      bypassedDocsFromValidator = docValidation.bypassedDocs
     }
 
     // Run AI scoring engine
@@ -182,8 +194,12 @@ export async function POST(request: NextRequest) {
     const approval = await scoreApplication(formData, uploads || {}, !!paymentId, supabase)
     const scoringDurationMs = Math.round(performance.now() - scoringStart)
     const documentsUnreadable = approval.decision === "documents_unreadable"
-    const allAiVerified = approval.autoApprove && !documentsUnreadable
-    const hasPendingReview = !approval.autoApprove
+    const hasUserBypass = bypassedDocsFromValidator.length > 0
+    // Auto-approve gate: must be (a) AI's own autoApprove=true, (b) no
+    // documents_unreadable, AND (c) no user-bypassed docs (a bypass means
+    // a human must look at the file, full stop).
+    const allAiVerified = approval.autoApprove && !documentsUnreadable && !hasUserBypass
+    const hasPendingReview = !allAiVerified
     const aiFlags = approval.flags
     const aiConfidence = documentsUnreadable
       ? "documents_unreadable"
@@ -191,9 +207,38 @@ export async function POST(request: NextRequest) {
     const applicationStatus = documentsUnreadable
       ? "documents_unreadable"
       : allAiVerified && paymentId ? "ai_approved" : hasPendingReview ? "pending_review" : "submitted"
-    const manualReviewReason = documentsUnreadable
-      ? approval.unreadableReason || "Required documents could not be read by OCR. Re-upload required."
-      : hasPendingReview ? `Score: ${approval.totalScore}%. ${aiFlags.join("; ")}` : null
+
+    // Build structured manual_review_reason. Three branches, each prefixed
+    // with a code from MANUAL_REVIEW_REASON_CODES so the reviewer queue chip
+    // can parse it. Format: "<code>: <free-text detail>".
+    let manualReviewReason: string | null = null
+    if (hasUserBypass) {
+      // Preserve the per-doc upstream cause in detail so reviewers can tell
+      // which bypass was a service error vs a low-confidence reject. Chip
+      // stays "user_bypass" because the action that landed it here was the
+      // user's, regardless of upstream cause.
+      const docList = bypassedDocsFromValidator
+        .map(b => `${b.key} (${b.reason})`)
+        .join(", ")
+      manualReviewReason = formatManualReviewReason(
+        "user_bypass",
+        `Applicant submitted ${docList} for manual review`,
+      )
+    } else if (documentsUnreadable) {
+      // Pre-PR-0 this branch wrote raw text. Now: if the scorer marked any
+      // doc as unreadable due to a service error upstream we still tag this
+      // as ocr_service_error to help reviewers triage. Without an explicit
+      // upstream signal, fall back to ocr_below_threshold.
+      manualReviewReason = formatManualReviewReason(
+        "ocr_below_threshold",
+        approval.unreadableReason || "Required documents could not be read by OCR.",
+      )
+    } else if (hasPendingReview) {
+      manualReviewReason = formatManualReviewReason(
+        "ocr_below_threshold",
+        `Score ${approval.totalScore}%. ${aiFlags.join("; ")}`,
+      )
+    }
 
     // Save application
     const { data: app, error: insertError } = await supabase
@@ -253,6 +298,9 @@ export async function POST(request: NextRequest) {
         nmc_verification: approval.nmcVerification,
         needs_manual_review: hasPendingReview,
         manual_review_reason: manualReviewReason,
+        // PR 0: numeric AI confidence so the reviewer queue can sort/filter.
+        // Null for documents_unreadable (no per-check scoring ran).
+        ocr_score: documentsUnreadable ? null : approval.totalScore,
         documents: Object.fromEntries(
           Object.entries(uploads || {}).map(([k, v]: [string, any]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
         ),

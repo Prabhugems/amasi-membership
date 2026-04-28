@@ -5,7 +5,13 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { EXTRACTION_SKIPPED_KEYS, normalizeDocumentKey } from "@/lib/document-keys"
+import {
+  EXTRACTION_SKIPPED_KEYS,
+  normalizeDocumentKey,
+  validateRequiredDocuments,
+  type ManualReviewReasonCode,
+} from "@/lib/document-keys"
+import { getMembershipType } from "@/lib/membership-types"
 import { verifyWithNmcCached, type NmcCacheSource } from "@/lib/nmc-cache"
 
 export type ApprovalDecision = "auto_approved" | "manual_review" | "documents_unreadable"
@@ -145,6 +151,9 @@ export interface ApprovalResult {
   /** Populated only when decision === 'documents_unreadable'. */
   unreadableReason?: string
   unreadableDocs?: string[]
+  /** Required docs that passed via the manual-review bypass path (PR 0).
+   *  Empty array on the happy path; non-empty forces autoApprove=false. */
+  bypassedDocs: { key: string; reason: ManualReviewReasonCode }[]
 }
 
 export async function scoreApplication(
@@ -162,17 +171,64 @@ export async function scoreApplication(
     normalizedUploads[normalizeDocumentKey(key)] = value
   }
 
-  // --- Pre-flight gate: required docs must have a real file AND a successful OCR ---
-  // Defense-in-depth. The submit route also runs validateRequiredDocuments first;
-  // this gate covers rescore/list paths that bypass the submit gate, and prevents
-  // the per-check scorer from synthesizing a misleading partial score (the bug
+  // --- Pre-flight gate: required docs must have a real file AND either a
+  //     successful OCR OR a manual-review bypass marker. ---
+  //
+  // Defense-in-depth. The submit + create-order routes also run
+  // validateRequiredDocuments; this gate additionally covers rescore/list/
+  // resubmit paths that don't go through those routes, and prevents the
+  // per-check scorer from synthesizing a misleading partial score (the bug
   // that produced 32% scores for applications with unreadable documents).
-  const unreadable: string[] = []
-  for (const [key, entry] of Object.entries(normalizedUploads)) {
-    if (EXTRACTION_SKIPPED_KEYS.includes(key)) continue
-    const fileUrl = typeof entry.fileUrl === "string" ? entry.fileUrl.trim() : ""
-    if (!fileUrl || entry.status !== "extracted") unreadable.push(key)
+  //
+  // PR 0 lifts the rule into validateRequiredDocuments — see that helper for
+  // the canonical per-doc rule and the list of call sites.
+  //
+  // Membership-type resolution: option (ii) per PR 0 plan. We look up the
+  // required-docs list via getMembershipType(formData.membershipType). If
+  // unknown (empty / legacy row with null membership_type), fall back to the
+  // pre-PR-0 inline rule so we don't break rescore on legacy data.
+  const membershipTypeId =
+    typeof formData.membershipType === "string" ? formData.membershipType : ""
+  const membershipType = getMembershipType(membershipTypeId)
+
+  let bypassedDocs: { key: string; reason: ManualReviewReasonCode }[] = []
+  let unreadable: string[] = []
+
+  if (membershipType) {
+    const validation = validateRequiredDocuments(normalizedUploads, membershipType.requiredDocs)
+    if (!validation.valid) {
+      unreadable = validation.missing
+    } else {
+      bypassedDocs = validation.bypassedDocs
+    }
+  } else {
+    // Fallback (membership type unknown): walk every uploaded doc, require
+    // fileUrl + status==="extracted" OR a valid bypass marker. Mirrors the
+    // pre-PR-0 strict behaviour while still letting bypass docs through.
+    for (const [key, entry] of Object.entries(normalizedUploads)) {
+      if (EXTRACTION_SKIPPED_KEYS.includes(key)) continue
+      const fileUrl = typeof entry.fileUrl === "string" ? entry.fileUrl.trim() : ""
+      if (!fileUrl) { unreadable.push(key); continue }
+      if (entry.status === "extracted") continue
+      // The scoreApplication signature pre-PR-0 didn't model the bypass
+      // markers PR 1 will write into uploads — read them through a narrowed
+      // shape rather than `any` casts.
+      const bypassEntry = entry as { bypass?: unknown; bypassReason?: unknown }
+      if (
+        entry.status === "uploaded" &&
+        bypassEntry.bypass === true &&
+        typeof bypassEntry.bypassReason === "string"
+      ) {
+        bypassedDocs.push({
+          key,
+          reason: bypassEntry.bypassReason as ManualReviewReasonCode,
+        })
+        continue
+      }
+      unreadable.push(key)
+    }
   }
+
   if (unreadable.length > 0) {
     const reason = "Required documents could not be read by OCR. Re-upload required."
     return {
@@ -187,6 +243,7 @@ export async function scoreApplication(
       decision: "documents_unreadable",
       unreadableReason: reason,
       unreadableDocs: unreadable,
+      bypassedDocs: [],
     }
   }
 
@@ -532,6 +589,15 @@ export async function scoreApplication(
     blockingReasons.push("payment_pending")
   }
 
+  // PR 0: any required doc that came through the manual-review bypass forces
+  // a manual decision. Auto-approve is only ever for the all-OCR-clean path.
+  if (bypassedDocs.length > 0) {
+    blockingReasons.push("manual_review_bypass")
+    for (const b of bypassedDocs) {
+      flags.push(`Manual review requested (${b.reason}): ${b.key}`)
+    }
+  }
+
   const autoApprove = paymentPaid && blockingReasons.length === 0
 
   return {
@@ -543,5 +609,6 @@ export async function scoreApplication(
     nmcVerification,
     nmcApiStatus,
     nmcResponseTimeMs,
+    bypassedDocs,
   }
 }

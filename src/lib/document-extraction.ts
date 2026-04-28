@@ -28,6 +28,14 @@ export interface ExtractionOutput {
   isValid: boolean
   rejectionReason: string | null
   extractionDurationMs: number
+  /**
+   * PR 0: distinguishes "AI looked at the doc and said no" (semantic reject,
+   * engineError=false) from "the OCR pipeline itself errored before producing
+   * a verdict" (engineError=true). The OCR route uses this to pick the
+   * structured manual_review_reason — see
+   * src/app/api/ocr/route.ts and src/lib/document-keys.ts (MANUAL_REVIEW_REASON_CODES).
+   */
+  engineError: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -526,6 +534,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
       isValid: true,
       rejectionReason: null,
       extractionDurationMs: 0,
+      engineError: false,
     }
   }
 
@@ -558,6 +567,8 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
         const client = new Anthropic({ apiKey })
         const prompt = buildPrompt(docType)
         if (!prompt) {
+          // Unknown docType is a misconfiguration / bad client input, not a
+          // service error. Route to ocr_below_threshold (admin re-classifies).
           return {
             extracted: {},
             eligibility: null,
@@ -566,6 +577,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
             isValid: false,
             rejectionReason: "Unknown document type",
             extractionDurationMs: Math.round(performance.now() - start),
+            engineError: false,
           }
         }
 
@@ -600,6 +612,10 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
         extracted = await fallbackOCR(buffer, fileName, docType)
       } catch (ocrErr: any) {
         console.error("OCR.space fallback also failed:", ocrErr.message)
+        // Both engines down (Claude either threw at line 601 or was skipped
+        // for missing API key, AND OCR.space threw). True service error —
+        // OCR route routes to ocr_service_error and the file goes to
+        // a reviewer who can read the cert by eye.
         return {
           extracted: {},
           eligibility: null,
@@ -608,6 +624,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
           isValid: false,
           rejectionReason: "Could not process document",
           extractionDurationMs: Math.round(performance.now() - start),
+          engineError: true,
         }
       }
     }
@@ -623,6 +640,9 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
 
     // Check validity
     if (!extracted.is_valid_medical_document) {
+      // Semantic reject: the engine ran fine and judged this not a valid
+      // medical document. engineError=false routes the OCR route to
+      // ocr_below_threshold.
       return {
         extracted,
         eligibility: null,
@@ -631,6 +651,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
         isValid: false,
         rejectionReason: extracted.rejection_reason || "This doesn't appear to be a valid medical document. Please upload the correct certificate.",
         extractionDurationMs: Math.round(performance.now() - start),
+        engineError: false,
       }
     }
 
@@ -651,9 +672,12 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
       isValid: true,
       rejectionReason: null,
       extractionDurationMs: Math.round(performance.now() - start),
+      engineError: false,
     }
   } catch (error: any) {
     console.error("extractDocument error:", error)
+    // Truly unexpected throw (sharp OOM, JSON.parse on malformed Claude
+    // response, etc.). Service error — OCR route routes to ocr_service_error.
     return {
       extracted: {},
       eligibility: null,
@@ -662,6 +686,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
       isValid: false,
       rejectionReason: "Could not process this document. Please try a clearer image.",
       extractionDurationMs: Math.round(performance.now() - start),
+      engineError: true,
     }
   }
 }

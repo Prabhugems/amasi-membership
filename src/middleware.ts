@@ -72,6 +72,10 @@ const PUBLIC_API_ROUTES = [
   "/api/member/refresh-token",
   "/api/sentry-test",
   "/api/verify/",
+  // Sidebar badge counts polled every 60s by admin UI. Handler does its
+  // own getAdminSession() check and returns zeros (not 401) for
+  // unauthenticated callers, so it's safe at the middleware layer.
+  "/api/badges",
   // Cron endpoints — Bearer CRON_SECRET enforced inside each route handler.
   // Allowlist required because Vercel cron requests carry no admin cookie;
   // without this, every scheduled invocation 401s at middleware before

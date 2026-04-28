@@ -38,6 +38,11 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  async redirects() {
+    return [
+      { source: "/m", destination: "/member", permanent: false },
+    ]
+  },
 };
 
 export default withSentryConfig(withBundleAnalyzer(nextConfig), {

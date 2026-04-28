@@ -32,9 +32,9 @@ async function checkOverlaps(page: Page, selectors: string[]): Promise<string[]>
 // ============================================================
 // HELPER: Check font sizes
 // ============================================================
-async function checkFontSizes(page: Page): Promise<string[]> {
+async function checkFontSizes(page: Page, minSize = 10): Promise<string[]> {
   const issues: string[] = []
-  const results = await page.evaluate(() => {
+  const results = await page.evaluate((min) => {
     const elements = document.querySelectorAll("h1, h2, h3, p, label, button, a, span, input")
     const checks: { tag: string; text: string; size: number; tooSmall: boolean; tooLarge: boolean }[] = []
     elements.forEach((el) => {
@@ -46,16 +46,16 @@ async function checkFontSizes(page: Page): Promise<string[]> {
           tag: el.tagName,
           text,
           size,
-          tooSmall: size < 10,
+          tooSmall: size < min,
           tooLarge: size > 60,
         })
       }
     })
     return checks.filter(c => c.tooSmall || c.tooLarge).slice(0, 10)
-  })
+  }, minSize)
 
   for (const r of results) {
-    if (r.tooSmall) issues.push(`FONT TOO SMALL: ${r.tag} "${r.text}" = ${r.size}px (min: 10px)`)
+    if (r.tooSmall) issues.push(`FONT TOO SMALL: ${r.tag} "${r.text}" = ${r.size}px (min: ${minSize}px)`)
     if (r.tooLarge) issues.push(`FONT TOO LARGE: ${r.tag} "${r.text}" = ${r.size}px (max: 60px)`)
   }
   return issues
@@ -204,14 +204,17 @@ test.describe("Visual Regression — Font Sizes", () => {
     { url: "/apply", name: "Apply" },
     { url: "/profile?q=amasi.india@gmail.com&admin=1", name: "Profile" },
     { url: "/members", name: "Members" },
-    { url: "/card?id=kpreethi282@gmail.com&direct=1", name: "Card" },
+    // Card has intentional fine-print (legal disclaimer, address, contact)
+    // sized for a printable membership card. 7px floor catches pathological
+    // sub-print regressions while allowing the 8-9px design.
+    { url: "/card?id=kpreethi282@gmail.com&direct=1", name: "Card", minFontSize: 7 },
     { url: "/member", name: "Member Portal" },
   ]) {
     test(`Font sizes: ${p.name}`, async ({ page }) => {
       await page.goto(p.url)
       await page.waitForTimeout(3000)
 
-      const issues = await checkFontSizes(page)
+      const issues = await checkFontSizes(page, p.minFontSize ?? 10)
       for (const issue of issues) console.log(`⚠️ ${issue}`)
       expect(issues.length).toBe(0)
       console.log(`✅ ${p.name}: all font sizes within spec`)

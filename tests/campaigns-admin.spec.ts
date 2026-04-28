@@ -1,11 +1,8 @@
 import { test, expect } from "@playwright/test"
 
-// Smoke: admin can load the campaigns page, see the template picker, and the
-// stats cards render. Does not perform an actual send (would email real members).
+test.use({ storageState: "playwright/.auth/admin.json" })
 
 test("admin campaigns page renders with template picker", async ({ page }) => {
-  // Prereq: admin auth fixture. If this repo has one (see other specs),
-  // use the same pattern; otherwise stub with cookies.
   await page.goto("/campaigns")
 
   await expect(page.getByRole("heading", { name: /email campaigns/i })).toBeVisible()
@@ -15,6 +12,5 @@ test("admin campaigns page renders with template picker", async ({ page }) => {
 
   const select = page.locator("select")
   await expect(select).toBeVisible()
-  const options = await select.locator("option").allTextContents()
-  expect(options.some((o) => /profile update/i.test(o))).toBe(true)
+  await expect(select.locator("option")).toContainText([/select template/i, /profile update/i])
 })

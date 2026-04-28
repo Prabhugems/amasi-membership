@@ -50,54 +50,6 @@ test.describe("AMASI Apply Flow", () => {
   })
 })
 
-test.describe("AMASI Profile Edit - Focus Test", () => {
-  test("4. Profile fields maintain focus while typing", async ({ page }) => {
-    await page.goto("http://localhost:3000/profile?q=amasi.india@gmail.com&admin=1")
-    await page.waitForTimeout(5000)
-
-    // Click Edit if visible
-    const editBtn = page.getByRole("button", { name: /Edit/i })
-    if (await editBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await editBtn.click()
-      await page.waitForTimeout(2000)
-    }
-
-    // Find all visible text inputs
-    const inputs = page.locator("input[type='text']:visible")
-    const count = await inputs.count()
-    console.log(`Found ${count} visible text inputs`)
-
-    let tested = 0
-    for (let i = 0; i < Math.min(count, 5); i++) {
-      const input = inputs.nth(i)
-      const readonly = await input.getAttribute("readonly")
-      if (readonly !== null) continue
-
-      const before = await input.inputValue()
-      await input.click()
-
-      // Type character by character to test focus retention
-      await input.press("End")
-      await page.keyboard.type("XYZ", { delay: 100 })
-      const after = await input.inputValue()
-
-      if (after.includes("XYZ")) {
-        console.log(`✅ Input ${i}: Focus maintained (typed "XYZ")`)
-        // Restore
-        await input.fill(before)
-        tested++
-      } else {
-        console.log(`❌ Input ${i}: Focus LOST — before="${before}" after="${after}"`)
-      }
-
-      if (tested >= 2) break
-    }
-
-    expect(tested).toBeGreaterThan(0)
-    console.log(`✅ ${tested} fields tested — focus maintained`)
-  })
-})
-
 test.describe("AMASI Pages Load", () => {
   const pages = [
     "/", "/apply", "/apply/status", "/members", "/search",

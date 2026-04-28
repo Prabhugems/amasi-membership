@@ -76,6 +76,11 @@ const PUBLIC_API_ROUTES = [
   // own getAdminSession() check and returns zeros (not 401) for
   // unauthenticated callers, so it's safe at the middleware layer.
   "/api/badges",
+  // Polled by sidebar / profile / members / admin-back-link on every
+  // admin page load to determine the current admin's role. Handler does
+  // its own getAdminSession() check and returns {authenticated: false}
+  // for unauthenticated callers, so it's safe at the middleware layer.
+  "/api/auth/me",
   // Cron endpoints — Bearer CRON_SECRET enforced inside each route handler.
   // Allowlist required because Vercel cron requests carry no admin cookie;
   // without this, every scheduled invocation 401s at middleware before

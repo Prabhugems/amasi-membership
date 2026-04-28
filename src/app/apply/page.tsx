@@ -14,6 +14,7 @@ import {
   ExternalLink, FileText, ClipboardCheck, Info, Mail,
 } from "lucide-react"
 import { toast } from "sonner"
+import * as Sentry from "@sentry/nextjs"
 import {
   MEMBERSHIP_TYPES, INDIAN_STATES, STATE_TO_ZONE,
   calculateFee, getMembershipType, DOC_LABELS, INITIAL_FORM_DATA,
@@ -142,13 +143,68 @@ function StableSelectInput({ field, label, options, required, value, error, isFi
 
 type Phase = "check" | "existing" | "landing" | "verify" | "upload" | "review" | "confirm" | "success"
 type UploadEntry = {
-  file: File
+  // null permitted on resume from server draft (the original File can't be
+  // serialised into step_data); user must re-pick the file before submit.
+  file: File | null
   preview: string
   status: "processing" | "extracted" | "uploaded" | "rejected" | "blocked"
-  extracted: Record<string, any>
+  extracted: Record<string, unknown>
   eligibility?: { eligible: boolean; reason: string } | null
   message?: string
   fileUrl?: string | null
+}
+
+interface ServerDraft {
+  id: string
+  email: string
+  current_step: number
+  membership_type: string | null
+  step_data: Record<string, unknown> | null
+  updated_at: string | null
+  created_at?: string | null
+  status?: string | null
+  has_verified_payment?: boolean | null
+  payment_id?: string | null
+  payment_order_id?: string | null
+}
+
+type ExistingMemberView = Partial<MemberData> & {
+  // The /apply existing-member screen uses both legacy fields (amasi_number,
+  // pg_degree, date_of_birth) populated by /api/members/search and the
+  // canonical MemberData fields. Allow either side without a cast.
+  amasi_number?: number
+  pg_degree?: string
+  date_of_birth?: string
+  profile_incomplete?: boolean
+}
+
+interface RazorpaySuccessResponse {
+  razorpay_payment_id: string
+  razorpay_order_id: string
+  razorpay_signature: string
+}
+
+interface RazorpayOptions {
+  key: string
+  amount: number
+  currency: string
+  name: string
+  description: string
+  image?: string
+  order_id: string
+  prefill?: { name?: string; email?: string; contact?: string }
+  notes?: Record<string, string>
+  theme?: { color?: string }
+  handler: (response: RazorpaySuccessResponse) => void | Promise<void>
+  modal?: { ondismiss?: () => void; escape?: boolean }
+}
+
+type RazorpayInstance = { open: () => void }
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayOptions) => RazorpayInstance
+  }
 }
 
 // Auto-capitalize first letter of each word
@@ -217,7 +273,7 @@ function ApplyForm() {
   })
   const [checkQuery, setCheckQuery] = useState("")
   const [checking, setChecking] = useState(false)
-  const [existingMember, setExistingMember] = useState<MemberData | null>(null)
+  const [existingMember, setExistingMember] = useState<ExistingMemberView | null>(null)
   const [formData, setFormData] = useState<ApplicationFormData>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -273,7 +329,7 @@ function ApplyForm() {
   // Resume draft dialog state
   const [showResumeDraft, setShowResumeDraft] = useState(false)
   const [draftChecked, setDraftChecked] = useState(false)
-  const [serverDraft, setServerDraft] = useState<any>(null)
+  const [serverDraft, setServerDraft] = useState<ServerDraft | null>(null)
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null)
   const [resumingDraft, setResumingDraft] = useState(false)
 
@@ -330,7 +386,7 @@ function ApplyForm() {
           email: string
           current_step: number
           membership_type: string | null
-          step_data: Record<string, any>
+          step_data: Record<string, unknown>
           updated_at: string | null
         }
 
@@ -368,7 +424,7 @@ function ApplyForm() {
   }, [])
 
   // Save draft to server after each step change (only after email is verified)
-  const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, any>): Promise<{ ok: boolean; error: string | null }> => {
+  const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, unknown>): Promise<{ ok: boolean; error: string | null }> => {
     // The initial post-OTP-verify save fires on the same tick as setEmailVerified(true);
     // the closure here still sees the stale `false`. Trust the caller when they pass
     // { email_verified: true } so the save actually runs.
@@ -379,7 +435,7 @@ function ApplyForm() {
     const buildBody = () => {
       const safeUploads = Object.fromEntries(
         Object.entries(uploads).map(([k, v]) => {
-          const safeExtracted: Record<string, any> = {}
+          const safeExtracted: Record<string, string | number | boolean | null> = {}
           for (const [ek, ev] of Object.entries(v.extracted || {})) {
             if (typeof ev === "string" || typeof ev === "number" || typeof ev === "boolean" || ev === null) {
               safeExtracted[ek] = ev
@@ -388,7 +444,12 @@ function ApplyForm() {
           return [k, { status: v.status, extracted: safeExtracted, message: v.message, fileUrl: v.fileUrl || null }]
         })
       )
-      const body: any = {
+      const body: {
+        email: string
+        current_step: number
+        step_data: Record<string, unknown>
+        lastUpdatedAt?: string
+      } = {
         email: formData.email,
         current_step: step,
         step_data: {
@@ -424,17 +485,40 @@ function ApplyForm() {
         }
 
         if (res.status === 409) {
-          // Sync updated_at from server response
           try {
             const data = await res.json()
+            // L1 server gate: caller's email/phone already belongs to a real
+            // member. Short-circuit to the "existing" phase so they're sent to
+            // the member portal instead of being trapped on a /apply path
+            // that would eventually demand a Razorpay payment they don't owe.
+            if (data?.code === "EXISTING_MEMBER" && data?.existingMember) {
+              setExistingMember({
+                amasi_number: data.existingMember.amasi_number,
+                membership_no: data.existingMember.amasi_number,
+                email: data.existingMember.email || formData.email,
+                first_name: data.existingMember.name || "Member",
+                application_name: data.existingMember.membership_type || "",
+                status_name: "Active",
+                profile_incomplete: true,
+              })
+              try {
+                localStorage.removeItem("amasi_apply_phase")
+                localStorage.removeItem("amasi_apply_form")
+                localStorage.removeItem("amasi_apply_type")
+              } catch {}
+              setPhase("existing")
+              return { ok: false, error: "existing_member" }
+            }
             if (data.serverUpdatedAt) setDraftUpdatedAt(data.serverUpdatedAt)
           } catch {}
           return { ok: false, error: "conflict" }
         }
 
         return { ok: false, error: `HTTP ${res.status}` }
-      } catch (err: any) {
-        return { ok: false, error: err?.name === "TimeoutError" ? "timeout" : (err?.message || "network error") }
+      } catch (err: unknown) {
+        const name = err instanceof Error ? err.name : ""
+        const message = err instanceof Error ? err.message : ""
+        return { ok: false, error: name === "TimeoutError" ? "timeout" : (message || "network error") }
       }
     }
 
@@ -444,7 +528,19 @@ function ApplyForm() {
 
     // One automatic retry after 500ms
     await new Promise(r => setTimeout(r, 500))
-    return await attempt()
+    const second = await attempt()
+    if (!second.ok) {
+      // Surface to Sentry so the fire-and-forget callers in this page
+      // (post-upload, post-review, post-order, post-OTP) are no longer
+      // invisible. UX is unchanged — callers decide whether to block on
+      // the return value.
+      Sentry.captureMessage("apply: saveDraftToServer failed after retry", {
+        level: "warning",
+        tags: { component: "apply-flow", step: String(step), error: second.error || "unknown" },
+        extra: { firstError: first.error, hasExtraData: !!extraData },
+      })
+    }
+    return second
   }, [emailVerified, formData, selectedType, uploads, draftUpdatedAt])
 
   // Auto-save draft every 30 seconds
@@ -654,11 +750,12 @@ function ApplyForm() {
 
       // Name cross-check between documents
       let nameWarning = ""
-      const extractedName = extracted.full_name || extracted.name || extracted.applicant_name
+      const asString = (v: unknown): string => (typeof v === "string" ? v : "")
+      const extractedName = asString(extracted.full_name) || asString(extracted.name) || asString(extracted.applicant_name)
       if (extractedName) {
         const otherDocs = Object.entries(uploads).filter(([key]) => key !== docType && key !== "profile")
         for (const [, otherUpload] of otherDocs) {
-          const otherName = otherUpload.extracted?.full_name || otherUpload.extracted?.name || otherUpload.extracted?.applicant_name
+          const otherName = asString(otherUpload.extracted?.full_name) || asString(otherUpload.extracted?.name) || asString(otherUpload.extracted?.applicant_name)
           if (otherName) {
             const name1 = extractedName.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
             const name2 = otherName.toLowerCase().replace(/^(dr\.?|prof\.?)\s*/i, "").trim()
@@ -708,7 +805,7 @@ function ApplyForm() {
       } else {
         toast.success(`${DOC_LABELS[docType as DocType]} verified`)
       }
-    } catch (err: any) {
+    } catch {
       setUploads((prev) => ({
         ...prev,
         [docType]: { file, preview, status: "uploaded", extracted: {}, message: "Could not read this document. Please try a clearer photo." },
@@ -920,7 +1017,7 @@ function ApplyForm() {
     }
 
     // Load Razorpay script if not loaded
-    if (!(window as any).Razorpay) {
+    if (!window.Razorpay) {
       try {
         await new Promise<void>((resolve, reject) => {
           const script = document.createElement("script")
@@ -936,7 +1033,12 @@ function ApplyForm() {
       }
     }
 
-    const rzp = new (window as any).Razorpay({
+    if (!window.Razorpay) {
+      toast.error("Payment gateway not loaded. Please refresh and try again.")
+      setSubmitting(false)
+      return
+    }
+    const rzp = new window.Razorpay({
       key: rzpKeyId,
       amount: totalAmount * 100,
       currency: fee?.currency === "$" ? "USD" : "INR",
@@ -955,7 +1057,7 @@ function ApplyForm() {
         applicantName: `${formData.firstName} ${formData.lastName}`.trim(),
       },
       theme: { color: "#0f766e" },
-      handler: async (response: any) => {
+      handler: async (response: RazorpaySuccessResponse) => {
         // Step 3: Verify payment
         try {
           const verifyRes = await fetch("/api/payments/verify", {
@@ -1284,7 +1386,7 @@ function ApplyForm() {
 
   // ===== EXISTING MEMBER PHASE =====
   if (phase === "existing" && existingMember) {
-    const m = existingMember as any
+    const m = existingMember
     const isIncomplete = m.profile_incomplete
     return (
       <motion.div
@@ -1368,27 +1470,14 @@ function ApplyForm() {
 
             <div className="mt-6 space-y-2">
               {isIncomplete && (
-                <Button className="w-full gap-2" onClick={() => {
-                  // Pre-fill form with existing data and go to upload
-                  setFormData(prev => ({
-                    ...prev,
-                    email: m.email || "",
-                    firstName: m.first_name || "",
-                    lastName: m.last_name || "",
-                    mobile: m.mobile || "",
-                    membershipType: m.application_name?.includes("Life Member [LM]") ? "LM" : m.application_name?.includes("ALM") ? "ALM" : m.application_name?.includes("ACM") ? "ACM" : "ALM",
-                  }))
-                  setSelectedType(getMembershipType(
-                    m.application_name?.includes("Life Member [LM]") && !m.application_name?.includes("ALM") ? "LM" : m.application_name?.includes("ALM") ? "ALM" : m.application_name?.includes("ACM") ? "ACM" : "ALM"
-                  ) || null)
-                  setPhase("upload")
-                  toast.info("Please upload your documents to complete your profile")
-                }}>
-                  <Upload className="h-4 w-4" /> Update Profile & Upload Documents
-                </Button>
+                <a href="/m" className="block">
+                  <Button className="w-full gap-2">
+                    <Upload className="h-4 w-4" /> Update in Member Portal
+                  </Button>
+                </a>
               )}
               {!isIncomplete && (m.application_name?.includes("ALM") || m.application_name?.includes("Associate Life")) && (
-                <a href="/member" className="block">
+                <a href="/m" className="block">
                   <Button className="w-full gap-2">
                     <ArrowRight className="h-4 w-4" /> Upgrade to Life Member (LM)
                   </Button>
@@ -1566,8 +1655,11 @@ function ApplyForm() {
                 toast.error("Please select a membership type to continue.")
                 setTimeout(() => setPhase("landing"), 500)
               } else {
-                // Save initial draft to server
-                saveDraftToServer(2, { email_verified: true })
+                // Awaited so phase advance can't race the save — paired
+                // with the server-side fallback in /api/otp/verify that
+                // also writes step_data.email_verified, this closes the
+                // 27-of-51-drafts gap from last 30d.
+                await saveDraftToServer(2, { email_verified: true })
                 setTimeout(() => setPhase("upload"), 500)
               }
             }
@@ -1668,7 +1760,7 @@ function ApplyForm() {
                   </div>
                   <div className="text-center">
                     <p className="font-bold text-lg">Welcome back!</p>
-                    <p className="text-sm text-muted-foreground mt-1">You have an incomplete application from {new Date(serverDraft.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}.</p>
+                    <p className="text-sm text-muted-foreground mt-1">You have an incomplete application from {new Date(serverDraft.created_at || serverDraft.updated_at || Date.now()).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}.</p>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-4 space-y-2">
                     <div className="flex justify-between text-sm">
@@ -1711,14 +1803,17 @@ function ApplyForm() {
                           // Restore uploads state (without File objects — shows previously processed docs)
                           if (stepData.uploads && typeof stepData.uploads === "object") {
                             const restoredUploads: Record<string, UploadEntry> = {}
-                            for (const [k, v] of Object.entries(stepData.uploads as Record<string, any>)) {
+                            for (const [k, v] of Object.entries(stepData.uploads as Record<string, Record<string, unknown>>)) {
                               if (v && typeof v === "object") {
+                                const status = (v.status as UploadEntry["status"]) || "uploaded"
+                                const extracted = (v.extracted && typeof v.extracted === "object" ? v.extracted : {}) as Record<string, unknown>
+                                const message = typeof v.message === "string" ? v.message : "Restored from previous session"
                                 restoredUploads[k] = {
-                                  file: null as any,
+                                  file: null,
                                   preview: "",
-                                  status: v.status || "uploaded",
-                                  extracted: v.extracted || {},
-                                  message: v.message || "Restored from previous session",
+                                  status,
+                                  extracted,
+                                  message,
                                 }
                               }
                             }
@@ -1739,7 +1834,7 @@ function ApplyForm() {
                         setResumingDraft(false)
                         // Navigate to the step they were on, but validate uploads exist
                         const stepToPhase: Record<number, Phase> = { 1: "landing", 2: "verify", 3: "upload", 4: "review", 5: "review", 6: "review" }
-                        let targetPhase = stepToPhase[serverDraft.current_step] || "upload"
+                        const targetPhase = stepToPhase[serverDraft.current_step] || "upload"
                         setPhase(targetPhase)
                       }}
                     >
@@ -2306,7 +2401,7 @@ function ApplyForm() {
     if (type?.requiresASI) {
       requiredFields.push({ key: "asiMembershipNo", label: "ASI Number" })
     }
-    const filledCount = requiredFields.filter(f => (formData as any)[f.key]).length
+    const filledCount = requiredFields.filter(f => formData[f.key as keyof ApplicationFormData]).length
     const totalRequired = requiredFields.length
     const pct = Math.round((filledCount / totalRequired) * 100)
 
@@ -2411,7 +2506,7 @@ function ApplyForm() {
                     "MCh Surgical Oncology", "MCh Urology", "MCh Cardiothoracic Surgery", "MCh Neurosurgery", "MCh Plastic Surgery", "MCh GI Surgery",
                     "DNB General Surgery", "DNB Obstetrics & Gynaecology", "DNB Surgical Oncology", "DNB Urology",
                     "FRCS", "MRCS",
-                  ]} required value={(formData as any).eduPostgradDegree || ""} error={errors.eduPostgradDegree} isFilled={!!formData.eduPostgradDegree} onChange={updateField} />
+                  ]} required value={formData.eduPostgradDegree || ""} error={errors.eduPostgradDegree} isFilled={!!formData.eduPostgradDegree} onChange={updateField} />
                 )}
                 {wasInitiallyMissing("eduPostgradCollege") && type?.requiresPG && (
                   <div>

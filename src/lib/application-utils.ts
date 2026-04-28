@@ -12,10 +12,18 @@ function isUnsafeForOrFilter(value: string): boolean {
   return /[,()."\\]/.test(value)
 }
 
+export interface ExistingMember {
+  amasi_number: number
+  name: string | null
+  email: string | null
+  membership_type: string | null
+}
+
 /** Check if an application already exists for this email, phone, or registration number */
 export async function checkDuplicateApplication(email: string, mobile: string, mciCouncilNumber?: string): Promise<{
   isDuplicate: boolean
   existingRef?: string
+  existingMember?: ExistingMember
   message?: string
 }> {
   const supabase = createAdminClient()
@@ -105,12 +113,12 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
   }
 
   // Also check members table by email/phone via two separate queries (no filter injection).
-  type MemberRow = { amasi_number: number; email: string | null; status: string | null }
+  type MemberRow = { amasi_number: number; name: string | null; email: string | null; membership_type: string | null; status: string | null }
   const memberRows: MemberRow[] = []
   if (emailSafe && email) {
     const { data: byEmail } = await supabase
       .from("members")
-      .select("amasi_number, email, status")
+      .select("amasi_number, name, email, membership_type, status")
       .ilike("email", email)
       .limit(1)
     if (byEmail) memberRows.push(...byEmail)
@@ -118,16 +126,23 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
   if (mobileSafe && mobile) {
     const { data: byPhone } = await supabase
       .from("members")
-      .select("amasi_number, email, status")
+      .select("amasi_number, name, email, membership_type, status")
       .eq("phone", mobile)
       .limit(1)
     if (byPhone) memberRows.push(...byPhone)
   }
 
   if (memberRows.length > 0) {
+    const m = memberRows[0]
     return {
       isDuplicate: true,
-      message: `An active membership already exists for this email/phone (AMASI #${memberRows[0].amasi_number}).`,
+      existingMember: {
+        amasi_number: m.amasi_number,
+        name: m.name,
+        email: m.email,
+        membership_type: m.membership_type,
+      },
+      message: `An active membership already exists for this email/phone (AMASI #${m.amasi_number}).`,
     }
   }
 

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { getMemberSession } from "@/lib/auth"
 import { recordStepEvent } from "@/lib/funnel-tracking"
+import { checkDuplicateApplication } from "@/lib/application-utils"
 
 /** Verify the caller has a valid member JWT cookie matching the given email. */
 async function verifyMemberSession(email: string): Promise<boolean> {
@@ -46,10 +47,31 @@ export async function PUT(request: NextRequest) {
     // Check if draft exists
     const { data: existing } = await supabase
       .from("draft_applications")
-      .select("id, step_data, updated_at, membership_type, current_step")
+      .select("id, step_data, updated_at, membership_type, current_step, has_verified_payment")
       .eq("email", normalizedEmail)
       .limit(1)
       .maybeSingle()
+
+    // Existing-member gate: if this email/phone already belongs to a real
+    // member, block the new-application flow before any draft is saved.
+    // Skip the check only when the draft already has a verified payment —
+    // those rows must complete the post-payment flow even if the gate would
+    // otherwise refuse them.
+    if (!existing?.has_verified_payment) {
+      const phoneFromBody = typeof step_data?.mobile === "string" ? step_data.mobile : (typeof body.mobile === "string" ? body.mobile : "")
+      const dup = await checkDuplicateApplication(normalizedEmail, phoneFromBody)
+      if (dup.existingMember) {
+        return Response.json(
+          {
+            status: false,
+            code: "EXISTING_MEMBER",
+            message: dup.message,
+            existingMember: dup.existingMember,
+          },
+          { status: 409 }
+        )
+      }
+    }
 
     if (existing) {
       // Always use optimistic locking for existing drafts

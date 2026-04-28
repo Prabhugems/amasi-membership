@@ -8,13 +8,13 @@ import * as Sentry from "@sentry/nextjs";
 Sentry.init({
   dsn: "https://527b62463e741ecf9eebafa103fd9cb3@o4511263275286528.ingest.de.sentry.io/4511291570520144",
 
-  // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
+  // Explicit environment so a stray VERCEL_ENV in .env.local can't cause
+  // local dev errors to be tagged as production (see AMASI-MEMBERSHIP-8).
+  environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
+
   tracesSampleRate: 1,
-
-  // Enable logs to be sent to Sentry
   enableLogs: true,
-
-  // Enable sending user PII (Personally Identifiable Information)
-  // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  ignoreErrors: ["aborted", "ECONNRESET", "EPIPE"],
 });

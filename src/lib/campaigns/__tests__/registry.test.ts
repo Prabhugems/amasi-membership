@@ -25,7 +25,16 @@ describe("template registry", () => {
       date_of_birth: null, membership_type: "LM", marketing_opt_out_at: null,
     }
     expect(t.subject(sample)).toContain("1234")
-    expect(t.html(sample, { baseUrl: "https://example.com" })).toContain("Dr. Test")
-    expect(t.html(sample, { baseUrl: "https://example.com" })).toContain("example.com/member")
+    const noToken = t.html(sample, { baseUrl: "https://example.com" })
+    expect(noToken).toContain("Dr. Test")
+    // Without a token the CTA falls back to the plain /m short-URL
+    // (which redirects to /member and prompts OTP at runtime).
+    expect(noToken).toContain("example.com/m")
+    expect(noToken).not.toContain("?t=")
+
+    // With a token, the CTA includes ?t=<encoded jwt> for one-click sign-in.
+    const withToken = t.html(sample, { baseUrl: "https://example.com", autoLoginToken: "abc.def.ghi" })
+    expect(withToken).toContain("example.com/m?t=abc.def.ghi")
+    expect(withToken).toContain("expires in 24 hours")
   })
 })

@@ -28,6 +28,7 @@ async function verifyToken(token: string) {
 const PUBLIC_ROUTES = [
   "/login",
   "/apply",
+  "/m",
   "/member",
   "/membership",
   "/verify",

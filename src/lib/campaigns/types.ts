@@ -28,7 +28,7 @@ export interface TemplateEntry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildSegment: (query: any) => any
   subject: (m: MemberSegmentRow) => string
-  html: (m: MemberSegmentRow, ctx: { baseUrl: string }) => string
+  html: (m: MemberSegmentRow, ctx: { baseUrl: string; autoLoginToken?: string }) => string
 }
 
 export interface CampaignRow {

@@ -4,6 +4,7 @@ import { Resend } from "resend"
 import { getTemplate } from "./registry"
 import { createPacer } from "./rate-limiter"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
+import { signAutoLoginToken } from "@/lib/auth"
 import type { CampaignRecipientRow, CampaignRow, MemberSegmentRow } from "./types"
 
 // Lazy: instantiating at module top-level throws "Missing API key" during
@@ -83,11 +84,26 @@ export async function sendNextBatch(params: {
       membership_type: null, marketing_opt_out_at: null,
     }
     try {
+      // Mint a single-use 24h auto-login token per recipient so the email's
+      // CTA can drop them straight onto /member?tab=documents — no OTP, no
+      // wandering off into /apply. JWT_SECRET is required for sign(); if it
+      // isn't configured we still send the email but the link falls back to
+      // plain /m (which itself redirects to /member, prompting OTP).
+      let autoLoginToken: string | undefined
+      try {
+        autoLoginToken = await signAutoLoginToken({
+          memberId: r.member_id,
+          email: r.email,
+          amasiNumber: r.amasi_number ?? 0,
+        })
+      } catch (e) {
+        console.error("[campaigns] failed to mint auto-login token", { recipientId: r.id, error: e instanceof Error ? e.message : String(e) })
+      }
       await getResend().emails.send({
         from: fromEmail,
         to: r.email,
         subject: template.subject(member),
-        html: template.html(member, { baseUrl }),
+        html: template.html(member, { baseUrl, autoLoginToken }),
       })
       await db.from("email_campaign_recipients")
         .update({ sent_at: new Date().toISOString(), send_error: null })

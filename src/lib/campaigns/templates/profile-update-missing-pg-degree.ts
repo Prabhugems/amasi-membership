@@ -14,11 +14,16 @@ export const profileUpdateMissingPgDegree: TemplateEntry = {
 
   subject: (m) => `AMASI Member #${m.amasi_number} — Please Update Your Profile`,
 
-  html: (m, { baseUrl }) => {
+  html: (m, { baseUrl, autoLoginToken }) => {
     const rawName = m.name || "Member"
     const safeName = escapeHtml(rawName)
     const safeEmail = escapeHtml(m.email)
     const amasi = escapeHtml(String(m.amasi_number))
+    // With token: one click signs them in and drops them on the upload tab.
+    // Without (token mint failed): plain /m → /member → OTP, same end state.
+    const ctaUrl = autoLoginToken
+      ? `${baseUrl}/m?t=${encodeURIComponent(autoLoginToken)}`
+      : `${baseUrl}/m`
     return `
     <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
       <div style="background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); padding: 32px 24px; border-radius: 12px 12px 0 0; text-align: center;">
@@ -42,9 +47,12 @@ export const profileUpdateMissingPgDegree: TemplateEntry = {
           </ol>
         </div>
         <div style="text-align: center; margin: 28px 0 16px;">
-          <a href="${baseUrl}/member" style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">Update My Profile</a>
+          <a href="${ctaUrl}" style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">Update My Profile</a>
         </div>
-        <p style="color: #555; font-size: 13px;">Log in with your registered email <strong>${safeEmail}</strong> and verify via OTP.</p>
+        <p style="color: #555; font-size: 13px;">${autoLoginToken
+          ? `One-click sign-in for <strong>${safeEmail}</strong> — link expires in 24 hours.`
+          : `Log in with your registered email <strong>${safeEmail}</strong> and verify via OTP.`
+        }</p>
         <p style="color: #555; font-size: 13px;">If you have questions, contact us at <a href="mailto:support@amasi.org" style="color: #0f766e;">support@amasi.org</a>.</p>
         <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
         <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>

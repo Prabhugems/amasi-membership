@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { signToken, setMemberCookie } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -80,20 +81,51 @@ export async function POST(request: NextRequest) {
         .limit(1)
         .maybeSingle()
       if (draftRow) {
+        // Sync email_verified server-side so this doesn't depend on the
+        // client save-draft round-trip in apply/page.tsx, which races the
+        // Set-Cookie commit and is fire-and-forget. Without this, 27 drafts
+        // in the last 30d had otp_codes.verified=true but step_data still
+        // showed only {otp_sent, otp_sent_at} — the client call was lost.
+        const mergedStepData = {
+          ...(draftRow.step_data || {}),
+          email_verified: true,
+          email_verified_at: new Date().toISOString(),
+        }
+        const { data: updated, error: syncError } = await supabase
+          .from("draft_applications")
+          .update({
+            step_data: mergedStepData,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", draftRow.id)
+          .select("*")
+          .single()
+
+        if (syncError) {
+          Sentry.captureException(syncError, {
+            tags: { component: "otp-verify", op: "draft-email-verified-sync" },
+            extra: { draftId: draftRow.id },
+          })
+        }
+
         // Only return metadata — step_data contains PII and is fetched
         // separately via GET /api/applications/save-draft after user clicks Resume
+        const row = updated || draftRow
         draft = {
-          id: draftRow.id,
-          current_step: draftRow.current_step,
-          membership_type: draftRow.membership_type,
-          status: draftRow.status,
-          has_verified_payment: draftRow.has_verified_payment,
-          created_at: draftRow.created_at,
-          updated_at: draftRow.updated_at,
+          id: row.id,
+          current_step: row.current_step,
+          membership_type: row.membership_type,
+          status: row.status,
+          has_verified_payment: row.has_verified_payment,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
         }
       }
-    } catch {
-      // Draft check failure is non-blocking
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { component: "otp-verify", op: "draft-lookup" },
+      })
+      // Draft check failure is non-blocking — OTP still verified
     }
 
     return Response.json({
@@ -102,8 +134,9 @@ export async function POST(request: NextRequest) {
       hasDraft: !!draft,
       draft,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("OTP verify error:", error)
+    Sentry.captureException(error, { tags: { component: "otp-verify" } })
     return Response.json({ status: false, message: "Verification failed" }, { status: 500 })
   }
 }

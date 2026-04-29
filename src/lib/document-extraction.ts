@@ -62,6 +62,23 @@ REJECT (is_valid_medical_document=false) if this is: bank statement, passbook, f
 If rejected: {"is_valid_medical_document":false,"rejection_reason":"This looks like a [what it actually is]. Please upload your [what is expected] instead.","detected_document_type":"what you think this document actually is"}
 `
 
+const EXTRACTION_RULES = `
+NAME HANDLING:
+- Strip these prefixes from full_name (keep them in full_name_raw): Dr., Prof., Mr., Mrs., Ms., Shri., Smt.
+- Preserve middle names and initials exactly as printed.
+- If the name appears in both English and a regional script (Tamil, Hindi, Devanagari, Bengali, etc.), extract the ENGLISH version.
+
+DATES:
+- Output YYYY-MM-DD when day, month, and year are all visible.
+- If only the year is visible, output the year alone as a 4-digit string.
+- If day is unclear but month and year are visible, set day to "01" and add a note in extraction_notes.
+
+CONFIDENCE RUBRIC (for extraction_confidence):
+- "high": all required fields clearly readable, no ambiguity.
+- "medium": one or two fields partially obscured but legible with effort.
+- "low": multiple fields unclear, image quality poor, or document appears non-standard.
+`
+
 const FINANCIAL_KEYWORDS = [
   "bank", "axis", "hdfc", "icici", "sbi", "kotak", "account", "balance",
   "transaction", "debit", "credit", "passbook", "statement", "neft", "imps",
@@ -122,11 +139,13 @@ export function buildPrompt(docType: string): string {
   if (docType === "mci_certificate") {
     return `This is an Indian Medical Council or State Medical Council registration certificate. READ THE VISUAL IMAGE CAREFULLY — embedded text in scanned PDFs may have OCR errors. Trust what you SEE in the image, not embedded text.
 ${REJECT_INSTRUCTIONS}
+${EXTRACTION_RULES}
 If this IS a valid medical council certificate, extract the doctor's full name, registration number, council name, state, date of registration, and renewal/validity date if shown.
 Return ONLY this JSON (use null for fields not found, never guess):
 {
   "is_valid_medical_document": true,
-  "full_name": "doctor's full PERSONAL name (e.g. Rajesh Kumar Singh) — NOT certificate body text like 'has been duly admitted'. Strip Dr./Prof. prefix",
+  "full_name": "doctor's full PERSONAL name (e.g. Rajesh Kumar Singh) — NOT certificate body text like 'has been duly admitted'. Strip Dr./Prof./Mr./Mrs./Ms./Shri./Smt. prefix",
+  "full_name_raw": "exact name as printed including any prefix",
   "registration_number": "registration / enrolment number",
   "council_name": "MCI or state medical council name",
   "state": "issuing state e.g. Tamil Nadu",
@@ -138,13 +157,16 @@ Return ONLY this JSON (use null for fields not found, never guess):
   "father_name": "father/husband name without Mr/Shri prefix or null",
   "address": "full address if visible or null",
   "city": "city name or null",
-  "pin_code": "6-digit PIN if visible or null"
+  "pin_code": "6-digit PIN if visible or null",
+  "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
+  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }
   if (docType === "pg_degree_certificate") {
     return `This is a postgraduate medical degree certificate from India. READ THE VISUAL IMAGE CAREFULLY — embedded text may have OCR errors (e.g. "degreo" = "degree", "Modisino" = "Medicine", "helsho" = "he/she"). Trust what you SEE in the image, not embedded text.
 ${REJECT_INSTRUCTIONS}
+${EXTRACTION_RULES}
 If this IS a valid PG degree certificate, extract the fields below.
 
 DEGREE NORMALISATION — Indian certificates write degrees in many ways. Read the raw text, then normalise:
@@ -153,13 +175,15 @@ DEGREE NORMALISATION — Indian certificates write degrees in many ways. Read th
   "Magister Chirurgiae" / "M.Ch." / "MCh" → degree_name: "M.Ch.", specialisation from brackets
   "Diplomate of National Board" / "D.N.B." / "DNB" → degree_name: "D.N.B.", specialisation from brackets
   "FRCS" / "MRCS" → degree_name as-is
+  "Diploma in <subject>" (e.g. Diploma in Laparoscopic Surgery) → degree_name: "DIPLOMA", specialisation from the diploma subject
 Do NOT return MBBS if the certificate actually says MD, MS, MCh, or DNB. Read carefully.
 
 Return ONLY this JSON (null for fields not found):
 {
   "is_valid_medical_document": true,
-  "full_name": "person's full PERSONAL name (e.g. Rajesh Kumar) — NOT certificate body text like 'has been duly admitted'. Strip Dr. prefix",
-  "degree_name": "NORMALISED degree: M.S. / M.D. / M.Ch. / D.N.B. / FRCS / MRCS",
+  "full_name": "person's full PERSONAL name (e.g. Rajesh Kumar) — NOT certificate body text like 'has been duly admitted'. Strip Dr./Prof./Mr./Mrs./Ms./Shri./Smt. prefix",
+  "full_name_raw": "exact name as printed including any prefix",
+  "degree_name": "NORMALISED degree: M.S. / M.D. / M.Ch. / D.N.B. / FRCS / MRCS / DIPLOMA",
   "degree_raw_text": "exact text as printed on the certificate for the degree",
   "specialisation": "speciality e.g. General Surgery, Medicine, Orthopaedics",
   "university_name": "awarding university",
@@ -168,18 +192,22 @@ Return ONLY this JSON (null for fields not found):
   "document_type": "original or provisional",
   "date_of_birth": "YYYY-MM-DD or null",
   "father_name": "father name or null",
-  "gender": "Male or Female or null"
+  "gender": "Male or Female or null",
+  "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
+  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }
   if (docType === "mbbs_degree_certificate") {
     return `This is an MBBS degree or provisional certificate from an Indian medical college.
 ${REJECT_INSTRUCTIONS}
+${EXTRACTION_RULES}
 If this IS a valid MBBS certificate, extract: full name, degree (MBBS or provisional), university, college/institution name, and year of passing.
 Return ONLY this JSON (null for fields not found):
 {
   "is_valid_medical_document": true,
-  "full_name": "person's full name WITHOUT Dr. prefix",
+  "full_name": "person's full name with Dr./Prof./Mr./Mrs./Ms./Shri./Smt. prefix stripped",
+  "full_name_raw": "exact name as printed including any prefix",
   "degree_name": "MBBS or provisional",
   "university_name": "awarding university",
   "institution_name": "medical college name or null",
@@ -187,7 +215,9 @@ Return ONLY this JSON (null for fields not found):
   "document_type": "original or provisional",
   "date_of_birth": "YYYY-MM-DD or null",
   "father_name": "father name or null",
-  "gender": "Male or Female or null"
+  "gender": "Male or Female or null",
+  "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
+  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }

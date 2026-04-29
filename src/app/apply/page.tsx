@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -318,31 +318,11 @@ export default function ApplyPage() {
 }
 
 function ApplyForm() {
-  // Restore form data from localStorage on mount
-  const [phase, setPhase] = useState<Phase>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("amasi_apply_phase")
-      if (saved && ["check", "landing", "upload", "review"].includes(saved)) {
-        // "review" phase requires uploads in state, but File objects can't be serialized
-        // to localStorage. Cap at "upload" so user must re-upload before submitting.
-        if (saved === "review") return "upload"
-        return saved as Phase
-      }
-    }
-    return "check"
-  })
+  const [phase, setPhase] = useState<Phase>("check")
   const [checkQuery, setCheckQuery] = useState("")
   const [checking, setChecking] = useState(false)
   const [existingMember, setExistingMember] = useState<ExistingMemberView | null>(null)
-  const [formData, setFormData] = useState<ApplicationFormData>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("amasi_apply_form")
-        if (saved) return { ...INITIAL_FORM_DATA, ...JSON.parse(saved) }
-      } catch {}
-    }
-    return INITIAL_FORM_DATA
-  })
+  const [formData, setFormData] = useState<ApplicationFormData>(INITIAL_FORM_DATA)
   const [uploads, setUploads] = useState<Record<string, UploadEntry>>({})
   const [expandedTips, setExpandedTips] = useState<Record<string, boolean>>({})
   const [processing, setProcessing] = useState(false)
@@ -357,13 +337,7 @@ function ApplyForm() {
     preview: string
     message: string
   } | null>(null)
-  const [selectedType, setSelectedType] = useState<MembershipType | null>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("amasi_apply_type")
-      if (saved) return MEMBERSHIP_TYPES.find(t => t.id === saved) || null
-    }
-    return null
-  })
+  const [selectedType, setSelectedType] = useState<MembershipType | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [editSection, setEditSection] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -381,14 +355,45 @@ function ApplyForm() {
     }
   }, [phase])
 
+  // Restore from localStorage in an effect (not lazy useState init) so the
+  // server-render and client-first-render agree. Lazy initializers that read
+  // localStorage produced replay_hydration_error in Sentry (AMASI-MEMBERSHIP-9)
+  // for returning users whose saved phase/form differed from the SSR defaults.
+  //
+  // restoredRef gates the auto-save effects below so they no-op until restore
+  // completes. Without this, the formData auto-save fires on first mount with
+  // stale-closure INITIAL_FORM_DATA and overwrites the saved blob before the
+  // restored state commits — a brief but real localStorage clobber.
+  const restoredRef = useRef(false)
+  useEffect(() => {
+    try {
+      const savedPhase = localStorage.getItem("amasi_apply_phase")
+      if (savedPhase && ["check", "landing", "upload", "review"].includes(savedPhase)) {
+        // "review" requires File objects in memory; cap at "upload" so the user re-uploads.
+        setPhase(savedPhase === "review" ? "upload" : (savedPhase as Phase))
+      }
+      const savedForm = localStorage.getItem("amasi_apply_form")
+      if (savedForm) setFormData({ ...INITIAL_FORM_DATA, ...JSON.parse(savedForm) })
+      const savedType = localStorage.getItem("amasi_apply_type")
+      if (savedType) {
+        const t = MEMBERSHIP_TYPES.find(x => x.id === savedType)
+        if (t) setSelectedType(t)
+      }
+    } catch {}
+    restoredRef.current = true
+  }, [])
+
   // Auto-save form data to localStorage
   useEffect(() => {
+    if (!restoredRef.current) return
     localStorage.setItem("amasi_apply_form", JSON.stringify(formData))
   }, [formData])
   useEffect(() => {
+    if (!restoredRef.current) return
     if (phase !== "check" && phase !== "verify") localStorage.setItem("amasi_apply_phase", phase)
   }, [phase])
   useEffect(() => {
+    if (!restoredRef.current) return
     if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
   }, [selectedType])
   const [emailVerified, setEmailVerified] = useState(false)

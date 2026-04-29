@@ -1,0 +1,65 @@
+{
+  "name": "T4: confidence_missing — pre-d401b21 record (no extraction_confidence field)",
+  "description": "Mimics a record extracted before the d401b21 prompt change shipped: the extracted blob has no extraction_confidence, full_name_raw, or extraction_notes fields. New gating MUST be a no-op for backward compatibility — otherwise rescoring an old auto-approved app would retroactively flip it to manual review. Assertions: blockingReasons does NOT include low_extraction_confidence; both new doc lists are empty.",
+  "uploads": {
+    "pg_degree_certificate": {
+      "status": "extracted",
+      "fileUrl": "synthetic://pg.jpg",
+      "extracted": {
+        "is_valid_medical_document": true,
+        "full_name": "Test Subject Alpha",
+        "degree_name": "M.S.",
+        "degree_raw_text": "Master of Surgery (General Surgery)",
+        "specialisation": "General Surgery",
+        "university_name": "Test Medical University",
+        "institution_name": "Test Medical College",
+        "year_of_passing": "2024",
+        "document_type": "original",
+        "gender": "Male"
+      }
+    },
+    "mbbs_degree_certificate": {
+      "status": "extracted",
+      "fileUrl": "synthetic://mbbs.jpg",
+      "extracted": {
+        "is_valid_medical_document": true,
+        "full_name": "Test Subject Alpha",
+        "degree_name": "MBBS",
+        "university_name": "Test Medical University",
+        "institution_name": "Test Medical College",
+        "year_of_passing": "2018",
+        "document_type": "original",
+        "gender": "Male"
+      }
+    },
+    "mci_certificate": {
+      "status": "extracted",
+      "fileUrl": "synthetic://mci.jpg",
+      "extracted": {
+        "is_valid_medical_document": true,
+        "full_name": "Test Subject Alpha",
+        "registration_number": "TMC/2018/000001",
+        "council_name": "Test Medical Council",
+        "state": "Test State"
+      }
+    }
+  },
+  "formData": {
+    "firstName": "Test",
+    "middleName": "Subject",
+    "lastName": "Alpha",
+    "eduPostgradDegree": "M.S.",
+    "eduPostgradCollege": "Test Medical College",
+    "eduPostgradUniversity": "Test Medical University",
+    "eduPostgradYear": "2024",
+    "mciCouncilNumber": "TMC/2018/000001",
+    "mciCouncilState": "Test State",
+    "membershipType": ""
+  },
+  "paymentPaid": true,
+  "assertions": {
+    "blockingReasonsExcludes": ["low_extraction_confidence"],
+    "lowConfidenceDocsCount": 0,
+    "mediumConfidenceDocsCount": 0
+  }
+}

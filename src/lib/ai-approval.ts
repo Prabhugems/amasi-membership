@@ -27,6 +27,15 @@ const VALID_SURGICAL_DEGREES = [
   "frcs", "mrcs", "fics", "facs",
 ]
 
+/** PR #2: docs whose extraction_confidence gates auto-approval.
+ *  "low" forces manual review; "medium" is logged only; "high" / missing / null is no-op.
+ *  Locked scope per the PR #2 plan — adding a key here changes member-facing behavior. */
+const CONFIDENCE_GATED_DOCS = [
+  "pg_degree_certificate",
+  "mbbs_degree_certificate",
+  "mci_certificate",
+] as const
+
 /** Normalize a string for comparison */
 function normalize(s: string): string {
   return (s || "")
@@ -96,6 +105,31 @@ function similarity(a: string, b: string): number {
   return Math.min(1, Math.max(fullRatio, sortedRatio, jaccard) + firstNameBonus)
 }
 
+/** PR #2: walk required-doc set and partition by extraction_confidence value.
+ *  Missing / null / non-canonical values are deliberately treated as no-op so
+ *  pre-d401b21 records (and any future prompt drift) cannot retroactively
+ *  block an application that previously auto-approved. */
+function collectConfidenceFlags(
+  normalizedUploads: Record<string, { extracted?: Record<string, any> | null }>,
+): {
+  low: { key: string; notes: string | null }[]
+  medium: { key: string; notes: string | null }[]
+} {
+  const low: { key: string; notes: string | null }[] = []
+  const medium: { key: string; notes: string | null }[] = []
+  for (const key of CONFIDENCE_GATED_DOCS) {
+    const extracted = normalizedUploads[key]?.extracted
+    if (!extracted) continue
+    const confidence = extracted.extraction_confidence
+    if (confidence !== "low" && confidence !== "medium") continue
+    const rawNotes = extracted.extraction_notes
+    const notes = typeof rawNotes === "string" ? rawNotes.slice(0, 100) : null
+    if (confidence === "low") low.push({ key, notes })
+    else medium.push({ key, notes })
+  }
+  return { low, medium }
+}
+
 /**
  * Convert a membership_applications DB row (snake_case) to the camelCase
  * form shape scoreApplication() reads. Use this whenever you rescore an
@@ -154,6 +188,12 @@ export interface ApprovalResult {
   /** Required docs that passed via the manual-review bypass path (PR 0).
    *  Empty array on the happy path; non-empty forces autoApprove=false. */
   bypassedDocs: { key: string; reason: ManualReviewReasonCode }[]
+  /** PR #2: docs whose extraction returned confidence === "low".
+   *  Non-empty forces autoApprove=false (mirrors bypassedDocs). */
+  lowConfidenceDocs: { key: string; notes: string | null }[]
+  /** PR #2: docs whose extraction returned confidence === "medium".
+   *  Logged into ai_decisions.check_results only — no behavior change. */
+  mediumConfidenceDocs: { key: string; notes: string | null }[]
 }
 
 export async function scoreApplication(
@@ -244,6 +284,8 @@ export async function scoreApplication(
       unreadableReason: reason,
       unreadableDocs: unreadable,
       bypassedDocs: [],
+      lowConfidenceDocs: [],
+      mediumConfidenceDocs: [],
     }
   }
 
@@ -598,6 +640,18 @@ export async function scoreApplication(
     }
   }
 
+  // PR #2: low extraction_confidence on any required doc forces manual review.
+  // Mirrors the manual_review_bypass rule above. Medium is logged only
+  // (surfaced via mediumConfidenceDocs into ai_decisions.check_results).
+  const { low: lowConfidenceDocs, medium: mediumConfidenceDocs } =
+    collectConfidenceFlags(normalizedUploads)
+  if (lowConfidenceDocs.length > 0) {
+    blockingReasons.push("low_extraction_confidence")
+    for (const d of lowConfidenceDocs) {
+      flags.push(`Low OCR confidence on ${d.key}: ${d.notes ?? "(no notes)"}`)
+    }
+  }
+
   const autoApprove = paymentPaid && blockingReasons.length === 0
 
   return {
@@ -610,5 +664,7 @@ export async function scoreApplication(
     nmcApiStatus,
     nmcResponseTimeMs,
     bypassedDocs,
+    lowConfidenceDocs,
+    mediumConfidenceDocs,
   }
 }

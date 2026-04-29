@@ -60,6 +60,12 @@ export async function logAiDecision(
       }
     }
 
+    // PR #2: surface medium-confidence docs for 30-day data review. Only present
+    // when non-empty to keep rows tidy; absence reads as "no medium-confidence docs".
+    if (result?.mediumConfidenceDocs && result.mediumConfidenceDocs.length > 0) {
+      checkResults.medium_confidence_docs = result.mediumConfidenceDocs
+    }
+
     // Determine decision. `documents_unreadable` is a hard short-circuit set by the
     // scorer's pre-flight gate; it takes precedence over autoApprove/manual_review.
     let decision: string

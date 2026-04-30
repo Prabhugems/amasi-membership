@@ -23,18 +23,14 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "recharts", "framer-motion"],
   },
   async headers() {
+    // CORS headers for /api/* are owned by src/middleware.ts (dynamic
+    // origin reflection against an allowlist). Static `headers()` can only
+    // return one Access-Control-Allow-Origin value, which broke every
+    // *.amasi.org subdomain trying to call our public APIs from the browser.
     return [
       {
         source: "/(.*)",
         headers: securityHeaders,
-      },
-      {
-        source: "/api/:path*",
-        headers: [
-          { key: "Access-Control-Allow-Origin", value: process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org" },
-          { key: "Access-Control-Allow-Methods", value: "GET, POST, PUT, PATCH, DELETE, OPTIONS" },
-          { key: "Access-Control-Allow-Headers", value: "Content-Type, Authorization" },
-        ],
       },
     ]
   },

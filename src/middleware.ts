@@ -2,9 +2,24 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
 import * as Sentry from "@sentry/nextjs"
+import { isAllowedCorsOrigin } from "@/lib/cors"
 
 // Inline token verification — cannot import from @/lib/auth because it uses next/headers
 const ADMIN_COOKIE = "amasi_admin_token"
+
+function applyCorsHeaders(response: NextResponse, origin: string | null): NextResponse {
+  // Always Vary on Origin so caches/CDNs don't cross-pollute responses.
+  response.headers.set("Vary", "Origin")
+  if (!origin || !isAllowedCorsOrigin(origin)) return response
+  response.headers.set("Access-Control-Allow-Origin", origin)
+  response.headers.set(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  )
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  response.headers.set("Access-Control-Max-Age", "86400")
+  return response
+}
 
 let cachedSecret: Uint8Array | null = null
 function getJwtSecret(): Uint8Array {
@@ -90,6 +105,42 @@ const PUBLIC_API_ROUTES = [
 ]
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const origin = request.headers.get("origin")
+  const isApi = pathname.startsWith("/api/")
+
+  // CORS preflight: short-circuit before any auth logic so OPTIONS never
+  // reaches a route handler. Allowlisted origins get the full CORS headers;
+  // unrecognized origins get a bare 204 (browser blocks the actual call).
+  if (isApi && request.method === "OPTIONS") {
+    if (origin && !isAllowedCorsOrigin(origin)) {
+      Sentry.captureMessage("CORS origin rejected (preflight)", {
+        level: "warning",
+        fingerprint: ["cors-origin-rejected", origin],
+        tags: { component: "middleware", reason: "cors_origin_not_allowed" },
+        extra: { origin, path: pathname, method: request.method },
+      })
+    }
+    return applyCorsHeaders(new NextResponse(null, { status: 204 }), origin)
+  }
+
+  // Surface unrecognized origins on real /api/* requests so partner-integration
+  // failures show up in Sentry instead of being blamed on us. Fingerprint by
+  // origin so Sentry groups one issue per misconfigured caller.
+  if (isApi && origin && !isAllowedCorsOrigin(origin)) {
+    Sentry.captureMessage("CORS origin rejected", {
+      level: "warning",
+      fingerprint: ["cors-origin-rejected", origin],
+      tags: { component: "middleware", reason: "cors_origin_not_allowed" },
+      extra: { origin, path: pathname, method: request.method },
+    })
+  }
+
+  const response = await handleRequest(request)
+  return isApi ? applyCorsHeaders(response, origin) : response
+}
+
+async function handleRequest(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl
 
   // Allow public pages (exact match or subpaths like /member/certificate, NOT /members)

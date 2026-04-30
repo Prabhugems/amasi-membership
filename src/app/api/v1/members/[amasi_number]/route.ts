@@ -33,22 +33,38 @@ export async function GET(
     )
   }
 
-  const amasiNumber = Number(amasiParam)
-  if (!Number.isFinite(amasiNumber) || amasiNumber <= 0) {
+  // Identifier can be AMASI number, email, or 10-digit phone. Partners (e.g.
+  // eventz360) forward whatever the user typed in their form to this route,
+  // so accepting all three avoids forcing every partner to triage the input
+  // type before the call. Path folder remains `[amasi_number]` for URL
+  // backwards compatibility with existing API-key callers.
+  const identifier = decodeURIComponent(amasiParam).trim()
+  const isEmail = identifier.includes("@")
+  const isPhone = /^\d{10}$/.test(identifier)
+  const asNum = Number(identifier)
+  const isAmasiNumber = !isEmail && !isPhone && Number.isFinite(asNum) && asNum > 0
+
+  if (!isEmail && !isPhone && !isAmasiNumber) {
     return Response.json(
-      { status: false, message: "Invalid AMASI number" },
+      { status: false, message: "Invalid identifier — expected AMASI number, email, or 10-digit phone" },
       { status: 400 }
     )
   }
 
   const supabase = createAdminClient()
-  const { data: member, error } = await supabase
+  const baseQuery = supabase
     .from("members")
     .select("amasi_number, name, first_name, last_name, email, phone, mobile_code, city, state")
-    .eq("amasi_number", amasiNumber)
     .eq("status", "active")
     .limit(1)
-    .maybeSingle()
+
+  const query = isEmail
+    ? baseQuery.ilike("email", identifier)
+    : isPhone
+    ? baseQuery.eq("phone", Number(identifier))
+    : baseQuery.eq("amasi_number", asNum)
+
+  const { data: member, error } = await query.maybeSingle()
 
   if (error || !member) {
     return Response.json(

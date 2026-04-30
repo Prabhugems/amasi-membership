@@ -50,6 +50,8 @@ export interface DraftApplicationRow {
   payment_id: string | null
   has_verified_payment: boolean | null
   reminder_sent_at: string | null
+  /** Added: sql/029_draft_reminder_count.sql — lifetime reminder count; bulk cron caps at 3 */
+  reminder_count: number
   stale_since: string | null
   expires_at: string | null
   created_at: string | null

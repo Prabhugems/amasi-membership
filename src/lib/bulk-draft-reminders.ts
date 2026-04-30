@@ -16,6 +16,7 @@ const STEP_LABELS: Record<number, string> = {
 
 export const DEFAULT_MIN_HOURS_IDLE = 24
 export const MIN_HOURS_SINCE_LAST_REMINDER = 48
+export const MAX_LIFETIME_REMINDERS = 3
 
 // Always use the branded domain for customer-facing URLs — see
 // src/app/api/applications/incomplete/route.ts.
@@ -38,6 +39,7 @@ export async function countEligibleDrafts(minHoursIdle = DEFAULT_MIN_HOURS_IDLE)
     .select("*", { count: "exact", head: true })
     .in("status", ["in_progress", "stuck"])
     .lte("updated_at", cutoff)
+    .lt("reminder_count", MAX_LIFETIME_REMINDERS)
     .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${reminderCutoff}`)
 
   return count ?? 0
@@ -61,9 +63,10 @@ export async function runBulkDraftReminders(
 
   const { data: drafts, error } = await supabase
     .from("draft_applications")
-    .select("id, email, current_step, updated_at, reminder_sent_at, status")
+    .select("id, email, current_step, updated_at, reminder_sent_at, reminder_count, status")
     .in("status", ["in_progress", "stuck"])
     .lte("updated_at", cutoff)
+    .lt("reminder_count", MAX_LIFETIME_REMINDERS)
     .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${reminderCutoff}`)
 
   if (error) {
@@ -107,6 +110,30 @@ export async function runBulkDraftReminders(
       continue
     }
 
+    // Atomic claim BEFORE sending. PG re-validates cap+cooldown at write
+    // time; the .eq(reminder_count) optimistic guard closes the
+    // read-modify-write race. If a parallel run grabbed the slot first
+    // (admin manual trigger overlapping the 03:30 cron, or a manual
+    // /api/applications/incomplete send_reminder firing in the same
+    // window), this UPDATE matches no rows and we skip the send.
+    const { data: claimed } = await supabase
+      .from("draft_applications")
+      .update({
+        reminder_sent_at: new Date().toISOString(),
+        reminder_count: draft.reminder_count + 1,
+      })
+      .eq("id", draft.id)
+      .eq("reminder_count", draft.reminder_count)
+      .lt("reminder_count", MAX_LIFETIME_REMINDERS)
+      .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${reminderCutoff}`)
+      .select("id")
+      .maybeSingle()
+
+    if (!claimed) {
+      skipped.push({ email, reason: "claim lost (parallel send or cap reached)" })
+      continue
+    }
+
     const currentStep = draft.current_step || 1
     const stepLabel = escapeHtml(STEP_LABELS[currentStep] || `Step ${currentStep}`)
     const resumeToken = await signResumeToken(draft.id, email)
@@ -146,16 +173,10 @@ export async function runBulkDraftReminders(
           </div>
         `,
       })
-
-      await supabase
-        .from("draft_applications")
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq("id", draft.id)
-
       sent++
     } catch (err) {
       console.error(`[bulk-reminder] send to ${email}:`, err)
-      skipped.push({ email, reason: "email send failed" })
+      skipped.push({ email, reason: "email send failed (count already bumped)" })
     }
   }
 
@@ -165,7 +186,7 @@ export async function runBulkDraftReminders(
     entityType: "draft_application",
     entityId: `bulk_${Date.now()}`,
     performedBy: actor,
-    newData: { sent, skipped_count: skipped.length, min_hours_idle: minHours },
+    newData: { sent, skipped_count: skipped.length, min_hours_idle: minHours, max_lifetime_reminders: MAX_LIFETIME_REMINDERS },
   }, supabase)
 
   return { sent, skipped: skipped.length, skippedDetails: skipped, eligibleCount: candidates.length }

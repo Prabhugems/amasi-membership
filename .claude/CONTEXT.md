@@ -34,6 +34,7 @@ Don't re-introduce these. If you're touching a listed area, check the commit bef
 
 | Date | Commit | What broke | What fixed it |
 |---|---|---|---|
+| 2026-04-28 | `58f2095` | Post-OTP draft sync race: client `saveDraftToServer(2, {email_verified: true})` raced the Set-Cookie commit; ~27 of 51 drafts in last 30d had `otp_codes.verified=true` but step_data showed only `{otp_sent, otp_sent_at}`. Drafts looked "OTP-stuck" but had actually verified | Server-side sync in `/api/otp/verify` writes `step_data.email_verified` directly. Pre-fix back-catalog cleaned via one-shot `9dbe977` — see "Phase 1 OTP backfill" section below. **Pattern: don't depend on fire-and-forget client round-trips for critical state.** |
 | 2026-04-26 | `c6aa4c9` | `apply/page.tsx` "Request Admin Review" button let users mark broken/invalid docs as `status='uploaded'` with `fileUrl=null` — produced 6 paid+broken applications | Removed the escape hatch; replaced with retry-with-clearer-photo + contact support |
 | 2026-04-26 | `f4cd574` | `uploads` storage bucket public-read + signed-URL fallback leaked public URLs even on signed-URL failure | Added storage RLS (additive); removed dead public-URL fallbacks in `signed-url/route.ts` and `tickets/upload/route.ts` |
 | 2026-04-25 | `dcf98a8` | `/api/credential` 401'd for public callers because middleware didn't whitelist | Added to `PUBLIC_API_ROUTES`. **Pattern: opt-out allowlist — see Fragile areas.** |
@@ -52,6 +53,15 @@ Don't re-introduce these. If you're touching a listed area, check the commit bef
 | 2026-04-22 | `93b87a4` | `/api/applications/approve` 500'd — missing `randomUUID` import | Imported from `node:crypto`; added Sentry |
 
 (Older fixes summarised in `AUDIT-2026-04.md` §2.)
+
+## Phase 1 OTP backfill (2026-04-30)
+
+One-shot cleanup of 21 abandoned drafts that pre-dated the `58f2095` live fix. **Cohort flow:** 38 OTP-only drafts surveyed → 28 verified server-side (in `otp_codes`) → 22 frozen cohort (1 outlier excluded for +456s OTP-to-draft offset) → 21 backfilled (1 healed organically before the run). Implementation in `scripts/backfill-email-verified-2026-04-30.ts`, shipped in `9dbe977`.
+
+- **Snapshot table:** `public.backfill_email_verified_2026_04_30_snapshot` (22 rows). Rollback path. **Scheduled DROP at 2026-05-30 04:30 UTC** via remote routine `trig_01PnQVSLF8N2jsDVPSDKNZVg`.
+- **Fix re-verify:** remote routine `trig_012XGzr2hT5DsTjH1nTShv9D` fires 2026-05-07 04:30 UTC to confirm `58f2095` is still working for fresh post-fix drafts.
+- **Backfill artifacts:** affected drafts carry `step_data.email_verified_backfilled = true` + `step_data.email_verified_backfilled_at = <ISO>`. They deliberately do NOT carry `step_data.email_verified_at` — its absence on a row that has `email_verified=true` is the backfill signal.
+- **Open follow-ups:** four entries in `BACKLOG.md` § "Phase 1 OTP investigation follow-ups (2026-04-30)" — max-reminder cap on `bulk-draft-reminders.ts`, `cleanup-drafts` cron status decision, unverified-OTP cohort investigation, optional further pre-04-28 draft cleanup.
 
 ## Audit reference
 

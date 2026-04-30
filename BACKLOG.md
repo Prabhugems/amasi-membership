@@ -2,6 +2,10 @@
 
 One-line items per row. Each entry has: date added, area, owner (optional), short description, link to context.
 
+## TOP PRIORITY — active block
+
+**FIX: `checkSnapshotTable()` in `scripts/backfill-email-verified-2026-04-30.ts` fails open.** When table is missing, supabase-js returns `{count: null}`, which the script's `count ?? 0` converts to "exists with 0 rows". Fix: require count to be a finite number (`typeof === 'number'`) for `exists=true`. Add debug log of error shape for future diagnosability. Discovered 2026-04-30 during dry-run; backfill blocked until fix lands.
+
 | Added | Area | Description | Context | Deadline |
 |---|---|---|---|---|
 | 2026-04-26 | lint / types | 29 pre-existing `@typescript-eslint/no-explicit-any` errors in `src/app/api/payments/verify/route.ts` (6), `src/app/api/payments/create-order/route.ts` (6), `src/app/apply/page.tsx` (17). Surfaced when fix #4 (`d3e4011`) was bypassed via `--no-verify`. **Two-step fix:** (a) tomorrow morning: switch `lint-staged` to diff-only (e.g. via `lint-staged-eslint-diff`) so unrelated commits to these files don't get blocked; (b) this date: clean the 29 errors so the hook stays honest. `apply/page.tsx` is the top fragile file (24 fix commits, 2,985 LOC) — debt cleanup compounds with the planned state-machine extraction. | fix #4 commit `d3e4011`; pre-commit hook in `.husky/pre-commit`; audit §6.2 | **2026-05-10** |

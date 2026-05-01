@@ -11,7 +11,6 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { getInitials } from "@/lib/utils"
 import Link from "next/link"
 
@@ -62,8 +61,23 @@ type SortDir = "asc" | "desc" | null
 type SortCol = "name" | "amasi_number" | "membership_type" | "state" | "zone" | "status" | null
 type ViewMode = "table" | "grid"
 
+interface Member {
+  amasi_number: number
+  name: string
+  email: string
+  phone: string
+  membership_type: string
+  status: string
+  state: string
+  zone: string
+  pg_degree: string | null
+  profile_photo: string | null
+  credentials?: { type: string; year: number }[]
+  id?: string | number
+}
+
 interface HoverState {
-  member: any
+  member: Member
   x: number
   y: number
 }
@@ -160,7 +174,7 @@ function MemberPreview({ hover }: { hover: HoverState }) {
 }
 
 /* --- Grid card --- */
-function MemberCard({ m }: { m: any }) {
+function MemberCard({ m }: { m: Member }) {
   return (
     <div className="border rounded-xl p-4 bg-card hover:shadow-md transition-all group">
       <div className="flex items-start gap-3">
@@ -186,7 +200,7 @@ function MemberCard({ m }: { m: any }) {
             {m.status}
           </span>
         )}
-        {m.credentials?.length > 0 && (
+        {(m.credentials?.length ?? 0) > 0 && (
           <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-400/30">
             <Award className="h-2.5 w-2.5" /> FMAS
           </span>
@@ -346,6 +360,13 @@ export default function MembersPage() {
       params.set("limit", String(PAGE_SIZE))
       params.set("offset", String(page * PAGE_SIZE))
       const res = await fetch(`/api/members/list?${params}`)
+      // Admin JWT can expire while the tab stays open; TanStack's focus/mount
+      // refetches then fire 401s on every interaction, each one logged by
+      // middleware to Sentry (AMASI-MEMBERSHIP-7). Redirect to login instead.
+      if (res.status === 401 && typeof window !== "undefined") {
+        window.location.href = "/login?redirect=/members"
+        return { status: false, data: [], total: 0 }
+      }
       return res.json()
     },
   })
@@ -388,7 +409,7 @@ export default function MembersPage() {
     setPage(0)
   }, [])
 
-  const handleRowMouseEnter = useCallback((e: React.MouseEvent, member: any) => {
+  const handleRowMouseEnter = useCallback((e: React.MouseEvent, member: Member) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     hoverTimerRef.current = setTimeout(() => {
       setHover({ member, x: rect.right - 20, y: rect.top })
@@ -686,7 +707,7 @@ export default function MembersPage() {
                     </td>
                   </tr>
                 )}
-                {members.map((m: any, idx: number) => (
+                {members.map((m: Member, idx: number) => (
                   <tr
                     key={m.id || m.amasi_number}
                     className={`row-glow hover:bg-primary/5 transition-colors group cursor-default ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
@@ -791,7 +812,7 @@ export default function MembersPage() {
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {members.map((m: any) => (
+              {members.map((m: Member) => (
                 <MemberCard key={m.id || m.amasi_number} m={m} />
               ))}
             </div>

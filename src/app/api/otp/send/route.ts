@@ -127,42 +127,49 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Failed to send email. Please try again." }, { status: 500 })
     }
 
-    // Create or update draft application on OTP send — earliest capture point
-    try {
-      const { data: existingDraft } = await supabase
-        .from("draft_applications")
-        .select("id, membership_type")
-        .eq("email", email.toLowerCase())
-        .maybeSingle()
+    // Create or update draft application on OTP send — earliest capture point.
+    // Gated on membershipType: only application-flow callers (apply page) declare
+    // a type. Login/profile/ticket flows omit it and must NOT touch drafts —
+    // the existingMember exception added by 24547fc (legacy-member login) had
+    // been silently spawning null-type zombie drafts every time a member used
+    // OTP for any non-application purpose.
+    if (membershipType) {
+      try {
+        const { data: existingDraft } = await supabase
+          .from("draft_applications")
+          .select("id, membership_type")
+          .eq("email", email.toLowerCase())
+          .maybeSingle()
 
-      if (!existingDraft) {
-        await supabase.from("draft_applications").insert({
-          email: email.toLowerCase(),
-          phone: phone || null,
-          membership_type: membershipType || null,
-          current_step: 2,
-          status: "in_progress",
-          step_data: { otp_sent: true, otp_sent_at: new Date().toISOString() },
-        })
-      } else {
-        // Backfill membership_type if the draft is a null-type zombie from
-        // the old bypass bug and the caller now provides a type. Without this,
-        // victims returning through the reminder email would complete the
-        // entire flow with a null membership_type on their draft.
-        const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
-        if (membershipType && !existingDraft.membership_type) {
-          update.membership_type = membershipType.toUpperCase()
+        if (!existingDraft) {
+          await supabase.from("draft_applications").insert({
+            email: email.toLowerCase(),
+            phone: phone || null,
+            membership_type: membershipType || null,
+            current_step: 2,
+            status: "in_progress",
+            step_data: { otp_sent: true, otp_sent_at: new Date().toISOString() },
+          })
+        } else {
+          // Backfill membership_type if the draft is a null-type zombie from
+          // the old bypass bug and the caller now provides a type. Without this,
+          // victims returning through the reminder email would complete the
+          // entire flow with a null membership_type on their draft.
+          const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+          if (membershipType && !existingDraft.membership_type) {
+            update.membership_type = membershipType.toUpperCase()
+          }
+          await supabase.from("draft_applications")
+            .update(update)
+            .eq("id", existingDraft.id)
         }
-        await supabase.from("draft_applications")
-          .update(update)
-          .eq("id", existingDraft.id)
+      } catch {
+        // Draft creation failure is non-blocking — OTP still sent
       }
-    } catch {
-      // Draft creation failure is non-blocking — OTP still sent
     }
 
     return Response.json({ status: true, message: "OTP sent to your email" })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("OTP send error:", error)
     return Response.json({ status: false, message: "Failed to send OTP" }, { status: 500 })
   }

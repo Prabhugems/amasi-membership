@@ -159,7 +159,7 @@ Return ONLY this JSON (use null for fields not found, never guess):
   "city": "city name or null",
   "pin_code": "6-digit PIN if visible or null",
   "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
-  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
+  "extraction_notes": "STRICTLY max 100 characters, plain text, no formatting — if the note would run longer, truncate at 100 yourself before responding. null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }
@@ -194,7 +194,7 @@ Return ONLY this JSON (null for fields not found):
   "father_name": "father name or null",
   "gender": "Male or Female or null",
   "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
-  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
+  "extraction_notes": "STRICTLY max 100 characters, plain text, no formatting — if the note would run longer, truncate at 100 yourself before responding. null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }
@@ -217,7 +217,7 @@ Return ONLY this JSON (null for fields not found):
   "father_name": "father name or null",
   "gender": "Male or Female or null",
   "extraction_confidence": "high or medium or low (see CONFIDENCE RUBRIC above)",
-  "extraction_notes": "max 100 characters, plain text, no formatting — null if extraction is clean"
+  "extraction_notes": "STRICTLY max 100 characters, plain text, no formatting — if the note would run longer, truncate at 100 yourself before responding. null if extraction is clean"
 }
 Return ONLY valid JSON.`
   }

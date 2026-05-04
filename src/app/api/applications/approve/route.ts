@@ -79,12 +79,31 @@ export async function POST(request: NextRequest) {
     }
 
     if (!alreadyLinked) {
-      // Get next AMASI number atomically via sequence
-      const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
-      if (seqError || !seqNum) {
-        return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
+      // Honor a pre-assigned amasi_number if present on the application row.
+      // Used to fill historical gaps in the sequence: the legacy-import flow
+      // (scripts/import-legacy-pending-2026-05-04.mjs + the matching
+      // preassign-gap-numbers script) parks numbers like 18260/18261/18278–
+      // 18281 — burned by Razorpay webhook retries (see auto-approval.ts) —
+      // onto specific applications so they land on those numbers when the
+      // admin clicks Approve. Left null on every normal application, so the
+      // sequence still drives every non-imported approval.
+      // Skipping the RPC is intentional: the Postgres sequence keeps
+      // pointing at its current head, no number is consumed.
+      const preassigned =
+        typeof app.assigned_amasi_number === "number" && app.status !== "approved"
+          ? app.assigned_amasi_number
+          : null
+
+      if (preassigned !== null) {
+        nextAmasiNumber = preassigned
+      } else {
+        // Get next AMASI number atomically via sequence
+        const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
+        if (seqError || !seqNum) {
+          return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
+        }
+        nextAmasiNumber = seqNum
       }
-      nextAmasiNumber = seqNum
 
       const { error: insertError } = await supabase.from("members").insert({
         id: memberId,

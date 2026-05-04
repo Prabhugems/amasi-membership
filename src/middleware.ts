@@ -109,11 +109,16 @@ export async function middleware(request: NextRequest) {
   const origin = request.headers.get("origin")
   const isApi = pathname.startsWith("/api/")
 
+  // Same-origin POSTs still carry an Origin header but aren't a CORS concern —
+  // the browser doesn't enforce ACAO on the response. Skip Sentry logging in
+  // that case so preview deploys and local dev don't generate noise per host.
+  const isCrossOrigin = !!origin && origin !== request.nextUrl.origin
+
   // CORS preflight: short-circuit before any auth logic so OPTIONS never
   // reaches a route handler. Allowlisted origins get the full CORS headers;
   // unrecognized origins get a bare 204 (browser blocks the actual call).
   if (isApi && request.method === "OPTIONS") {
-    if (origin && !isAllowedCorsOrigin(origin)) {
+    if (isCrossOrigin && !isAllowedCorsOrigin(origin)) {
       Sentry.captureMessage("CORS origin rejected (preflight)", {
         level: "warning",
         fingerprint: ["cors-origin-rejected", origin],
@@ -127,7 +132,7 @@ export async function middleware(request: NextRequest) {
   // Surface unrecognized origins on real /api/* requests so partner-integration
   // failures show up in Sentry instead of being blamed on us. Fingerprint by
   // origin so Sentry groups one issue per misconfigured caller.
-  if (isApi && origin && !isAllowedCorsOrigin(origin)) {
+  if (isApi && isCrossOrigin && !isAllowedCorsOrigin(origin)) {
     Sentry.captureMessage("CORS origin rejected", {
       level: "warning",
       fingerprint: ["cors-origin-rejected", origin],

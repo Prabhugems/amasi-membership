@@ -201,11 +201,14 @@ export default function ApiKeysPage() {
         <CardContent className="text-sm space-y-3 text-muted-foreground">
           <p>Give the consuming team their raw key and this endpoint:</p>
           <pre className="bg-background border rounded-md p-3 text-xs overflow-x-auto">
-{`GET https://membership.amasi.org/api/v1/members/{amasi_number}
+{`GET https://membership.amasi.org/api/v1/members/{identifier}
 Authorization: Bearer <api_key>`}
           </pre>
           <p>
-            Returns <code className="text-xs">name, email, mobile, amasi_number, city, state</code> for active members only.
+            <code className="text-xs">{`{identifier}`}</code> accepts an AMASI number, email address, or 10-digit phone number.
+          </p>
+          <p>
+            Returns <code className="text-xs">amasi_number, name, first_name, last_name, email, mobile, city, state</code> for active members only.
             Rate limit: 60 requests/minute per key.
           </p>
         </CardContent>

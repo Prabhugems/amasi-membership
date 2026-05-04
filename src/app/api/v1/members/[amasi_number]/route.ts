@@ -52,17 +52,19 @@ export async function GET(
   }
 
   const supabase = createAdminClient()
+  // Order by amasi_number as a deterministic tiebreaker for the rare case of
+  // duplicate email/phone across two active members. No-op on the AMASI-number
+  // branch (uniquely indexed) but kept identical across branches to prevent drift.
   const baseQuery = supabase
     .from("members")
     .select("amasi_number, name, first_name, last_name, email, phone, mobile_code, city, state")
     .eq("status", "active")
-    .limit(1)
 
   const query = isEmail
-    ? baseQuery.ilike("email", identifier)
+    ? baseQuery.ilike("email", identifier).order("amasi_number", { ascending: true }).limit(1)
     : isPhone
-    ? baseQuery.eq("phone", Number(identifier))
-    : baseQuery.eq("amasi_number", asNum)
+    ? baseQuery.eq("phone", Number(identifier)).order("amasi_number", { ascending: true }).limit(1)
+    : baseQuery.eq("amasi_number", asNum).order("amasi_number", { ascending: true }).limit(1)
 
   const { data: member, error } = await query.maybeSingle()
 

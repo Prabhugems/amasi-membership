@@ -136,6 +136,20 @@ export async function autoApproveApplication(
     .eq("id", input.applicationId)
     .maybeSingle()
 
+  // Pre-assignment honoring (mirrors src/app/api/applications/approve/route.ts).
+  // When `assigned_amasi_number` is set on a not-yet-approved row, that number
+  // is used and the next_amasi_number RPC is skipped — leaving the Postgres
+  // sequence head untouched. Used by the legacy-import flow to fill the gap
+  // numbers (18260, 18261, 18278–18281) burned by Razorpay webhook retries.
+  // Null on every normal application, so AI auto-approval continues to draw
+  // from the sequence.
+  const preassigned =
+    existingApp &&
+    existingApp.status !== "approved" &&
+    typeof existingApp.assigned_amasi_number === "number"
+      ? existingApp.assigned_amasi_number
+      : null
+
   if (appLookupError) {
     console.error("[auto-approval] application lookup failed:", appLookupError)
     return {
@@ -189,19 +203,24 @@ export async function autoApproveApplication(
     return { success: true, amasiNumber: priorMember.amasi_number }
   }
 
-  // 1. Reserve AMASI number
-  const { data: nextNumRaw, error: seqError } = await supabase.rpc("next_amasi_number")
+  // 1. Reserve AMASI number — pre-assigned wins over sequence.
+  let amasiNumber: number
+  if (preassigned !== null) {
+    amasiNumber = preassigned
+  } else {
+    const { data: nextNumRaw, error: seqError } = await supabase.rpc("next_amasi_number")
 
-  if (seqError || nextNumRaw == null) {
-    console.error("[auto-approval] AMASI sequence RPC failed:", seqError)
-    return {
-      success: false,
-      reason: `AMASI sequence RPC failed: ${seqError?.message || "no value returned"}`,
-      stage: "sequence",
+    if (seqError || nextNumRaw == null) {
+      console.error("[auto-approval] AMASI sequence RPC failed:", seqError)
+      return {
+        success: false,
+        reason: `AMASI sequence RPC failed: ${seqError?.message || "no value returned"}`,
+        stage: "sequence",
+      }
     }
-  }
 
-  const amasiNumber = Number(nextNumRaw)
+    amasiNumber = Number(nextNumRaw)
+  }
 
   // 2. Create member row
   const fullName = [input.firstName, input.middleName, input.lastName].filter(Boolean).join(" ")

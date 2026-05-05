@@ -193,24 +193,51 @@ export default function DashboardPage() {
   }, [])
   const [range, setRange] = useState<TimeRange>("30d")
 
-  const { data, isLoading, isError, isFetching, refetch } = useQuery<{ status: boolean; data: DashboardData }>({
+  const { data, isLoading, isError, isFetching, refetch, error: dashboardError } = useQuery<{ status: boolean; data: DashboardData }>({
     queryKey: ["dashboard", range],
     queryFn: async () => {
       const res = await fetch(`/api/dashboard?range=${range}`)
+      if (res.status === 401) {
+        const err = new Error("Session expired") as Error & { status?: number }
+        err.status = 401
+        throw err
+      }
       if (!res.ok) throw new Error("Failed to fetch dashboard data")
       return res.json()
     },
-    refetchInterval: 30000,
+    // Stop polling on 401 so an expired session doesn't loop the dashboard
+    // tab against middleware until the admin closes it. The useEffect below
+    // redirects to /login.
+    refetchInterval: (query) =>
+      (query.state.error as (Error & { status?: number }) | null)?.status === 401
+        ? false
+        : 30000,
+    retry: (failureCount, error) =>
+      (error as Error & { status?: number }).status === 401 ? false : failureCount < 3,
   })
+
+  useEffect(() => {
+    const err = dashboardError as (Error & { status?: number }) | null
+    if (err?.status === 401) {
+      router.replace("/login?redirect=/")
+    }
+  }, [dashboardError, router])
 
   const { data: heatmapData, isError: heatmapError } = useQuery<{ counts: Record<string, number> }>({
     queryKey: ["dashboard-heatmap"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/heatmap")
+      if (res.status === 401) {
+        const err = new Error("Session expired") as Error & { status?: number }
+        err.status = 401
+        throw err
+      }
       if (!res.ok) throw new Error("Failed to fetch heatmap")
       return res.json()
     },
     staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) =>
+      (error as Error & { status?: number }).status === 401 ? false : failureCount < 3,
   })
 
   const stats =

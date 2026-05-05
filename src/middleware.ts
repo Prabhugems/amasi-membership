@@ -212,19 +212,28 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       // "every new public endpoint ships 401-blocked" pattern) become visible
       // immediately instead of needing a user report. Path goes in `extra`,
       // not `tags`, to keep tag cardinality bounded.
-      Sentry.captureMessage("Middleware rejected /api/* request", {
-        level: "warning",
-        tags: { component: "middleware", reason: "no_admin_cookie" },
-        extra: {
-          path: pathname,
-          method: request.method,
-          ip:
-            request.headers.get("x-forwarded-for") ??
-            request.headers.get("x-real-ip") ??
-            "unknown",
-          user_agent: request.headers.get("user-agent") ?? "unknown",
-        },
-      })
+      //
+      // Only fire when the cookie is truly absent — that's the
+      // missing-allowlist signal. A present-but-invalid cookie means a
+      // routine session expiry (admin tab still polling /api/dashboard,
+      // /api/badges, etc. after JWT TTL elapsed) and is not a regression.
+      // Pre-2026-05-05 we logged both cases and AMASI-MEMBERSHIP-7
+      // accumulated 58 false positives in a week.
+      if (!token) {
+        Sentry.captureMessage("Middleware rejected /api/* request", {
+          level: "warning",
+          tags: { component: "middleware", reason: "no_admin_cookie" },
+          extra: {
+            path: pathname,
+            method: request.method,
+            ip:
+              request.headers.get("x-forwarded-for") ??
+              request.headers.get("x-real-ip") ??
+              "unknown",
+            user_agent: request.headers.get("user-agent") ?? "unknown",
+          },
+        })
+      }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     // Root path → redirect to /apply (public landing) instead of login

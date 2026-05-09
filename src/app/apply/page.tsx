@@ -1832,6 +1832,12 @@ function ApplyForm() {
             setEmailVerified(true)
             toast.success("Email verified!")
 
+            // Capture the reference_number issued by the server so it propagates
+            // to payment orders and the final application row.
+            if (data.reference_number) {
+              setRefNumber(data.reference_number)
+            }
+
             // Check if server has a draft with meaningful progress (beyond just OTP send)
             const hasMeaningfulDraft = data.hasDraft && data.draft && (data.draft.current_step > 2 || data.draft.has_verified_payment)
             if (hasMeaningfulDraft) {

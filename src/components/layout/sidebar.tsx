@@ -33,6 +33,7 @@ import {
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
+import { useAdminRole } from "@/hooks/use-admin-role"
 
 interface NavItem {
   name: string
@@ -81,24 +82,7 @@ const sections: NavSection[] = [
   },
 ]
 
-function useAdminRole() {
-  const [adminRole, setAdminRole] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && data.user?.adminRole) {
-          setAdminRole(data.user.adminRole)
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  return adminRole
-}
-
-function useBadgeCounts() {
+function useBadgeCounts(enabled: boolean) {
   const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number }>({
     pending: 0,
     tickets: 0,
@@ -107,6 +91,7 @@ function useBadgeCounts() {
   })
 
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
 
     async function fetchCounts() {
@@ -132,7 +117,7 @@ function useBadgeCounts() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [])
+  }, [enabled])
 
   return counts
 }
@@ -141,10 +126,10 @@ export function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const { collapsed, toggle } = useSidebar()
-  const counts = useBadgeCounts()
   const router = useRouter()
   const adminRole = useAdminRole()
   const isSuperAdmin = adminRole === "super_admin"
+  const counts = useBadgeCounts(adminRole !== null)
   const reduced = useReducedMotion()
   const [isDesktop, setIsDesktop] = useState(false)
 
@@ -169,9 +154,10 @@ export function Sidebar() {
     router.push("/login")
   }
 
-  const publicRoutes = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
-  const isPublicPage = publicRoutes.some(r => pathname === r || pathname.startsWith(r + "/"))
-  if (isPublicPage) return null
+  // Render only for authenticated admins. `null` here covers both "still
+  // loading /api/auth/me" and "not an admin", so non-admin visitors never
+  // see the admin sidebar (no info leak) and never flash it on first paint.
+  if (adminRole === null) return null
 
   return (
     <>

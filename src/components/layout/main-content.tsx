@@ -1,25 +1,22 @@
 "use client"
 
-import { usePathname } from "next/navigation"
 import { useSidebar } from "@/components/providers/sidebar-provider"
+import { useAdminRole } from "@/hooks/use-admin-role"
 
 export function MainContent({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
   const { collapsed } = useSidebar()
+  const adminRole = useAdminRole()
 
-  const publicRoutes = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
-  const isPublicPage = publicRoutes.some(r => pathname === r || pathname.startsWith(r + "/"))
-
-  if (isPublicPage) {
+  // Padding-left reserves space for the fixed Sidebar. The Sidebar only
+  // renders for authenticated admins, so reserve space only when adminRole
+  // is set. Non-admin visitors get no left padding (no blank gap on
+  // /directory, /membership, etc.).
+  if (adminRole === null) {
     return <div>{children}</div>
   }
 
   return (
-    <div
-      className="transition-sidebar"
-      style={{ paddingLeft: undefined }}
-    >
-      {/* On mobile: no padding. On lg+: sidebar width */}
+    <div className="transition-sidebar">
       <div className={collapsed ? "lg:pl-16" : "lg:pl-64"} style={{ transition: "padding-left 0.2s ease" }}>
         {children}
       </div>

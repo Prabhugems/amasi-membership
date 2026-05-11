@@ -13,6 +13,7 @@ import {
   Inbox, Plus, X, Image, FileIcon, ChevronDown, Info, Loader2, RotateCw,
 } from "lucide-react"
 import { AdminBackLink } from "@/components/ui/admin-back-link"
+import { useAdminRole } from "@/hooks/use-admin-role"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,6 +49,11 @@ function MemberPortalContent() {
   const [email, setEmail] = useState("")
   const [member, setMember] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
+  // Drives the Admin Dashboard sidebar link gate below. `null` covers both
+  // "still resolving /api/auth/me" and "not an admin" — same null-gate
+  // semantics as the global Sidebar (commit 1ebc008). See AGENTS.md
+  // "Admin UI gating" for the convention.
+  const adminRole = useAdminRole()
   const [showSessionWarning, setShowSessionWarning] = useState(false)
   const [showSecurityNotice, setShowSecurityNotice] = useState(() => {
     if (typeof window === "undefined") return true
@@ -552,9 +558,11 @@ function MemberPortalContent() {
 
           {/* Footer */}
           <div className="p-3 border-t space-y-1">
-            <a href="/" className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-accent">
-              <ShieldCheck className="h-3.5 w-3.5" /> Admin Dashboard
-            </a>
+            {adminRole && (
+              <a href="/" className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-accent">
+                <ShieldCheck className="h-3.5 w-3.5" /> Admin Dashboard
+              </a>
+            )}
             <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-destructive transition-colors rounded-xl hover:bg-destructive/5">
               <LogOut className="h-3.5 w-3.5" /> Sign Out
             </button>

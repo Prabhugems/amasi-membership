@@ -7,7 +7,7 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import {
   Mail, RefreshCw, CreditCard, Award, UserPen, Clock, LogOut,
   Shield, ChevronRight, LayoutDashboard, FileText, Upload, ShieldCheck,
-  User, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
+  User, Users, MapPin, Phone, GraduationCap, CheckCircle, Bell, AlertTriangle,
   Ticket, ArrowRight, Eye, Download, ExternalLink, Calendar, Hash, Star,
   Activity, Lock, ArrowUpCircle, Sparkles, Paperclip, Send, MessageCircle,
   Inbox, Plus, X, Image, FileIcon, ChevronDown, Info, Loader2, RotateCw,
@@ -509,24 +509,45 @@ function MemberPortalContent() {
 
           {/* Nav */}
           <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-            {sidebarItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => { setActiveTab(item.id); setSidebarOpen(false) }}
-                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all ${
-                  activeTab === item.id
-                    ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                }`}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                {item.label}
-                {item.badge && activeTab !== item.id && (
-                  <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">{item.badge}</span>
-                )}
-                {activeTab === item.id && <ChevronRight className="h-3.5 w-3.5 ml-auto" />}
-              </button>
-            ))}
+            {sidebarItems.map((item) => {
+              // Insert the Member Directory external link between Documents
+              // and Support. It's a Link (real route), not a tab swap — the
+              // rest of the sidebar uses setActiveTab which only changes
+              // local state.
+              const button = (
+                <button
+                  key={item.id}
+                  onClick={() => { setActiveTab(item.id); setSidebarOpen(false) }}
+                  className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all ${
+                    activeTab === item.id
+                      ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  }`}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {item.label}
+                  {item.badge && activeTab !== item.id && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">{item.badge}</span>
+                  )}
+                  {activeTab === item.id && <ChevronRight className="h-3.5 w-3.5 ml-auto" />}
+                </button>
+              )
+              if (item.id === "support") {
+                return [
+                  <Link
+                    key="directory"
+                    href="/directory"
+                    onClick={() => setSidebarOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <Users className="h-4 w-4 shrink-0" />
+                    Member Directory
+                  </Link>,
+                  button,
+                ]
+              }
+              return button
+            })}
           </nav>
 
           {/* Footer */}
@@ -762,6 +783,11 @@ function MemberPortalContent() {
                         )}
                       </button>
                     ))}
+                    <Link href="/directory" className="group p-5 rounded-xl border bg-card transition-all text-left relative hover:border-indigo-300 hover:bg-indigo-50/50">
+                      <div className="p-2.5 rounded-lg w-fit mb-3 bg-indigo-100 text-indigo-600"><Users className="h-5 w-5" /></div>
+                      <p className="font-semibold text-sm">Member Directory</p>
+                      <p className="text-xs text-muted-foreground mt-1">Search AMASI members</p>
+                    </Link>
                     {hasFmas && (
                       <Link href={`/member/fmas-certificate?id=${amasiNum}`} className="group p-5 rounded-xl border bg-card transition-all text-left relative hover:border-amber-300 hover:bg-amber-50/50">
                         <div className="p-2.5 rounded-lg w-fit mb-3 bg-amber-100 text-amber-600"><Award className="h-5 w-5" /></div>

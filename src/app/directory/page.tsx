@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import Link from "next/link"
 import {
   Search, Loader2, MapPin, GraduationCap, User, Users,
-  ChevronLeft, ChevronRight, X,
+  ChevronLeft, ChevronRight, X, Mail, Phone, Info,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,10 @@ interface DirectoryMember {
   state: string
   zone: string
   profile_photo: string | null
+  // Present only when the API recognised the caller as a logged-in active
+  // member. Server-side gate; never returned for anonymous requests.
+  email?: string | null
+  mobile?: string | null
 }
 
 interface DirectoryResponse {
@@ -71,6 +76,16 @@ export default function DirectoryPage() {
   const [searched, setSearched] = useState(false)
   const [states, setStates] = useState<string[]>([])
   const [rateLimited, setRateLimited] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  // True after a successful search when the response carried no email on any
+  // row — i.e. the caller is not a logged-in active member. Used to render
+  // the "log in to see contacts" banner.
+  const showLoggedOutBanner =
+    searched &&
+    !bannerDismissed &&
+    results.length > 0 &&
+    results.every((m) => !m.email)
 
   const limit = 20
 
@@ -169,6 +184,31 @@ export default function DirectoryPage() {
           Search and find AMASI members by name, city, speciality, zone, or membership type
         </p>
       </div>
+
+      {/* Logged-out hint — shown only after a search when the response has
+          no email on any row, which means the API treated the caller as
+          anonymous. Logged-in active members never see this. */}
+      {showLoggedOutBanner && (
+        <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-blue-200/60 bg-blue-50/60 dark:border-blue-500/30 dark:bg-blue-500/10 px-4 py-3 text-sm">
+          <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600 dark:text-blue-300" />
+          <div className="flex-1 min-w-0">
+            <p className="text-blue-900 dark:text-blue-100">
+              Logged-in AMASI members see contact details.{" "}
+              <Link href="/member" className="font-semibold underline hover:no-underline">
+                Member Login →
+              </Link>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBannerDismissed(true)}
+            aria-label="Dismiss"
+            className="p-1 -m-1 rounded text-blue-700/70 dark:text-blue-200/70 hover:text-blue-900 dark:hover:text-blue-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Search & Filters */}
       <form onSubmit={handleSearch} className="space-y-4 max-w-3xl mx-auto">
@@ -339,6 +379,28 @@ export default function DirectoryPage() {
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Users className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">{member.zone}</span>
+                      </div>
+                    )}
+                    {member.email && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Mail className="h-3.5 w-3.5 shrink-0" />
+                        <a
+                          href={`mailto:${member.email}`}
+                          className="truncate hover:text-foreground hover:underline"
+                        >
+                          {member.email}
+                        </a>
+                      </div>
+                    )}
+                    {member.mobile && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5 shrink-0" />
+                        <a
+                          href={`tel:${member.mobile.replace(/\s+/g, "")}`}
+                          className="truncate hover:text-foreground hover:underline"
+                        >
+                          {member.mobile}
+                        </a>
                       </div>
                     )}
                   </div>

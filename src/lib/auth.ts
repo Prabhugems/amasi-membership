@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { NextRequest } from "next/server"
 import { randomUUID } from "node:crypto"
 import { Redis } from "@upstash/redis"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 function getJwtSecret(): Uint8Array {
   const s = process.env.JWT_SECRET?.trim()
@@ -95,6 +96,34 @@ export async function getMemberSession() {
   const payload = await verifyToken(token)
   if (!payload || payload.role !== "member") return null
   return payload
+}
+
+/**
+ * Resolve the current member session to an active members.id, or return
+ * { authenticated: false, member_id: null } when there's no session, the
+ * session's email doesn't match a member row, or the member is not active.
+ *
+ * Use this for routes that need to gate behavior on "is the caller a
+ * currently-active member" — getMemberSession() alone only proves a valid
+ * JWT was issued at some point in the past, not that the holder is still
+ * an active member.
+ */
+export async function getAuthenticatedMember(
+  supabase: SupabaseClient
+): Promise<{ authenticated: boolean; member_id: string | null }> {
+  const session = await getMemberSession()
+  const email = session?.email
+  if (!email || typeof email !== "string") {
+    return { authenticated: false, member_id: null }
+  }
+  const { data } = await supabase
+    .from("members")
+    .select("id")
+    .eq("email", email.toLowerCase().trim())
+    .eq("status", "active")
+    .maybeSingle()
+  if (!data?.id) return { authenticated: false, member_id: null }
+  return { authenticated: true, member_id: data.id }
 }
 
 // --- Middleware helper (uses request, not cookies()) ---

@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { NextRequest } from "next/server"
 import { randomUUID } from "node:crypto"
 import { Redis } from "@upstash/redis"
@@ -91,7 +91,17 @@ export async function getAdminSession() {
 }
 
 export async function getMemberSession() {
-  const token = await getMemberCookie()
+  // Cookie is checked first so existing browser sessions are unaffected.
+  // Bearer fallback exists for the React Native mobile client, which has no
+  // cookie jar; same JWT secret, same role gate.
+  let token: string | null = await getMemberCookie()
+  if (!token) {
+    const h = await headers()
+    const auth = h.get("authorization")
+    if (auth?.startsWith("Bearer ")) {
+      token = auth.slice(7).trim() || null
+    }
+  }
   if (!token) return null
   const payload = await verifyToken(token)
   if (!payload || payload.role !== "member") return null

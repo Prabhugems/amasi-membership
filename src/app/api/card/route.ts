@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
         membershipType: member.membership_type,
         membershipLabel: memberType,
         email: member.email,
-        phone: member.phone,
+        // members.phone is bigint in Postgres → JS number at runtime; coerce
+        // so JSON consumers get a string (matches existing tel: link usage).
+        phone: member.phone != null ? String(member.phone) : null,
         state: member.state,
         zone: member.zone,
         pgDegree: member.pg_degree,
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
         verifyUrl,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Card API error:", error)
     return Response.json({ status: false, message: "Unable to load membership card. Please try again." }, { status: 500 })
   }

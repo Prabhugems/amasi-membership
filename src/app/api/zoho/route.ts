@@ -21,9 +21,10 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({ error: "Unknown action" }, { status: 400 })
-  } catch (error: any) {
+  } catch (error) {
     console.error("[zoho] GET error:", error)
-    return Response.json({ error: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    return Response.json({ error: message }, { status: 500 })
   }
 }
 
@@ -109,7 +110,9 @@ export async function POST(request: NextRequest) {
             "Contact Email": m.email,
             "First Name": parts[0] || "",
             "Last Name": parts.slice(1).join(" ") || "",
-            "Phone": m.phone || "",
+            // members.phone is bigint → JS number at runtime; coerce so Zoho
+            // receives a string and doesn't silently mis-classify the field.
+            "Phone": m.phone != null ? String(m.phone) : "",
             "Membership Type": m.membership_type || "",
           }
         })
@@ -134,8 +137,9 @@ export async function POST(request: NextRequest) {
     }
 
     return Response.json({ error: "Unknown action" }, { status: 400 })
-  } catch (error: any) {
+  } catch (error) {
     console.error("[zoho] POST error:", error)
-    return Response.json({ error: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    return Response.json({ error: message }, { status: 500 })
   }
 }

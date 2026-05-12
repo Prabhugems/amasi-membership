@@ -24,8 +24,11 @@ export async function sendTemplate(
     return { success: false, error: "WhatsApp not configured" }
   }
 
-  // Format phone: ensure 91 prefix for Indian numbers
-  let formattedPhone = phone.replace(/[^0-9]/g, "")
+  // Format phone: ensure 91 prefix for Indian numbers.
+  // Coerce to string defensively — members.phone is bigint in Postgres and
+  // arrives here as a JS number from Supabase. Without this, .replace() throws
+  // and crashes every broadcast loop on the first member with a phone.
+  let formattedPhone = String(phone).replace(/[^0-9]/g, "")
   if (formattedPhone.length === 10) formattedPhone = "91" + formattedPhone
 
   try {
@@ -52,9 +55,10 @@ export async function sendTemplate(
       return { success: true }
     }
     return { success: false, error: result.message || "Failed to send" }
-  } catch (err: any) {
-    console.error("[WhatsApp] Send failed:", err.message)
-    return { success: false, error: err.message }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error("[WhatsApp] Send failed:", message)
+    return { success: false, error: message }
   }
 }
 

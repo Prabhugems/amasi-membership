@@ -16,7 +16,8 @@ interface MemberRow {
   amasi_number: number
   name: string | null
   email: string | null
-  phone: string | null
+  // members.phone is bigint in Postgres → JS number at runtime, not string.
+  phone: number | null
   city: string | null
   state: string | null
   profile_photo: string | null
@@ -170,7 +171,7 @@ export async function GET() {
         amasi_number: c.amasi_number,
         name: m?.name ?? null,
         email: m?.email ?? null,
-        phone: m?.phone ?? null,
+        phone: m?.phone != null ? String(m.phone) : null,
         city: m?.city ?? null,
         state: m?.state ?? null,
         profile_photo: m?.profile_photo ?? null,

@@ -52,6 +52,11 @@ const PUBLIC_ROUTES = [
   "/card",
   "/profile",
   "/directory",
+  // Sentry SDK tunnel (next.config.ts: tunnelRoute). Client error reports POST
+  // here; without this allowlist the middleware redirected to /login (307) and
+  // the POST followed into a 405, silently dropping every client-side Sentry
+  // event.
+  "/monitoring",
 ]
 
 const PUBLIC_API_ROUTES = [

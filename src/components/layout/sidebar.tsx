@@ -30,6 +30,7 @@ import {
   KeyRound,
   TrendingDown,
   Award,
+  Calendar,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -41,6 +42,9 @@ interface NavItem {
   icon: typeof LayoutDashboard
   badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete"
   superAdminOnly?: boolean
+  // When true, render as <a target="_blank"> instead of <Link>. Used for
+  // cross-app shortcuts (e.g. the AMASI events admin portal at events.amasi.org).
+  external?: boolean
 }
 
 interface NavSection {
@@ -57,6 +61,7 @@ const sections: NavSection[] = [
       { name: "Incomplete Applications", href: "/incomplete", icon: Clock, badgeKey: "incomplete" },
       { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },
+      { name: "Events", href: "https://events.amasi.org", icon: Calendar, external: true },
       { name: "Reports", href: "/reports", icon: BarChart3 },
       { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
@@ -264,12 +269,16 @@ export function Sidebar() {
                 )}
               </AnimatePresence>
               {section.items.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
-                const isActive = pathname === item.href
+                const isActive = !item.external && pathname === item.href
                 const badgeCount = item.badgeKey ? counts[item.badgeKey] : 0
+                const LinkComponent = item.external ? "a" : Link
+                const linkProps = item.external
+                  ? { href: item.href, target: "_blank", rel: "noopener noreferrer" as const }
+                  : { href: item.href }
                 return (
-                  <Link
+                  <LinkComponent
                     key={item.href}
-                    href={item.href}
+                    {...linkProps}
                     onClick={() => setMobileOpen(false)}
                     title={collapsed ? item.name : undefined}
                     className={cn(
@@ -313,7 +322,7 @@ export function Sidebar() {
                     {collapsed && badgeCount > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
                     )}
-                  </Link>
+                  </LinkComponent>
                 )
               })}
             </div>

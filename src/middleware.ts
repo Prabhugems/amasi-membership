@@ -91,6 +91,9 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/",
   "/api/zoho/callback",
   "/api/member/refresh-token",
+  // Member profile endpoint — auth chain (getMemberSession + active-member
+  // check) is inside the handler. See route.ts comment.
+  "/api/member/me",
   "/api/sentry-test",
   "/api/verify/",
   // Sidebar badge counts polled every 60s by admin UI. Handler does its

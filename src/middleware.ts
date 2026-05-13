@@ -98,6 +98,10 @@ const PUBLIC_API_ROUTES = [
   // active-member check. Exact path only — future /api/push/* endpoints
   // each get their own line.
   "/api/push/register",
+  // Bulk member sync for amasi-mobile offline cache. Route does its own
+  // getMemberSession + active-member check + per-member Upstash rate
+  // limit (10 req/min). Exact path only.
+  "/api/members/sync",
   "/api/sentry-test",
   "/api/verify/",
   // Sidebar badge counts polled every 60s by admin UI. Handler does its

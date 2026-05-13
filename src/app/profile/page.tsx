@@ -22,7 +22,7 @@ function ProfileContent() {
   const initialQuery = searchParams.get("q") || ""
   const [phase, setPhase] = useState<Phase>(initialQuery ? "identify" : "identify")
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null) // null = checking
-  const [rawMember, setRawMember] = useState<any>(null)
+  const [rawMember, setRawMember] = useState<unknown>(null)
   const [originalData, setOriginalData] = useState<ProfileFormData | null>(null)
   const [formData, setFormData] = useState<ProfileFormData | null>(null)
   const [changes, setChanges] = useState<ChangeEntry[]>([])
@@ -38,22 +38,7 @@ function ProfileContent() {
       .catch(() => setIsAdmin(false))
   }, [])
 
-  // Auto-search if ?q= param is provided — wait for admin check to finish first
-  useEffect(() => {
-    if (isAdmin === null) return // still checking admin status
-    if (initialQuery && phase === "identify") {
-      setIsLoading(true)
-      fetch(`/api/members/search?q=${encodeURIComponent(initialQuery)}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.status && d.data?.[0]) handleMemberFound(d.data[0])
-          else setError("No member found for that query.")
-        })
-        .catch(() => setError("Search failed. Please try again."))
-        .finally(() => setIsLoading(false))
-    }
-  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
-
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleMemberFound = (member: any) => {
     if (!member) {
       setError("No member found. Please check your email, phone, or membership number.")
@@ -72,6 +57,22 @@ function ProfileContent() {
     setFormData({ ...mapped })
     setPhase(isAdmin === true ? "view" : "otp")
   }
+
+  // Auto-search if ?q= param is provided — wait for admin check to finish first
+  useEffect(() => {
+    if (isAdmin === null) return // still checking admin status
+    if (initialQuery && phase === "identify") {
+      setIsLoading(true)
+      fetch(`/api/members/search?q=${encodeURIComponent(initialQuery)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.status && d.data?.[0]) handleMemberFound(d.data[0])
+          else setError("No member found for that query.")
+        })
+        .catch(() => setError("Search failed. Please try again."))
+        .finally(() => setIsLoading(false))
+    }
+  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEdit = () => {
     setPhase("edit")
@@ -104,7 +105,7 @@ function ProfileContent() {
       const dbChanges = formChangesToDb(originalData, formData)
 
       const res = await fetch(`/api/members/${encodeURIComponent(memberId)}/update`, {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ changes: dbChanges }),
       })

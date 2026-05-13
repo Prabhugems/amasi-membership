@@ -128,9 +128,14 @@ export async function POST(request: NextRequest) {
       // Draft check failure is non-blocking — OTP still verified
     }
 
+    // Token is also returned in the body so non-cookie clients
+    // (React Native mobile app) can persist it. Web app ignores it
+    // and continues to use the Set-Cookie path.
     return Response.json({
       status: true,
       message: "Email verified successfully",
+      token,
+      member: { sub: otpRecord.id, email: otpRecord.email },
       hasDraft: !!draft,
       draft,
     })

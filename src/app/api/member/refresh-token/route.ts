@@ -18,5 +18,6 @@ export async function POST(_request: NextRequest) {
     "1h"
   )
   await setMemberCookie(token)
-  return Response.json({ status: true })
+  // Token in body for non-cookie clients (RN mobile). Web app ignores it.
+  return Response.json({ status: true, token })
 }

@@ -94,6 +94,10 @@ const PUBLIC_API_ROUTES = [
   // Member profile endpoint — auth chain (getMemberSession + active-member
   // check) is inside the handler. See route.ts comment.
   "/api/member/me",
+  // Expo push-token registration. Route does its own getMemberSession +
+  // active-member check. Exact path only — future /api/push/* endpoints
+  // each get their own line.
+  "/api/push/register",
   "/api/sentry-test",
   "/api/verify/",
   // Sidebar badge counts polled every 60s by admin UI. Handler does its

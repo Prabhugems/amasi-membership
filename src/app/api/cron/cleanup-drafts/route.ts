@@ -78,16 +78,7 @@ function errMessage(e: unknown): string {
 // email, writing any state, or logging any audit/step events.
 // ---------------------------------------------------------------------------
 
-// HARD PAUSE — 2026-04-26
-// Coordinator put this cron on a kill-switch pending investigation of:
-//   1) wrong cron schedule (every-hour treats this as a daily blast layer)
-//   2) reminder + expiry firing in the same invocation for >24h backlog
-//   3) the step-2 OTP-cluster signal: 26 of 27 stale drafts stuck at OTP
-//      verification — investigate delivery logs before emailing applicants
-//   4) test-email exclusion list (cleanup-drafts has none; bulk-draft-reminders does)
-// vercel.json entry has also been removed so Vercel cannot schedule this route.
-// Remove this guard ONLY after Issues 1–4 are resolved AND a fresh dry-run is reviewed.
-const CRON_PAUSED = true
+const CRON_PAUSED = false
 
 export async function GET(request: Request) {
   if (CRON_PAUSED) {

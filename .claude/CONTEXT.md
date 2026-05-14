@@ -67,7 +67,7 @@ One-shot cleanup of 21 abandoned drafts that pre-dated the `58f2095` live fix. *
 - **Snapshot table:** `public.backfill_email_verified_2026_04_30_snapshot` (22 rows). Rollback path. **Scheduled DROP at 2026-05-30 04:30 UTC** via remote routine `trig_01PnQVSLF8N2jsDVPSDKNZVg`.
 - **Fix re-verify:** remote routine `trig_012XGzr2hT5DsTjH1nTShv9D` fires 2026-05-07 04:30 UTC to confirm `58f2095` is still working for fresh post-fix drafts.
 - **Backfill artifacts:** affected drafts carry `step_data.email_verified_backfilled = true` + `step_data.email_verified_backfilled_at = <ISO>`. They deliberately do NOT carry `step_data.email_verified_at` — its absence on a row that has `email_verified=true` is the backfill signal.
-- **Open follow-ups:** four entries in `BACKLOG.md` § "Phase 1 OTP investigation follow-ups (2026-04-30)" — max-reminder cap on `bulk-draft-reminders.ts`, `cleanup-drafts` cron status decision, unverified-OTP cohort investigation, optional further pre-04-28 draft cleanup.
+- **Open follow-ups:** see `BACKLOG.md` § "Phase 1 OTP investigation follow-ups (2026-04-30)". Active action items: max-reminder cap on `bulk-draft-reminders.ts` and the idle re-validation gap in its atomic claim. The `cleanup-drafts` cron status was resolved 2026-05-14 (revived on a daily schedule); the unverified-OTP cohort and pre-04-28 draft cleanup items were closed in the 2026-05-03 session.
 
 ## Audit reference
 

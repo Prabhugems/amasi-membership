@@ -3,10 +3,41 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
 
-// Public-safe field list for non-admin callers. Excludes PII such as email,
+// Public-safe field list for anonymous callers. Excludes PII such as email,
 // phone, DOB, address, MCI number/state, and all document URLs except photo.
 const PUBLIC_SELECT =
   "id, name, membership_type, amasi_number, city, state, zone, pg_degree, status, profile_photo"
+// Authenticated-member field list: PUBLIC_SELECT plus contact fields the
+// mobile member-directory needs for mailto:/tel: actions. Still excludes
+// DOB, address, MCI, and document URLs.
+const MEMBER_SELECT = `${PUBLIC_SELECT}, email, mobile, mobile_code`
+
+// Union of fields the response mapper reads off a Supabase row. Every
+// field is optional because the SELECT varies by auth tier (admin = *,
+// member = MEMBER_SELECT, anonymous = PUBLIC_SELECT) and some columns
+// only exist on certain rows. Used to type the mapper without `any`.
+type MemberRow = {
+  id?: string
+  name?: string
+  amasi_number?: number
+  salutation?: string | null
+  profile_photo?: string | null
+  pg_degree?: string | null
+  mci_council_number?: string | null
+  date_of_birth?: string | null
+  gender?: string | null
+  phone?: string | number | null
+  mobile_code?: string | null
+  application_no?: string | null
+  membership_type?: string | null
+  city?: string | null
+  status?: string | null
+  state?: string | null
+  application_date?: string | null
+  created_at?: string | null
+  joining_date?: string | null
+  zone?: string | null
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -16,18 +47,20 @@ export async function GET(request: NextRequest) {
     return Response.json({ status: false, message: "Query parameter 'q' is required", data: [] }, { status: 400 })
   }
 
-  // Auth-aware field selection: admins get full record; everyone else
-  // (logged-in members and anonymous callers) gets the limited, safe set.
+  // Auth-aware field selection: admins get the full record, authenticated
+  // members get contact fields, anonymous callers get the limited public set.
   const adminSession = await getAdminSession()
   const memberSession = adminSession ? null : await getMemberSession()
   const isAdmin = !!adminSession
-  // memberSession referenced for future member-self redaction; kept intentionally.
-  void memberSession
+  const isMember = !!memberSession
 
-  // Rate limit non-admin callers
+  // Rate limit non-admin callers. Authed members get a higher ceiling to
+  // accommodate type-as-you-go mobile search; anonymous callers stay at the
+  // original web-widget cap.
   if (!isAdmin) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = await checkRateLimit(`members-search:${ip}`, 30, 15 * 60 * 1000)
+    const limit = isMember ? 120 : 30
+    const rl = await checkRateLimit(`members-search:${ip}`, limit, 15 * 60 * 1000)
     if (!rl.allowed) {
       return Response.json({ status: false, message: "Too many requests", data: [] }, { status: 429 })
     }
@@ -38,7 +71,7 @@ export async function GET(request: NextRequest) {
     const isEmail = query.includes("@")
     const isPhone = /^\d{10}$/.test(query)
 
-    const selectFields = isAdmin ? "*" : PUBLIC_SELECT
+    const selectFields = isAdmin ? "*" : isMember ? MEMBER_SELECT : PUBLIC_SELECT
 
     let data = null
 
@@ -74,7 +107,8 @@ export async function GET(request: NextRequest) {
           .from("members")
           .select(selectFields)
           .ilike("name", `%${query}%`)
-          .limit(5)
+          .order("name", { ascending: true })
+          .limit(30)
         if (error) console.error("members.search name query failed:", error)
         data = result
       }
@@ -84,7 +118,7 @@ export async function GET(request: NextRequest) {
       return Response.json({
         status: true,
         message: "Member found",
-        data: (data as any[]).map((m: any) => ({
+        data: (data as unknown as MemberRow[]).map((m: MemberRow) => ({
           ...m,
           _id: m.id, // Supabase row ID for update API
           profile_incomplete: !m.pg_degree && !m.mci_council_number && !m.date_of_birth && !m.gender,
@@ -120,7 +154,7 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({ status: false, message: "No data found.", data: [] })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Member search error:", error)
     return Response.json({ status: false, message: "Search failed", data: [] }, { status: 500 })
   }

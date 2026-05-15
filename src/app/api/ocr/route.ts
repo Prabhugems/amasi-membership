@@ -33,6 +33,13 @@ import { recordStepEvent } from "@/lib/funnel-tracking"
 //   preserved on every branch so the pre-PR-1 frontend keeps behaving the
 //   way it does today. PR 1 will switch the frontend to branch on `outcome`.
 
+// Frontend waits 60s (apply/page.tsx). Claude Vision on 3-5MB medical
+// certificates routinely takes 15-40s; without this the Vercel default
+// (10s on Hobby, 60s on Pro) kills the request and the browser sees a
+// TypeError, which apply/page.tsx renders as "Connection problem. Please
+// try again in a moment." Requires Pro plan.
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"

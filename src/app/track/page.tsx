@@ -26,7 +26,7 @@ import {
   UserCheck,
   Sparkles,
   FileSearch,
-  HeartHandshake,
+  LogIn,
 } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 
@@ -312,7 +312,7 @@ function Timeline({ steps }: { steps: TimelineStep[] }) {
           <div key={step.id} className="flex gap-4">
             <div className="flex flex-col items-center">
               <div
-                className={`w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${colorMap[step.status]}`}
+                className={`w-9 h-9 rounded-full border flex items-center justify-center shrink-0 ${colorMap[step.status]}`}
               >
                 {step.icon}
               </div>
@@ -378,7 +378,7 @@ function NextStepCard({ app }: { app: ApplicationData }) {
       <div className="rounded-xl bg-green-50 border border-green-200 p-5">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-            <HeartHandshake className="h-5 w-5 text-green-600" />
+            <LogIn className="h-5 w-5 text-green-600" />
           </div>
           <div className="flex-1">
             <p className="font-semibold text-green-800 text-sm mb-1">
@@ -438,7 +438,7 @@ function NextStepCard({ app }: { app: ApplicationData }) {
       app.status === "resubmit_requested" || app.status === "documents_unreadable"
     return (
       <div className="relative overflow-hidden rounded-xl">
-        <div className="absolute inset-0 border-2 border-amber-400 rounded-xl animate-pulse pointer-events-none" />
+        <div className="absolute inset-0 border border-amber-400 rounded-xl animate-pulse pointer-events-none" />
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
@@ -765,12 +765,6 @@ function OtpPhase({
   onVerified: (applications: ApplicationData[]) => void
   onBack: () => void
 }) {
-  if (!email && !referenceNumber) {
-    console.error("TrackPage: OtpPhase rendered without email or referenceNumber — impossible state")
-    Sentry.captureException(new Error("TrackPage: OtpPhase without email or referenceNumber"))
-    return null
-  }
-
   const [code, setCode] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isResending, setIsResending] = useState(false)
@@ -810,7 +804,7 @@ function OtpPhase({
         setIsLoading(false)
       }
     },
-    [code, email, onVerified]
+    [code, email, referenceNumber, onVerified]
   )
 
   const handleResend = useCallback(async () => {
@@ -841,7 +835,15 @@ function OtpPhase({
     } finally {
       setIsResending(false)
     }
-  }, [email])
+  }, [email, referenceNumber])
+
+  // Guard after all hooks: impossible state — parent should never render this
+  // without at least one identifier. Log + bail so hooks already ran uniformly.
+  if (!email && !referenceNumber) {
+    console.error("TrackPage: OtpPhase rendered without email or referenceNumber — impossible state")
+    Sentry.captureException(new Error("TrackPage: OtpPhase without email or referenceNumber"))
+    return null
+  }
 
   return (
     <div className="space-y-6">

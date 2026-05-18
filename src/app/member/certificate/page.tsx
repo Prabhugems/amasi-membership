@@ -165,7 +165,9 @@ function CertificateContent() {
     const body = encodeURIComponent(
       `Dear Dr. ${cert.name},\n\nYour AMASI Membership Certificate is available for download at:\n${typeof window !== "undefined" ? window.location.href : ""}\n\nVerify your membership:\n${verifyUrl}\n\nRegards,\nAMASI`
     )
-    window.open(`mailto:${cert.email || ""}?subject=${subject}&body=${body}`)
+    // GET /api/certificate is public and no longer returns email (PII strip);
+    // open mailto with empty "to:" so the user fills in the recipient.
+    window.open(`mailto:?subject=${subject}&body=${body}`)
   }
 
   if (!id) return (

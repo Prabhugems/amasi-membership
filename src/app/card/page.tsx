@@ -57,8 +57,9 @@ interface CardData {
   qrCode: string
   verifyUrl: string
   membershipType: string
-  email?: string
-  phone?: string
+  // NB: email/phone are deliberately NOT returned by GET /api/card
+  // (public endpoint, see Phase 3b PII strip). Members viewing their own
+  // card use /api/auth/me for contact details.
 }
 
 interface ThemeData {
@@ -292,18 +293,12 @@ function CardBack({ card, theme }: { card: CardData; theme: ThemeData }) {
               <p className="text-[10px] text-white/40 uppercase tracking-wider">Verify Online</p>
               <p className="text-[11px] text-white/70 truncate">{card.verifyUrl}</p>
             </div>
-            {card.email && (
-              <div className="flex items-center gap-1.5">
-                <Mail className="h-3 w-3 text-white/40 flex-shrink-0" />
-                <p className="text-[10px] text-white/50 truncate">{card.email}</p>
-              </div>
-            )}
-            {card.phone && (
-              <div className="flex items-center gap-1.5">
-                <Phone className="h-3 w-3 text-white/40 flex-shrink-0" />
-                <p className="text-[10px] text-white/50">{card.phone}</p>
-              </div>
-            )}
+            <div>
+              <p className="text-[10px] text-white/40 uppercase tracking-wider">Membership</p>
+              <p className="text-[11px] text-white/70 truncate">
+                #{String(card.amasiNumber).padStart(5, "0")}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -699,7 +694,7 @@ function CardContent() {
 
             {/* Quick links */}
             <div className="grid grid-cols-3 gap-3">
-              <a href={`/profile?q=${encodeURIComponent(card.email)}`} className="flex flex-col items-center gap-2 p-4 rounded-xl border hover:border-primary/30 hover:bg-accent/50 transition-all text-center group">
+              <a href={`/profile?q=${encodeURIComponent(card.amasiNumber)}`} className="flex flex-col items-center gap-2 p-4 rounded-xl border hover:border-primary/30 hover:bg-accent/50 transition-all text-center group">
                 <div className="p-2 rounded-lg bg-green-50 text-green-600 group-hover:bg-green-100 transition-colors">
                   <UserPen className="h-4 w-4" />
                 </div>

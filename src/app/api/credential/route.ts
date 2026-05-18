@@ -50,13 +50,14 @@ export async function GET(request: NextRequest) {
 
     const { data: member, error: mErr } = await db
       .from("members")
-      .select("name, amasi_number, email")
+      .select("name, amasi_number")
       .eq("amasi_number", amasiNumber)
       .single()
     if (mErr || !member) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })
     }
 
+    // PII (email) intentionally omitted from this public endpoint — see Phase 3b.
     return Response.json({
       status: true,
       credential: {
@@ -65,7 +66,6 @@ export async function GET(request: NextRequest) {
         skillCourseId: credential.skillCourseId,
         amasiNumber: member.amasi_number,
         name: member.name,
-        email: member.email,
         templateUrl: template.templatePath,
         presidentName: template.presidentName,
         convocationPlace: template.convocationPlace,

@@ -48,6 +48,10 @@ export async function GET(request: NextRequest) {
             ? "International Life Member"
             : member.membership_type || "Member"
 
+    // PII (email, phone) intentionally omitted from this public endpoint.
+    // Members who need their own contact info should call an authenticated
+    // endpoint (e.g. /api/auth/me) — anyone with an AMASI number can hit
+    // this route, so contact details would enable enumeration harvesting.
     return Response.json({
       status: true,
       card: {
@@ -56,10 +60,6 @@ export async function GET(request: NextRequest) {
         salutation: member.salutation || "Dr.",
         membershipType: member.membership_type,
         membershipLabel: memberType,
-        email: member.email,
-        // members.phone is bigint in Postgres → JS number at runtime; coerce
-        // so JSON consumers get a string (matches existing tel: link usage).
-        phone: member.phone != null ? String(member.phone) : null,
         state: member.state,
         zone: member.zone,
         pgDegree: member.pg_degree,

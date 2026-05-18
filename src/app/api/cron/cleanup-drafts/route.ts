@@ -4,6 +4,9 @@ import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { isExcludedEmail } from "@/lib/email-exclusions"
 import { Resend } from "resend"
 
+// Iterates stuck drafts with per-draft Razorpay SDK calls.
+export const maxDuration = 60
+
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",
   2: "Email Verification",

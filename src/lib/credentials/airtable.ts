@@ -36,6 +36,7 @@ export async function* listAllRecords(
     if (offset) url.searchParams.set("offset", offset)
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${pat()}` },
+      signal: AbortSignal.timeout(10000),
     })
     if (!res.ok) {
       const text = await res.text()
@@ -50,7 +51,7 @@ export async function* listAllRecords(
 // Download a binary attachment. Airtable attachment URLs are signed and expire,
 // so this must be called within the same run as the listing.
 export async function downloadAttachment(url: string): Promise<Buffer> {
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
   if (!res.ok) throw new Error(`Attachment fetch ${res.status}`)
   const ab = await res.arrayBuffer()
   return Buffer.from(ab)

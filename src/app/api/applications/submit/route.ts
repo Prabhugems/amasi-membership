@@ -16,6 +16,9 @@ import {
 import { getMembershipType } from "@/lib/membership-types"
 import { escapeHtml } from "@/lib/html-escape"
 
+// AI scoring + auto-approval + admin email + WhatsApp + Zoho in one request.
+export const maxDuration = 60
+
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")
@@ -348,12 +351,22 @@ export async function POST(request: NextRequest) {
 
     // Clean up draft application on successful insert
     try {
-      await supabase
+      const { error: draftDeleteError } = await supabase
         .from("draft_applications")
         .delete()
         .eq("email", emailKey)
         .in("status", ["in_progress", "stuck", "resumed", "completed"])
-    } catch {
+      if (draftDeleteError) {
+        Sentry.captureException(draftDeleteError, {
+          tags: { route: "applications/submit", op: "draft-cleanup" },
+          extra: { emailKey, applicationId },
+        })
+      }
+    } catch (draftDeleteThrown) {
+      Sentry.captureException(draftDeleteThrown, {
+        tags: { route: "applications/submit", op: "draft-cleanup" },
+        extra: { emailKey, applicationId },
+      })
       // Draft cleanup failure is non-blocking
     }
 
@@ -443,7 +456,7 @@ export async function POST(request: NextRequest) {
 
         // member_insert failed (application_update failures are treated as success by the helper).
         // Fall back to pending_review so an admin can retry.
-        await supabase
+        const { error: submitFallbackErr } = await supabase
           .from("membership_applications")
           .update({
             status: "pending_review",
@@ -451,6 +464,12 @@ export async function POST(request: NextRequest) {
             manual_review_reason: `AI approved but member creation failed: ${result.reason}`,
           })
           .eq("id", applicationId)
+        if (submitFallbackErr) {
+          Sentry.captureException(submitFallbackErr, {
+            tags: { route: "applications/submit", op: "submit-fallback-update" },
+            extra: { applicationId },
+          })
+        }
 
         await updateAiDecisionOutcome(supabase, applicationId, {
           finalStatus: "auto_approve_failed",

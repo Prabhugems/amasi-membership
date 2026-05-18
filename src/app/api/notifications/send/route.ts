@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log the notification
-    await supabase.from("notification_logs").insert({
+    const { error: notifLogErr } = await supabase.from("notification_logs").insert({
       type,
       subject: subject || null,
       message: message || template || null,
@@ -194,6 +194,13 @@ export async function POST(request: NextRequest) {
       total_count: total,
       sent_by: (session.email as string) || "admin",
     })
+    if (notifLogErr) {
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(notifLogErr, {
+        tags: { route: "notifications/send", op: "notification-log-insert" },
+        extra: { type, sent, failed, total },
+      })
+    }
 
     return Response.json({
       status: true,

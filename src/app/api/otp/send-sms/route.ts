@@ -6,6 +6,9 @@ import { randomInt } from "node:crypto"
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
 const MSG91_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || process.env.MSG91_TEMPLATE_ID
 
+// MSG91 SMS fetch can stall past 15s Vercel default.
+export const maxDuration = 15
+
 function generateOTP(): string {
   return String(randomInt(100000, 999999))
 }
@@ -60,6 +63,7 @@ export async function POST(request: NextRequest) {
       const smsRes = await fetch(`https://control.msg91.com/api/v5/otp?template_id=${MSG91_TEMPLATE_ID}&mobile=91${mobile}&authkey=${MSG91_AUTH_KEY}&otp=${code}&otp_length=6&otp_expiry=10`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
       })
       const smsResult = await smsRes.json()
 

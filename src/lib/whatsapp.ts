@@ -48,6 +48,7 @@ export async function sendTemplate(
           template: { templateName, bodyValues },
         },
       }),
+      signal: AbortSignal.timeout(5000),
     })
 
     const result = await res.json()

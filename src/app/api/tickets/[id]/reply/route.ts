@@ -162,7 +162,14 @@ export async function POST(
       const updates: Record<string, string> = { updated_at: new Date().toISOString() }
       if (ticket.status === "open") updates.status = "in_progress"
       if (!ticket.first_response_at) updates.first_response_at = new Date().toISOString()
-      await supabase.from("support_tickets").update(updates).eq("id", ticket.id)
+      const { error: ticketStatusErr } = await supabase.from("support_tickets").update(updates).eq("id", ticket.id)
+      if (ticketStatusErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(ticketStatusErr, {
+          tags: { route: "tickets/[id]/reply", op: "ticket-reply-status-flip" },
+          extra: { ticketId: ticket.id },
+        })
+      }
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"

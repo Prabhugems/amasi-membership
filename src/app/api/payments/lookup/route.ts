@@ -2,6 +2,9 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
+// Razorpay HTTP fetch for payment ID; admin-facing.
+export const maxDuration = 15
+
 export async function POST(request: NextRequest) {
   // Rate limit: 5 lookups per 15 minutes per IP
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
@@ -57,6 +60,7 @@ export async function POST(request: NextRequest) {
     const authHeader = Buffer.from(`${keyId}:${keySecret}`).toString("base64")
     const rzpRes = await fetch(`https://api.razorpay.com/v1/payments/${trimmed}`, {
       headers: { Authorization: `Basic ${authHeader}` },
+      signal: AbortSignal.timeout(8000),
     })
 
     if (!rzpRes.ok) {
@@ -113,7 +117,7 @@ export async function POST(request: NextRequest) {
 
     // Record payment if not already exists
     if (!existing) {
-      await supabase.from("membership_payments").insert({
+      const { error: lookupInsertErr } = await supabase.from("membership_payments").insert({
         application_id: applicationId,
         member_email: referenceNumber || email || phone || trimmed,
         gateway_order_id: orderId,
@@ -128,11 +132,18 @@ export async function POST(request: NextRequest) {
           total: amountInr,
         },
       })
+      if (lookupInsertErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(lookupInsertErr, {
+          tags: { route: "payments/lookup", op: "payment-lookup-record" },
+          extra: { paymentId: trimmed, orderId, referenceNumber, applicationId },
+        })
+      }
     }
 
     // Update application if found
     if (applicationId) {
-      await supabase
+      const { error: lookupAppUpdateErr } = await supabase
         .from("membership_applications")
         .update({
           payment_status: "paid",
@@ -140,6 +151,13 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", applicationId)
+      if (lookupAppUpdateErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(lookupAppUpdateErr, {
+          tags: { route: "payments/lookup", op: "payment-lookup-link-app" },
+          extra: { paymentId: trimmed, applicationId },
+        })
+      }
     }
 
     return Response.json({

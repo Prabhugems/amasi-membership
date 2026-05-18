@@ -59,13 +59,19 @@ export async function GET(request: NextRequest) {
     const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
 
     const supabase = createAdminClient()
-    await supabase.from("zoho_tokens").upsert({
+    const { error: zohoUpsertErr } = await supabase.from("zoho_tokens").upsert({
       id: "default",
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
+    if (zohoUpsertErr) {
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(zohoUpsertErr, {
+        tags: { route: "zoho/callback", op: "zoho-token-upsert" },
+      })
+    }
 
     return NextResponse.redirect(new URL("/?zoho=connected", request.url))
   } catch (error: any) {

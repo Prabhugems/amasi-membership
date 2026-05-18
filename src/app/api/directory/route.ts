@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
     // unresolved viewer_member_id would 23503 — we only insert when the
     // resolver confirmed an active member, so that can't happen here.
     if (authenticated && viewerMemberId) {
-      void supabase
+      const { error: directoryLogErr } = await supabase
         .from("directory_access_log")
         .insert({
           viewer_member_id: viewerMemberId,
@@ -108,11 +108,13 @@ export async function GET(request: NextRequest) {
           result_count: rows.length,
           ip,
         })
-        .then(({ error: logError }) => {
-          if (logError) {
-            console.error("Directory audit log insert failed:", logError)
-          }
+      if (directoryLogErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(directoryLogErr, {
+          tags: { route: "directory", op: "directory-access-log" },
+          extra: { viewerMemberId, resultCount: rows.length },
         })
+      }
     }
 
     return Response.json({

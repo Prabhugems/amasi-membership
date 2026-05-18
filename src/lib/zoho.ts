@@ -30,6 +30,7 @@ export async function exchangeCode(code: string) {
       redirect_uri: process.env.ZOHO_REDIRECT_URI!,
       code,
     }),
+    signal: AbortSignal.timeout(5000),
   })
 
   const text = await res.text()
@@ -60,6 +61,7 @@ export async function refreshAccessToken(refreshToken: string) {
       client_secret: process.env.ZOHO_CLIENT_SECRET!,
       refresh_token: refreshToken,
     }),
+    signal: AbortSignal.timeout(5000),
   })
 
   const data = await res.json()
@@ -132,6 +134,7 @@ export async function zohoApi(
       Authorization: `Zoho-oauthtoken ${token}`,
       ...options.headers,
     },
+    signal: AbortSignal.timeout(5000),
   })
 
   const text = await res.text()

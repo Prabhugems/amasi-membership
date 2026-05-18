@@ -2,6 +2,9 @@ import { NextRequest } from "next/server"
 import { checkDuplicateApplication } from "@/lib/application-utils"
 import { checkRateLimit } from "@/lib/rate-limit"
 
+// Two Supabase queries on apply hot path; cushion against cold-start spikes.
+export const maxDuration = 15
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"

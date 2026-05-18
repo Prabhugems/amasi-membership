@@ -5,6 +5,9 @@ import { createAdminClient } from "@/lib/supabase"
 import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
 
+// Razorpay SDK with potential retry-without-transfer fallback.
+export const maxDuration = 20
+
 // Server-side fee lookup — source of truth for membership fees
 const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
   LM:  { amount: 4230, currency: "INR" },

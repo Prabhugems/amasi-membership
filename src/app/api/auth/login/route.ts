@@ -114,10 +114,17 @@ export async function POST(request: NextRequest) {
 
       // No 2FA — proceed with session as before
       // Update last_login timestamp
-      await supabase
+      const { error: lastLoginErr } = await supabase
         .from("admin_users")
         .update({ last_login: new Date().toISOString() })
         .eq("id", admin.id)
+      if (lastLoginErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(lastLoginErr, {
+          tags: { route: "auth/login", op: "last-login-update" },
+          extra: { adminId: admin.id },
+        })
+      }
 
       const token = await signToken({
         sub: admin.id,

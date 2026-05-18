@@ -14,6 +14,9 @@ function getResend() {
 // Always use the branded domain for customer-facing URLs — see incomplete/route.ts.
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://membership.amasi.org"
 
+// Razorpay payments.refund call can exceed 15s Vercel default.
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getAdminSession()

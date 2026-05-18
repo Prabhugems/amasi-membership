@@ -197,6 +197,11 @@ export async function autoApproveApplication(
         "[auto-approval] linking existing member to application failed:",
         linkError,
       )
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(linkError, {
+        tags: { component: "auto-approval", op: "link-recovery" },
+        extra: { applicationId: input.applicationId, email: input.email, amasiNumber: priorMember.amasi_number },
+      })
       // Member is real; do not roll back. Caller can retry — the next call will
       // hit this branch again until the application update finally commits.
     }
@@ -305,6 +310,11 @@ export async function autoApproveApplication(
       "[auto-approval] application update failed AFTER member insert — member exists but app row is stale:",
       updateError,
     )
+    const Sentry = await import("@sentry/nextjs")
+    Sentry.captureException(updateError, {
+      tags: { component: "auto-approval", op: "post-member-app-update" },
+      extra: { applicationId: input.applicationId, amasiNumber },
+    })
     // fall through; still attempt notifications and return success
   }
 

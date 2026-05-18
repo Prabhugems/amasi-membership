@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 
       // Update application if reference number present
       if (referenceNumber) {
-        await supabase
+        const { error: appUpdateErr } = await supabase
           .from("membership_applications")
           .update({
             payment_status: "paid",
@@ -106,6 +106,13 @@ export async function POST(request: NextRequest) {
           })
           .eq("reference_number", referenceNumber)
           .eq("payment_status", "pending")
+        if (appUpdateErr) {
+          const Sentry = await import("@sentry/nextjs")
+          Sentry.captureException(appUpdateErr, {
+            tags: { route: "webhooks/razorpay", op: "app-payment-status" },
+            extra: { paymentId, orderId, referenceNumber },
+          })
+        }
       }
 
       console.log(`Webhook: payment.captured — ${paymentId} for ${referenceNumber}`)
@@ -242,7 +249,7 @@ export async function POST(request: NextRequest) {
 
       const referenceNumber = payment.notes?.reference_number
       if (referenceNumber) {
-        await supabase
+        const { error: appFailedUpdateErr } = await supabase
           .from("membership_applications")
           .update({
             payment_status: "failed",
@@ -250,6 +257,13 @@ export async function POST(request: NextRequest) {
           })
           .eq("reference_number", referenceNumber)
           .eq("payment_status", "pending")
+        if (appFailedUpdateErr) {
+          const Sentry = await import("@sentry/nextjs")
+          Sentry.captureException(appFailedUpdateErr, {
+            tags: { route: "webhooks/razorpay", op: "app-payment-status" },
+            extra: { paymentId: payment.id, referenceNumber },
+          })
+        }
       }
 
       console.log(`Webhook: payment.failed — ${payment.id} for ${referenceNumber}`)

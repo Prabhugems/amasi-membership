@@ -2,6 +2,9 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 
+// Batch sync admin tool — iterates external HTTP calls per member.
+export const maxDuration = 60
+
 const AMASI_API = "https://application.amasi.org/api/member_detail_data"
 
 export async function POST(request: NextRequest) {
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
         const formData = new FormData()
         formData.append("email_or_phone", member.email)
 
-        const res = await fetch(AMASI_API, { method: "POST", body: formData })
+        const res = await fetch(AMASI_API, { method: "POST", body: formData, signal: AbortSignal.timeout(5000) })
         const json = await res.json()
 
         if (!json.status || !json.data?.[0]) {

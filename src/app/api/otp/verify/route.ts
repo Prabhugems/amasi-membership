@@ -42,10 +42,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Increment attempts
-    await supabase
+    const { error: attemptsErr } = await supabase
       .from("otp_codes")
       .update({ attempts: otpRecord.attempts + 1 })
       .eq("id", otpRecord.id)
+    if (attemptsErr) {
+      Sentry.captureException(attemptsErr, {
+        tags: { component: "otp-verify", op: "otp-attempts-increment" },
+        extra: { otpId: otpRecord.id, email: otpRecord.email },
+      })
+    }
 
     // Verify code
     if (otpRecord.code !== code.trim()) {
@@ -57,10 +63,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark as verified
-    await supabase
+    const { error: verifiedErr } = await supabase
       .from("otp_codes")
       .update({ verified: true })
       .eq("id", otpRecord.id)
+    if (verifiedErr) {
+      Sentry.captureException(verifiedErr, {
+        tags: { component: "otp-verify", op: "otp-verified-flag" },
+        extra: { otpId: otpRecord.id, email: otpRecord.email },
+      })
+    }
 
     // Create member JWT session cookie
     const token = await signToken({

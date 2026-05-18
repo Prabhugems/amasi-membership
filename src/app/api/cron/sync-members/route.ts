@@ -1,5 +1,8 @@
 import { createAdminClient } from "@/lib/supabase"
 
+// Loops up to 100 external HTTP calls to application.amasi.org.
+export const maxDuration = 60
+
 const OLD_API = "https://application.amasi.org/api/member_detail_data"
 
 /**
@@ -51,7 +54,7 @@ export async function GET(request: Request) {
         const formData = new FormData()
         formData.append("membership_no", String(num))
 
-        const res = await fetch(OLD_API, { method: "POST", body: formData })
+        const res = await fetch(OLD_API, { method: "POST", body: formData, signal: AbortSignal.timeout(5000) })
         if (!res.ok) { consecutiveNotFound++; notFound.push(num); continue }
 
         const data = await res.json()

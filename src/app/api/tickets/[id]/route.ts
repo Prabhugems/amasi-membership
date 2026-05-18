@@ -69,10 +69,17 @@ export async function GET(
       new Date(ticket.sla_due_at).getTime() < Date.now()
     ) {
       ticket.sla_breached = true
-      await supabase
+      const { error: slaBreachErr } = await supabase
         .from("support_tickets")
         .update({ sla_breached: true })
         .eq("id", ticket.id)
+      if (slaBreachErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(slaBreachErr, {
+          tags: { route: "tickets/[id]", op: "sla-breach-flag" },
+          extra: { ticketId: ticket.id },
+        })
+      }
     }
 
     // Fetch replies — filter internal notes for non-admins

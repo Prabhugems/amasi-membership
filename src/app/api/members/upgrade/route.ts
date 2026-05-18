@@ -335,6 +335,11 @@ export async function POST(request: NextRequest) {
           .eq("id", upgrade.id)
         if (fallbackError) {
           console.error("Failed to reset upgrade status to pending_review:", fallbackError)
+          const Sentry = await import("@sentry/nextjs")
+          Sentry.captureException(fallbackError, {
+            tags: { route: "members/upgrade", op: "upgrade-status-fallback" },
+            extra: { upgradeId: upgrade.id },
+          })
           return Response.json({ status: false, message: "Failed to update upgrade status" }, { status: 500 })
         }
       }
@@ -346,6 +351,11 @@ export async function POST(request: NextRequest) {
         .eq("id", upgrade.id)
       if (pendingError) {
         console.error("Failed to set upgrade status to pending_review:", pendingError)
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(pendingError, {
+          tags: { route: "members/upgrade", op: "upgrade-status-pending" },
+          extra: { upgradeId: upgrade.id },
+        })
         return Response.json({ status: false, message: "Failed to update upgrade status" }, { status: 500 })
       }
     }

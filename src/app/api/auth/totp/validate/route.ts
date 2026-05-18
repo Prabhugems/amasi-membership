@@ -77,10 +77,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Code is valid — issue the session
-    await supabase
+    const { error: totpLastLoginErr } = await supabase
       .from("admin_users")
       .update({ last_login: new Date().toISOString() })
       .eq("id", admin.id)
+    if (totpLastLoginErr) {
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(totpLastLoginErr, {
+        tags: { route: "auth/totp/validate", op: "last-login-update" },
+        extra: { adminId: admin.id },
+      })
+    }
 
     const token = await signToken({
       sub: admin.id,

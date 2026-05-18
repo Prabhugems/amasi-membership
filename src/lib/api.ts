@@ -81,6 +81,7 @@ export async function fetchMemberByEmailOrPhone(
   const res = await fetch(`${AMASI_API_BASE}/member_detail_data`, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(5000),
   })
 
   if (!res.ok) {

@@ -2,6 +2,9 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
+// Razorpay payments.all is slow; called from /apply post-OTP.
+export const maxDuration = 30
+
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
   const rl = await checkRateLimit(`check-payment:${ip}`, 5, 15 * 60 * 1000)

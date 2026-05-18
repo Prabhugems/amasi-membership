@@ -39,7 +39,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Increment attempts
-    await supabase.from("otp_codes").update({ attempts: otpRecord.attempts + 1 }).eq("id", otpRecord.id)
+    const { error: smsAttemptsErr } = await supabase.from("otp_codes").update({ attempts: otpRecord.attempts + 1 }).eq("id", otpRecord.id)
+    if (smsAttemptsErr) {
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(smsAttemptsErr, {
+        tags: { component: "otp-verify-sms", op: "otp-attempts-increment" },
+        extra: { otpId: otpRecord.id, mobile },
+      })
+    }
 
     if (otpRecord.code !== code.trim()) {
       const remaining = 4 - (otpRecord.attempts + 1)
@@ -47,7 +54,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark verified
-    await supabase.from("otp_codes").update({ verified: true }).eq("id", otpRecord.id)
+    const { error: smsVerifiedErr } = await supabase.from("otp_codes").update({ verified: true }).eq("id", otpRecord.id)
+    if (smsVerifiedErr) {
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(smsVerifiedErr, {
+        tags: { component: "otp-verify-sms", op: "otp-verified-flag" },
+        extra: { otpId: otpRecord.id, mobile },
+      })
+    }
 
     return Response.json({ status: true, message: "Mobile verified successfully" })
   } catch (error: any) {

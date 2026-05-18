@@ -7,6 +7,9 @@ import { recordStepEvent } from "@/lib/funnel-tracking"
 import { validateRequiredDocuments } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
 
+// Razorpay orders.fetch + payments.transfer fallback can exceed 15s Vercel default.
+export const maxDuration = 30
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"

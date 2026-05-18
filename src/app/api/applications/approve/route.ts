@@ -9,6 +9,9 @@ import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 
+// Resend + WhatsApp + Zoho token fetch + listsubscribe in one request.
+export const maxDuration = 30
+
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")

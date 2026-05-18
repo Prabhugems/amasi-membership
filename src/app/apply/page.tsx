@@ -544,32 +544,42 @@ function ApplyForm() {
           ...extraData,
         },
       }
-      if (draftUpdatedAt) body.lastUpdatedAt = draftUpdatedAt
       return body
     }
 
-    const attempt = async (): Promise<{ ok: boolean; error: string | null }> => {
+    // attempt threads lastUpdatedAt explicitly (not via React state) so the
+    // retry below can use the fresh serverUpdatedAt from a 409 response. The
+    // previous shape called setDraftUpdatedAt + re-read draftUpdatedAt from
+    // the closure on retry — the setState was scheduled but never visible to
+    // the same render's closure, so the retry sent the same stale value and
+    // 409'd again. See Sentry AMASI-MEMBERSHIP-D (35 users, step 5).
+    type AttemptResult = { ok: boolean; error: string | null; nextLastUpdatedAt: string | undefined }
+    const attempt = async (lastUpdatedAtForAttempt: string | undefined): Promise<AttemptResult> => {
       try {
+        const body = buildBody()
+        if (lastUpdatedAtForAttempt) body.lastUpdatedAt = lastUpdatedAtForAttempt
         const res = await fetch("/api/applications/save-draft", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildBody()),
+          body: JSON.stringify(body),
           signal: AbortSignal.timeout(12000),
         })
 
         if (res.ok) {
           const data = await res.json()
-          if (data.draft?.updated_at) setDraftUpdatedAt(data.draft.updated_at)
-          return { ok: true, error: null }
+          const next = data?.draft?.updated_at as string | undefined
+          if (next) setDraftUpdatedAt(next)
+          return { ok: true, error: null, nextLastUpdatedAt: next ?? lastUpdatedAtForAttempt }
         }
 
         if (res.status === 401) {
           // Try to refresh token
           try { await fetch("/api/member/refresh-token", { method: "POST" }) } catch {}
-          return { ok: false, error: "auth" }
+          return { ok: false, error: "auth", nextLastUpdatedAt: lastUpdatedAtForAttempt }
         }
 
         if (res.status === 409) {
+          let serverUpdatedAt = lastUpdatedAtForAttempt
           try {
             const data = await res.json()
             // L1 server gate: caller's email/phone already belongs to a real
@@ -592,28 +602,36 @@ function ApplyForm() {
                 localStorage.removeItem("amasi_apply_type")
               } catch {}
               setPhase("existing")
-              return { ok: false, error: "existing_member" }
+              return { ok: false, error: "existing_member", nextLastUpdatedAt: lastUpdatedAtForAttempt }
             }
-            if (data.serverUpdatedAt) setDraftUpdatedAt(data.serverUpdatedAt)
+            if (data.serverUpdatedAt) {
+              serverUpdatedAt = data.serverUpdatedAt
+              setDraftUpdatedAt(data.serverUpdatedAt)
+            }
           } catch {}
-          return { ok: false, error: "conflict" }
+          return { ok: false, error: "conflict", nextLastUpdatedAt: serverUpdatedAt }
         }
 
-        return { ok: false, error: `HTTP ${res.status}` }
+        return { ok: false, error: `HTTP ${res.status}`, nextLastUpdatedAt: lastUpdatedAtForAttempt }
       } catch (err: unknown) {
         const name = err instanceof Error ? err.name : ""
         const message = err instanceof Error ? err.message : ""
-        return { ok: false, error: name === "TimeoutError" ? "timeout" : (message || "network error") }
+        return {
+          ok: false,
+          error: name === "TimeoutError" ? "timeout" : (message || "network error"),
+          nextLastUpdatedAt: lastUpdatedAtForAttempt,
+        }
       }
     }
 
-    // First attempt
-    const first = await attempt()
-    if (first.ok) return first
+    // First attempt — start from whatever React state currently knows.
+    const first = await attempt(draftUpdatedAt ?? undefined)
+    if (first.ok) return { ok: true, error: null }
 
-    // One automatic retry after 500ms
+    // One automatic retry after 500ms, using the fresh server-known value
+    // when the first attempt produced one (the 409 path always does).
     await new Promise(r => setTimeout(r, 500))
-    const second = await attempt()
+    const second = await attempt(first.nextLastUpdatedAt)
     if (!second.ok) {
       // Surface to Sentry so the fire-and-forget callers in this page
       // (post-upload, post-review, post-order, post-OTP) are no longer
@@ -625,7 +643,7 @@ function ApplyForm() {
         extra: { firstError: first.error, hasExtraData: !!extraData },
       })
     }
-    return second
+    return { ok: second.ok, error: second.error }
   }, [emailVerified, formData, selectedType, uploads, draftUpdatedAt])
 
   // Auto-save draft every 30 seconds

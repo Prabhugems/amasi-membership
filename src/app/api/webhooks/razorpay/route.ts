@@ -72,8 +72,13 @@ export async function POST(request: NextRequest) {
         memberEmail = appRow?.email ?? null
       }
 
-      // Record payment
-      await supabase.from("membership_payments").insert({
+      // Record payment. `source` was previously included but the column
+      // doesn't exist in membership_payments — every webhook insert silently
+      // failed, which is why payment-link captures (Karki, Smita) never
+      // produced a payment row and needed admin backfill. Standard /apply
+      // flow was unaffected because /api/payments/verify writes the row
+      // first and the idempotency guard above short-circuits the webhook.
+      const { error: payErr } = await supabase.from("membership_payments").insert({
         member_email: memberEmail,
         gateway_order_id: orderId,
         gateway_payment_id: paymentId,
@@ -81,8 +86,14 @@ export async function POST(request: NextRequest) {
         status: "paid",
         amount,
         currency: payment.currency || "INR",
-        source: "webhook",
       })
+      if (payErr) {
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(payErr, {
+          tags: { route: "webhooks/razorpay", op: "payment-insert" },
+          extra: { paymentId, orderId, referenceNumber },
+        })
+      }
 
       // Update application if reference number present
       if (referenceNumber) {

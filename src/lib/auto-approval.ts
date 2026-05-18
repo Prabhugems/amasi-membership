@@ -208,6 +208,90 @@ export async function autoApproveApplication(
     return { success: true, amasiNumber: priorMember.amasi_number }
   }
 
+  // Atomic claim. The read-only recovery branches above catch *completed*
+  // prior runs; this CAS catches concurrent in-flight runs. Without it,
+  // two parallel invocations (e.g. Razorpay webhook + client verify, or
+  // webhook retry storms before the first invocation commits) would both
+  // read status='submitted', both call next_amasi_number(), and both burn
+  // a sequence number — only one survives the members.amasi_number unique
+  // constraint, the loser dies and its number is gone forever (gaps
+  // 18260-61, 18278-81 originated this way).
+  //
+  // We transition the row to status='approving' atomically and require the
+  // source status to be one of the valid pre-approval states. If 0 rows
+  // are updated, another worker is already on it — return success so the
+  // webhook caller responds 200 and Razorpay stops retrying.
+  //
+  // We capture the prior status so we can revert it on a failed approval
+  // (sequence RPC failure, member insert failure) to let a future retry
+  // re-claim. The `'approving'` value is intentionally not surfaced in any
+  // admin UI filter — rows are in this state for milliseconds in the
+  // happy path.
+  const priorStatus = existingApp?.status ?? "submitted"
+  const { data: claimed, error: claimError } = await supabase
+    .from("membership_applications")
+    .update({ status: "approving", updated_at: new Date().toISOString() })
+    .eq("id", input.applicationId)
+    .in("status", ["submitted", "pending_review", "ai_approved"])
+    .select("id")
+
+  if (claimError) {
+    console.error("[auto-approval] claim CAS failed:", claimError)
+    return {
+      success: false,
+      reason: `claim CAS failed: ${claimError.message}`,
+      stage: "sequence",
+    }
+  }
+
+  if (!claimed || claimed.length === 0) {
+    // Either another worker already claimed this row (status='approving'),
+    // it has since been approved (re-read to recover the assigned number),
+    // or it's in a terminal state we don't recognize (admin moved it).
+    // The caller (webhook) needs a 2xx so Razorpay stops retrying.
+    const { data: latestApp } = await supabase
+      .from("membership_applications")
+      .select("status, assigned_amasi_number")
+      .eq("id", input.applicationId)
+      .maybeSingle()
+
+    if (
+      latestApp?.status === "approved" &&
+      typeof latestApp.assigned_amasi_number === "number"
+    ) {
+      console.log(
+        `[auto-approval] claim CAS lost the race — application ${input.applicationId} was approved by another worker as #${latestApp.assigned_amasi_number}`,
+      )
+      return { success: true, amasiNumber: latestApp.assigned_amasi_number }
+    }
+
+    // Still in-flight ('approving') or in some other state. The other worker
+    // owns the outcome; we report success to avoid spurious retries. Caller
+    // logs include the amasiNumber so we surface 0 as a sentinel meaning
+    // "another worker handled it; check the row directly for the number".
+    console.log(
+      `[auto-approval] claim CAS returned 0 rows for ${input.applicationId} — another worker holds the claim (latest status=${latestApp?.status ?? "unknown"}), short-circuiting`,
+    )
+    return { success: true, amasiNumber: latestApp?.assigned_amasi_number ?? 0 }
+  }
+
+  // Helper: revert status to prior value so a future retry can re-claim.
+  const revertClaim = async (failureReason: string) => {
+    const { error: revertErr } = await supabase
+      .from("membership_applications")
+      .update({ status: priorStatus, updated_at: new Date().toISOString() })
+      .eq("id", input.applicationId)
+      .eq("status", "approving")
+    if (revertErr) {
+      console.error("[auto-approval] failed to revert 'approving' status after failure:", revertErr)
+      const Sentry = await import("@sentry/nextjs")
+      Sentry.captureException(revertErr, {
+        tags: { component: "auto-approval", op: "revert-claim" },
+        extra: { applicationId: input.applicationId, failureReason, priorStatus },
+      })
+    }
+  }
+
   // 1. Reserve AMASI number — pre-assigned wins over sequence.
   let amasiNumber: number
   if (preassigned !== null) {
@@ -217,6 +301,7 @@ export async function autoApproveApplication(
 
     if (seqError || nextNumRaw == null) {
       console.error("[auto-approval] AMASI sequence RPC failed:", seqError)
+      await revertClaim(seqError?.message || "sequence RPC returned null")
       return {
         success: false,
         reason: `AMASI sequence RPC failed: ${seqError?.message || "no value returned"}`,
@@ -285,6 +370,7 @@ export async function autoApproveApplication(
 
   if (memberInsertError) {
     console.error("[auto-approval] member insert failed:", memberInsertError)
+    await revertClaim(memberInsertError.message || "member insert failed")
     return {
       success: false,
       reason: memberInsertError.message || "member insert failed",

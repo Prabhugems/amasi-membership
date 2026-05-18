@@ -103,16 +103,61 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Dedup check — prevent double-recording the same payment
+    // Dedup check — prevent double-recording the same payment.
+    //
+    // A race exists between this client-side verify call and the Razorpay
+    // webhook (`/api/webhooks/razorpay`). The webhook can land FIRST and
+    // insert a `membership_payments` row before this route runs (especially
+    // on payment-link captures or slow client networks). In that case the
+    // webhook-written row has no `application_id` (the webhook doesn't have
+    // it — only the client does), so if we early-return here, the
+    // application's `payment_status` is never flipped to 'paid' and the
+    // applicant looks unpaid in admin.
+    //
+    // Fix: if the existing row is already linked to *this* application AND
+    // the application is already marked paid, the early return is correct
+    // (true idempotency). Otherwise, fall through to backfill the link.
     const { data: existingPayment } = await supabase
       .from("membership_payments")
-      .select("id")
+      .select("id, application_id")
       .eq("gateway_payment_id", razorpay_payment_id)
       .limit(1)
       .maybeSingle()
 
+    let skipPaymentInsert = false
     if (existingPayment) {
-      return Response.json({ status: true, message: "Payment already recorded", paymentId: razorpay_payment_id })
+      // Check whether this is a genuine idempotent retry (both sides linked)
+      // vs. a webhook-first race that needs backfill.
+      let applicationPaid = false
+      if (applicationId) {
+        const { data: appRow } = await supabase
+          .from("membership_applications")
+          .select("payment_status")
+          .eq("id", applicationId)
+          .maybeSingle()
+        applicationPaid = appRow?.payment_status === "paid"
+      }
+      if (existingPayment.application_id && applicationPaid) {
+        return Response.json({ status: true, message: "Payment already recorded", paymentId: razorpay_payment_id })
+      }
+      // Webhook-first race: keep going so the application gets linked, but
+      // skip the duplicate `membership_payments` insert.
+      skipPaymentInsert = true
+      Sentry.captureMessage(
+        `[payments/verify] webhook-first race detected for ${razorpay_payment_id} — backfilling application_id on existing payment row`,
+        {
+          level: "info",
+          tags: { flow: "payment_verify", reason: "webhook_first_race" },
+          extra: {
+            razorpay_payment_id,
+            razorpay_order_id,
+            referenceNumber,
+            applicationId: applicationId || null,
+            existing_payment_id: existingPayment.id,
+            existing_application_id: existingPayment.application_id,
+          },
+        },
+      )
     }
 
     // --- Defense-in-depth: re-check that documents are still valid at verify time ---
@@ -171,31 +216,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Record payment
-    const { error: insertError } = await supabase.from("membership_payments").insert({
-      application_id: applicationId || null,
-      member_email: email || referenceNumber, // using as reference tracker
-      gateway_order_id: razorpay_order_id,
-      gateway_payment_id: razorpay_payment_id,
-      gateway_signature: razorpay_signature,
-      payment_gateway: "razorpay",
-      status: "paid",
-      amount: amount || null,
-      currency: currency || "INR",
-      fee_breakdown: {
-        membership_fee: (amount || 4230) - PROCESSING_FEE,
-        processing_fee: PROCESSING_FEE,
-        processing_fee_account: PROCESSING_FEE > 0 ? "events360" : null,
-        transfer_status: transferStatus,
-        transfer_error: transferError,
-        note: PROCESSING_FEE > 0 ? "₹100 processing fee (incl GST) to be settled to Events 360" : "No processing fee for ILM",
-        applicant_email: email || null,
-      },
-    })
+    // Record payment (or backfill application_id on a webhook-first race).
+    if (!skipPaymentInsert) {
+      const { error: insertError } = await supabase.from("membership_payments").insert({
+        application_id: applicationId || null,
+        member_email: email || referenceNumber, // using as reference tracker
+        gateway_order_id: razorpay_order_id,
+        gateway_payment_id: razorpay_payment_id,
+        gateway_signature: razorpay_signature,
+        payment_gateway: "razorpay",
+        status: "paid",
+        amount: amount || null,
+        currency: currency || "INR",
+        fee_breakdown: {
+          membership_fee: (amount || 4230) - PROCESSING_FEE,
+          processing_fee: PROCESSING_FEE,
+          processing_fee_account: PROCESSING_FEE > 0 ? "events360" : null,
+          transfer_status: transferStatus,
+          transfer_error: transferError,
+          note: PROCESSING_FEE > 0 ? "₹100 processing fee (incl GST) to be settled to Events 360" : "No processing fee for ILM",
+          applicant_email: email || null,
+        },
+      })
 
-    if (insertError) {
-      console.error("Payment insert error:", insertError)
-      return Response.json({ status: false, message: "Failed to record payment" }, { status: 500 })
+      if (insertError) {
+        console.error("Payment insert error:", insertError)
+        return Response.json({ status: false, message: "Failed to record payment" }, { status: 500 })
+      }
+    } else if (existingPayment) {
+      // Backfill the application_id (and member_email) on the webhook-written
+      // row. Guard with `.is("application_id", null)` so we don't clobber a
+      // legitimate prior link from a different applicant (defense in depth —
+      // gateway_payment_id is already globally unique).
+      const { error: backfillError } = await supabase
+        .from("membership_payments")
+        .update({
+          application_id: applicationId || null,
+          member_email: email || referenceNumber,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingPayment.id)
+        .is("application_id", null)
+      if (backfillError) {
+        console.error("Payment backfill error:", backfillError)
+        Sentry.captureException(backfillError, {
+          tags: { flow: "payment_verify", op: "webhook_race_backfill" },
+          extra: { existing_payment_id: existingPayment.id, applicationId },
+        })
+      }
     }
 
     // Update application payment status

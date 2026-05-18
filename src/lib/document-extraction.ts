@@ -300,7 +300,11 @@ async function fallbackOCR(buffer: Buffer, filename: string, docType: string): P
   ocrForm.append("scale", "true")
   ocrForm.append("OCREngine", "2")
 
-  const ocrRes = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: ocrForm })
+  const ocrRes = await fetch("https://api.ocr.space/parse/image", {
+    method: "POST",
+    body: ocrForm,
+    signal: AbortSignal.timeout(20_000),
+  })
   const ocrResult = await ocrRes.json()
 
   let text = ""
@@ -594,7 +598,7 @@ export async function extractDocument(input: ExtractionInput): Promise<Extractio
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
     if (apiKey) {
       try {
-        const client = new Anthropic({ apiKey })
+        const client = new Anthropic({ apiKey, timeout: 25_000, maxRetries: 0 })
         const prompt = buildPrompt(docType)
         if (!prompt) {
           // Unknown docType is a misconfiguration / bad client input, not a

@@ -7,6 +7,10 @@ import { escapeHtml } from "@/lib/html-escape"
 import { normalizeDocumentKey, requiresExtraction, CANONICAL_KEYS, EXTRACTION_SKIPPED_KEYS } from "@/lib/document-keys"
 import { extractDocument } from "@/lib/document-extraction"
 
+// Same reason as /api/ocr — extractDocument runs Claude vision + OCR.space
+// fallback and exceeds Vercel's 15s default.
+export const maxDuration = 60
+
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")

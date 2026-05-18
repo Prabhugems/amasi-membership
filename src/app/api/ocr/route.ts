@@ -9,6 +9,14 @@ import {
 import { extractDocument } from "@/lib/document-extraction"
 import { recordStepEvent } from "@/lib/funnel-tracking"
 
+// Vercel Pro defaults to 15s, but Claude vision on a multi-page certificate
+// can take 20–40s, plus the OCR.space fallback. Without this the function is
+// killed mid-Claude-call and the browser sees TypeError from fetch (no HTTP
+// response), surfacing to the user as "Connection problem" with no Sentry
+// signal. See screenshots 2026-05-18 — all three doc uploads failed the same
+// way for a member because their MCI cert pushed past the 15s default.
+export const maxDuration = 60
+
 // PR 0 contract:
 //
 //   The route ALWAYS attempts to durably store the file before evaluating

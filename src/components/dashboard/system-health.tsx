@@ -5,7 +5,14 @@ import { cn } from "@/lib/utils"
 
 export type HealthStatus = "ok" | "degraded" | "down"
 
-export type SystemHealthKey = "nmc" | "email" | "razorpay" | "webhooks"
+export type SystemHealthKey =
+  | "nmc"
+  | "email"
+  | "razorpay"
+  | "webhooks"
+  | "email_delivery_24h"
+  | "ocr_success_24h"
+  | "drafts_stuck_24h"
 
 export interface SystemHealthProps {
   health: {
@@ -13,7 +20,12 @@ export interface SystemHealthProps {
     email: HealthStatus
     razorpay: HealthStatus
     webhooks: HealthStatus
+    email_delivery_24h: HealthStatus
+    ocr_success_24h: HealthStatus
+    drafts_stuck_24h: HealthStatus
   }
+  /** Override display label for specific pills (e.g. to embed computed values). */
+  labels?: Partial<Record<SystemHealthKey, string>>
   onPillClick?: (key: SystemHealthKey) => void
 }
 
@@ -27,6 +39,9 @@ const PILLS: readonly PillConfig[] = [
   { key: "email", label: "Email" },
   { key: "razorpay", label: "Razorpay" },
   { key: "webhooks", label: "Webhooks" },
+  { key: "email_delivery_24h", label: "Email delivery 24h" },
+  { key: "ocr_success_24h", label: "OCR success 24h" },
+  { key: "drafts_stuck_24h", label: "Drafts stuck >24h" },
 ] as const
 
 const STATUS_TEXT: Record<HealthStatus, string> = {
@@ -63,14 +78,15 @@ function StatusDot({ status }: { status: HealthStatus }): JSX.Element {
 }
 
 export function SystemHealth(props: SystemHealthProps): JSX.Element {
-  const { health, onPillClick } = props
+  const { health, labels, onPillClick } = props
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
       {PILLS.map(({ key, label }) => {
         const status: HealthStatus = health[key]
-        const tooltip = `${label}: ${STATUS_TEXT[status]}`
-        const ariaLabel = `${label}: ${status}`
+        const displayLabel = labels?.[key] ?? label
+        const tooltip = `${displayLabel}: ${STATUS_TEXT[status]}`
+        const ariaLabel = `${displayLabel}: ${status}`
 
         return (
           <button
@@ -94,7 +110,7 @@ export function SystemHealth(props: SystemHealthProps): JSX.Element {
             )}
           >
             <StatusDot status={status} />
-            <span>{label}</span>
+            <span>{displayLabel}</span>
           </button>
         )
       })}

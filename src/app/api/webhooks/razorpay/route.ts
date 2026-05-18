@@ -33,7 +33,15 @@ export async function POST(request: NextRequest) {
       .update(rawBody)
       .digest("hex")
 
-    if (expectedSignature !== signature) {
+    // Constant-time compare to avoid leaking the secret via response-time
+    // side channels. Length check first so timingSafeEqual never throws on
+    // malformed input.
+    const expectedBuf = Buffer.from(expectedSignature, "hex")
+    const sigBuf = Buffer.from(signature, "hex")
+    if (
+      expectedBuf.length !== sigBuf.length ||
+      !crypto.timingSafeEqual(expectedBuf, sigBuf)
+    ) {
       console.error("Razorpay webhook signature mismatch")
       return Response.json({ error: "Invalid signature" }, { status: 400 })
     }

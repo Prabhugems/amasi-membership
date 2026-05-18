@@ -76,9 +76,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/?zoho=connected", request.url))
   } catch (error: any) {
     console.error("[zoho/callback] Error:", error)
-    return Response.json({
-      error: error.message || "Unknown error",
-      stack: error.stack?.substring(0, 300),
-    }, { status: 500 })
+    // Sentry capture for this branch was added in Phase 1; the diagnostic
+    // detail (message, stack, clientId, redirectUri) is preserved there.
+    // Don't echo it back in the HTTP response — that leaked Zoho client
+    // config and stack traces to any caller who could trigger the catch.
+    return Response.json({ error: "Zoho callback failed" }, { status: 500 })
   }
 }

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
-import { signToken, verifyToken, setMemberCookie } from "@/lib/auth"
+import { signToken, verifyToken, setMemberCookie, claimJtiOnce } from "@/lib/auth"
 
 /**
  * One-click resume from an emailed link. The token is a short-lived JWT
@@ -32,8 +32,19 @@ export async function POST(request: NextRequest) {
 
   const email = (payload.email as string || "").toLowerCase().trim()
   const draftId = payload.draftId as string | undefined
+  const jti = typeof payload.jti === "string" ? payload.jti : null
   if (!email || !draftId) {
     return Response.json({ status: false, message: "Link is malformed" }, { status: 400 })
+  }
+
+  // Single-use enforcement. Older resume tokens minted before this fix have
+  // no jti — let those through (they will age out in ≤14d). Tokens with a
+  // jti must claim it atomically; a duplicate click is treated as a replay.
+  if (jti) {
+    const claimed = await claimJtiOnce(jti)
+    if (!claimed) {
+      return Response.json({ status: false, message: "Link is invalid or has expired" }, { status: 401 })
+    }
   }
 
   const supabase = createAdminClient()

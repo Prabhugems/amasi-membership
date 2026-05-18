@@ -218,3 +218,29 @@ export async function consumeAutoLoginToken(token: string): Promise<AutoLoginPay
   if (claimed !== "OK") return null
   return typed
 }
+
+/**
+ * Atomically claim a JWT's jti as consumed. Returns true on first claim,
+ * false on replay. Mirrors the SET NX pattern used by consumeAutoLoginToken
+ * but is decoupled from the auto-login payload shape so other one-time-use
+ * token flows (resume links, etc.) can reuse it.
+ *
+ * `ttlSeconds` should match (or exceed) the token's exp lifetime so the
+ * consumed-jti record outlives the token itself — otherwise a token that
+ * expires after the jti record could theoretically be replayed against a
+ * forgiving verifier. Default 14d matches the resume-link TTL.
+ *
+ * Without Redis configured we cannot enforce single-use; log loudly and
+ * allow the claim so dev environments keep working — matches the
+ * consumeAutoLoginToken fallback. Production must have Redis.
+ */
+export async function claimJtiOnce(jti: string, ttlSeconds: number = 14 * 24 * 60 * 60): Promise<boolean> {
+  if (!jti) return false
+  const redis = getAutoLoginRedis()
+  if (!redis) {
+    console.error("[auth] claimJtiOnce called without Redis configured — single-use cannot be enforced")
+    return true
+  }
+  const claimed = await redis.set(`consumed_jwt:${jti}`, Date.now(), { nx: true, ex: ttlSeconds })
+  return claimed === "OK"
+}

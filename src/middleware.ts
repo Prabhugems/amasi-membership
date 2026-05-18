@@ -72,8 +72,6 @@ const PUBLIC_API_ROUTES = [
   // resume-from-token is the public endpoint the emailed resume link calls;
   // it authenticates via the signed JWT in the request body, not via cookie.
   "/api/applications/draft/resume-from-token",
-  // short-link redirect that expands /r/<code> to the full /apply?resume=... url
-  "/api/r/",
   "/api/otp/",
   "/api/payments/",
   "/api/pincode",

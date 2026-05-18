@@ -7,14 +7,24 @@ export async function POST(_request: NextRequest) {
     return Response.json({ status: false, message: "Session expired" }, { status: 401 })
   }
 
-  // Hard cap: refuse to extend sessions older than 4 hours from original issue
-  const iat = typeof session.iat === "number" ? session.iat : 0
-  if (Date.now() / 1000 - iat > 4 * 3600) {
+  // Hard cap: refuse to extend sessions older than 4 hours from original issue.
+  //
+  // Note: signToken() calls jose's .setIssuedAt() with no args, which overwrites
+  // any iat in the payload to "now" — so we cannot rely on iat to survive across
+  // refreshes. Carry the initial issue time forward in `original_iat` instead.
+  // Graceful migration: tokens minted before this fix have no original_iat, so
+  // we capture iat the first time we see them here. Worst case is one extra
+  // refresh cycle for an in-flight session.
+  const sessionOriginalIat =
+    typeof session.original_iat === "number" ? session.original_iat : null
+  const sessionIat = typeof session.iat === "number" ? session.iat : Math.floor(Date.now() / 1000)
+  const originalIat = sessionOriginalIat ?? sessionIat
+  if (Date.now() / 1000 - originalIat > 4 * 3600) {
     return Response.json({ status: false, message: "Session too old. Please re-verify." }, { status: 401 })
   }
 
   const token = await signToken(
-    { sub: session.sub, email: session.email, role: "member", iat },
+    { sub: session.sub, email: session.email, role: "member", original_iat: originalIat },
     "1h"
   )
   await setMemberCookie(token)

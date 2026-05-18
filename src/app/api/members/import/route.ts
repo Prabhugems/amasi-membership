@@ -167,7 +167,6 @@ export async function POST(request: NextRequest) {
         joining_date: row.joining_date || null,
         pg_degree: row.pg_degree || null,
         mci_council_number: row.mci_council_number || null,
-        is_active: row.is_active ? row.is_active.toLowerCase() === "true" : true,
         status: "active",
       })
     }

@@ -24,6 +24,10 @@
     {
       "path": "/api/cron/cleanup-drafts",
       "schedule": "35 3 * * *"
+    },
+    {
+      "path": "/api/cron/paid-but-not-submitted",
+      "schedule": "0 * * * *"
     }
   ]
 }

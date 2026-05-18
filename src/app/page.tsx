@@ -84,7 +84,11 @@ interface DashboardData {
     email: HealthStatus
     razorpay: HealthStatus
     webhooks: HealthStatus
+    email_delivery_24h: HealthStatus
+    ocr_success_24h: HealthStatus
+    drafts_stuck_24h: HealthStatus
   }
+  systemHealthLabels?: Partial<Record<SystemHealthKey, string>>
 
   paymentOnHoldCount: number
 }
@@ -329,7 +333,13 @@ export default function DashboardPage() {
           }
           contextLine={stats ? undefined : "Loading dashboard…"}
         >
-          {stats && <SystemHealth health={stats.systemHealth} onPillClick={handleHealthPillClick} />}
+          {stats && (
+            <SystemHealth
+              health={stats.systemHealth}
+              labels={stats.systemHealthLabels}
+              onPillClick={handleHealthPillClick}
+            />
+          )}
         </DashboardHeader>
       </div>
 

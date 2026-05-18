@@ -167,6 +167,9 @@ export async function GET(request: Request) {
       approvalTimesSparklineRes,
       rangeApplicationsRes,
       nmcRecentRes,
+      emailEventsRes,
+      ocrEventsRes,
+      stuckDraftsRes,
     ] = await Promise.all([
       // Total members count (now)
       supabase.from("members").select("*", { count: "exact", head: true }),
@@ -333,6 +336,28 @@ export async function GET(request: Request) {
         .select("nmc_verification, updated_at")
         .gte("updated_at", twentyFourHoursAgoIso)
         .not("nmc_verification", "is", null),
+
+      // Email delivery events in last 24h (written by /api/webhooks/resend)
+      supabase
+        .from("application_step_events")
+        .select("event_type")
+        .in("event_type", ["email_delivered", "email_bounced", "email_complained"])
+        .gte("created_at", twentyFourHoursAgoIso),
+
+      // OCR doc_upload events in last 24h for success-rate heuristic
+      supabase
+        .from("application_step_events")
+        .select("status")
+        .eq("event_type", "doc_upload")
+        .gte("created_at", twentyFourHoursAgoIso),
+
+      // Drafts stuck >24h (in_progress or stuck, not deleted)
+      supabase
+        .from("draft_applications")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["in_progress", "stuck"])
+        .lt("updated_at", twentyFourHoursAgoIso)
+        .is("deleted_at", null),
     ])
 
     // Members by type — from parallel count queries (no 1000-row cap)
@@ -407,9 +432,9 @@ export async function GET(request: Request) {
       for (const r of rows) s += Number(r.amount) || 0
       return s
     }
-    const revenueAllTime = sumAmount(totalPaymentsAllRes.data as any)
-    const revenueThisMonth = sumAmount(paymentsThisMonthRes.data as any)
-    const revenueLastMonth = sumAmount(paymentsLastMonthRes.data as any)
+    const revenueAllTime = sumAmount(totalPaymentsAllRes.data as Array<{ amount: unknown }>)
+    const revenueThisMonth = sumAmount(paymentsThisMonthRes.data as Array<{ amount: unknown }>)
+    const revenueLastMonth = sumAmount(paymentsLastMonthRes.data as Array<{ amount: unknown }>)
     const revenueDelta = revenueThisMonth - revenueLastMonth
     const revenueDeltaPct =
       revenueLastMonth > 0
@@ -462,8 +487,12 @@ export async function GET(request: Request) {
       if (n === 0) return 0
       return total / n / (1000 * 60 * 60)
     }
-    const avgApprovalHoursRaw = meanHours(approvalTimesRes.data as any)
-    const avgApprovalHoursPrior = meanHours(approvalTimesPriorRes.data as any)
+    const avgApprovalHoursRaw = meanHours(
+      approvalTimesRes.data as Array<{ created_at: string; updated_at: string | null }>,
+    )
+    const avgApprovalHoursPrior = meanHours(
+      approvalTimesPriorRes.data as Array<{ created_at: string; updated_at: string | null }>,
+    )
     const avgApprovalHours = Math.round(avgApprovalHoursRaw * 10) / 10
     // Lower is better → positive = improvement (current < prior)
     const approvalDelta = avgApprovalHoursRaw - avgApprovalHoursPrior
@@ -581,8 +610,9 @@ export async function GET(request: Request) {
     })
 
     // Recent applications — parse AI score + NMC
-    const recentApplications = (recentApplicationsRes.data || []).map(
-      (row: any) => ({
+    const recentApplications = (
+      recentApplicationsRes.data as Array<Record<string, unknown>> | null ?? []
+    ).map((row) => ({
         id: row.id,
         reference_number: row.reference_number,
         name: row.name,
@@ -626,12 +656,55 @@ export async function GET(request: Request) {
       nmcHealth = "degraded"
     }
 
+    // Email delivery health — from Resend webhook events
+    const emailEvents = (emailEventsRes.data ?? []) as Array<{ event_type: string }>
+    const emailDelivered = emailEvents.filter((e) => e.event_type === "email_delivered").length
+    const emailBounced = emailEvents.filter((e) => e.event_type === "email_bounced").length
+    const emailComplained = emailEvents.filter((e) => e.event_type === "email_complained").length
+    const emailTotal = emailDelivered + emailBounced + emailComplained
+    let emailDeliveryHealth: "ok" | "degraded" | "down" = "ok"
+    let emailDeliveryLabel = "Email delivery 24h"
+    if (emailTotal > 0) {
+      const pct = Math.round((emailDelivered / emailTotal) * 100)
+      emailDeliveryLabel = `Email delivery ${pct}%`
+      emailDeliveryHealth = pct >= 95 ? "ok" : pct >= 80 ? "degraded" : "down"
+    }
+
+    // OCR success health — from doc_upload events
+    const ocrEvents = (ocrEventsRes.data ?? []) as Array<{ status: string | null }>
+    const ocrExtracted = ocrEvents.filter((e) => e.status === "extracted").length
+    const ocrRejected = ocrEvents.filter((e) => e.status === "rejected").length
+    const ocrAttempts = ocrExtracted + ocrRejected
+    let ocrSuccessHealth: "ok" | "degraded" | "down" = "ok"
+    let ocrSuccessLabel = "OCR success 24h"
+    if (ocrAttempts > 0) {
+      const pct = Math.round((ocrExtracted / ocrAttempts) * 100)
+      ocrSuccessLabel = `OCR success ${pct}%`
+      ocrSuccessHealth = pct >= 90 ? "ok" : pct >= 70 ? "degraded" : "down"
+    }
+
+    // Stuck drafts health
+    const stuckCount = stuckDraftsRes.count ?? 0
+    const draftsStuckHealth: "ok" | "degraded" | "down" =
+      stuckCount === 0 ? "ok" : stuckCount <= 5 ? "degraded" : "down"
+    const draftsStuckLabel =
+      stuckCount === 0 ? "Drafts stuck >24h" : `${stuckCount} draft${stuckCount === 1 ? "" : "s"} stuck`
+
     // Health checks: basic liveness assumed — implement per-service pings when needed
     const systemHealth = {
       nmc: nmcHealth,
       email: "ok" as const,
       razorpay: "ok" as const,
       webhooks: "ok" as const,
+      email_delivery_24h: emailDeliveryHealth,
+      ocr_success_24h: ocrSuccessHealth,
+      drafts_stuck_24h: draftsStuckHealth,
+    }
+
+    const systemHealthLabels: Partial<Record<string, string>> = {
+      email_delivery_24h: emailDeliveryLabel,
+      ocr_success_24h: ocrSuccessLabel,
+      drafts_stuck_24h: draftsStuckLabel,
     }
 
     return Response.json({
@@ -679,6 +752,7 @@ export async function GET(request: Request) {
 
         // System health
         systemHealth,
+        systemHealthLabels,
 
         // Payment-on-hold: money captured, no application submitted
         paymentOnHoldCount: paymentOnHoldRes.count ?? 0,
@@ -689,7 +763,7 @@ export async function GET(request: Request) {
         approvedThisMonth: approvedThisMonthRes.count ?? 0,
       },
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Dashboard API error:", error)
     return Response.json(
       { status: false, message: "Failed to load dashboard stats" },

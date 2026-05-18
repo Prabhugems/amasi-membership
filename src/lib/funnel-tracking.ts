@@ -9,6 +9,9 @@ export type FunnelEventType =
   | "approved"
   | "rejected"
   | "abandoned"
+  | "email_delivered"
+  | "email_bounced"
+  | "email_complained"
 
 /**
  * Append a row to `application_step_events`. Read-side funnel queries build

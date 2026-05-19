@@ -30,32 +30,46 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Fetch draft application
-    const { data: draft, error: fetchError } = await supabase
+    // Atomic CAS claim: transition payment_on_hold → refund_initiating.
+    // Two simultaneous admin requests will both try this update; only the one
+    // that actually flips the status gets a row back. The second gets null and
+    // returns 409 immediately — no Razorpay call, no double-refund.
+    const { data: claimedDraft, error: claimError } = await supabase
       .from("draft_applications")
-      .select("*")
+      .update({ status: "refund_initiating", updated_at: new Date().toISOString() })
       .eq("id", draftId)
-      .single()
+      .eq("status", "payment_on_hold")
+      .select()
+      .maybeSingle()
 
-    if (fetchError || !draft) {
-      return Response.json({ status: false, message: "Draft application not found" }, { status: 404 })
+    if (claimError) {
+      console.error("Refund CAS claim error:", claimError)
+      return Response.json({ status: false, message: "Failed to claim draft for refund" }, { status: 500 })
     }
 
-    if (draft.status !== "payment_on_hold") {
+    if (!claimedDraft) {
       return Response.json(
-        { status: false, message: `Cannot refund a draft with status "${draft.status}". Expected "payment_on_hold".` },
-        { status: 400 }
+        { status: false, message: "Refund already in progress or not eligible" },
+        { status: 409 }
       )
     }
 
+    const draft = claimedDraft
+
     if (!draft.payment_id) {
+      // Revert claim — no payment to refund
+      await supabase
+        .from("draft_applications")
+        .update({ status: "payment_on_hold", updated_at: new Date().toISOString() })
+        .eq("id", draftId)
       return Response.json(
         { status: false, message: "No payment ID found on this draft application" },
         { status: 400 }
       )
     }
 
-    // Initiate Razorpay refund
+    // Initiate Razorpay refund with idempotency key = draftId to guard against
+    // network retries creating duplicate refunds.
     let refund: any
     try {
       const Razorpay = (await import("razorpay")).default
@@ -64,12 +78,22 @@ export async function POST(request: NextRequest) {
         key_secret: process.env.RAZORPAY_KEY_SECRET!.trim(),
       })
 
-      refund = await (razorpay.payments as any).refund(draft.payment_id, {
-        speed: "normal",
-        notes: { reason: "Incomplete application refund", draft_id: draftId },
-      })
+      refund = await (razorpay.payments as any).refund(
+        draft.payment_id,
+        {
+          speed: "normal",
+          notes: { reason: "Incomplete application refund", draft_id: draftId },
+        },
+        { "X-Razorpay-Idempotency-Key": draftId }
+      )
     } catch (razorpayError: any) {
       console.error("Razorpay refund error:", razorpayError)
+
+      // Revert claim so a future admin retry can re-claim
+      await supabase
+        .from("draft_applications")
+        .update({ status: "payment_on_hold", updated_at: new Date().toISOString() })
+        .eq("id", draftId)
 
       // Log failed attempt to audit
       await logMembershipAuditEvent({
@@ -90,7 +114,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update draft status
+    // Razorpay succeeded — finalize draft status
     const { error: draftUpdateError } = await supabase
       .from("draft_applications")
       .update({ status: "refund_initiated", updated_at: new Date().toISOString() })
@@ -108,17 +132,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update or insert membership_payments
+    // Update membership_payments with refund_id and updated status
     const { data: existingPayment } = await supabase
       .from("membership_payments")
       .select("id")
       .eq("gateway_payment_id", draft.payment_id)
-      .single()
+      .maybeSingle()
 
     if (existingPayment) {
       await supabase
         .from("membership_payments")
-        .update({ status: "refund_initiated", updated_at: new Date().toISOString() })
+        .update({
+          status: "refund_initiated",
+          refund_id: refund.id,
+          updated_at: new Date().toISOString(),
+        })
         .eq("gateway_payment_id", draft.payment_id)
     }
     // If no existing payment record, the refund is tracked via the draft and audit log

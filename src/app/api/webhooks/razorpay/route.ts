@@ -69,7 +69,16 @@ export async function POST(request: NextRequest) {
         return Response.json({ status: "already_processed" })
       }
 
-      // Look up the real member email from the application (if we have a ref number)
+      // Look up the real member email from the application (if we have a ref number).
+      // Three sources, tried in order:
+      //   1. membership_applications.email by reference_number — the canonical source.
+      //   2. payment.email — Razorpay forwards the customer email in the webhook payload;
+      //      reliable for payment-link captures and for the race where the webhook
+      //      arrives before the application row is committed (AMASI-MEMBERSHIP-H,
+      //      2026-05-19: 2 users hit a NOT NULL constraint failure on member_email).
+      //   3. Placeholder — better to record the payment with a synthetic email than
+      //      to fail the insert and lose the row entirely. Admin can re-link later
+      //      from the gateway_payment_id (the Karki/Smita backfill pattern).
       let memberEmail: string | null = null
       if (referenceNumber) {
         const { data: appRow } = await supabase
@@ -78,6 +87,12 @@ export async function POST(request: NextRequest) {
           .eq("reference_number", referenceNumber)
           .maybeSingle()
         memberEmail = appRow?.email ?? null
+      }
+      if (!memberEmail && typeof payment.email === "string" && payment.email.trim()) {
+        memberEmail = payment.email.toLowerCase().trim()
+      }
+      if (!memberEmail) {
+        memberEmail = `unknown-${paymentId}@razorpay-webhook.invalid`
       }
 
       // Record payment. `source` was previously included but the column

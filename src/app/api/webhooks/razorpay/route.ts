@@ -175,6 +175,7 @@ export async function POST(request: NextRequest) {
                 "imr_registration_no",
                 "asi_membership_no",
                 "asi_state",
+                "documents",
               ].join(", "),
             )
             .eq("reference_number", referenceNumber)
@@ -228,6 +229,13 @@ export async function POST(request: NextRequest) {
                 asiMembershipNo: (row.asi_membership_no as string | null) ?? null,
                 asiState: (row.asi_state as string | null) ?? null,
                 reviewNotes: `Auto-approved via webhook recovery — AI score ${score}% on payment capture.`,
+                profilePhoto: (row.documents as any)?.photo?.fileUrl || null,
+                mciCertificateUrl: (row.documents as any)?.mci_certificate?.fileUrl || null,
+                pgDegreeCertificateUrl: (row.documents as any)?.pg_degree_certificate?.fileUrl || (row.documents as any)?.pg_certificate?.fileUrl || null,
+                asiMemberCertificateUrl: (row.documents as any)?.asi_member_certificate?.fileUrl || (row.documents as any)?.asi_certificate?.fileUrl || null,
+                mbbsDegreeCertificateUrl: (row.documents as any)?.mbbs_degree_certificate?.fileUrl || null,
+                letterHodUrl: (row.documents as any)?.letter_hod?.fileUrl || null,
+                activeLicenseUrl: (row.documents as any)?.active_license?.fileUrl || null,
               })
 
               if (result.success) {

@@ -53,6 +53,31 @@ export async function POST(request: NextRequest) {
     // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
 
+    // Atomic CAS claim: prevent two admins approving the same application
+    // concurrently. Without this, both would call next_amasi_number() and one
+    // would burn a sequence number without ever creating a member row (the
+    // loser hits the email unique constraint). This mirrors the same pattern in
+    // src/lib/auto-approval.ts ("Atomic claim" comment).
+    const priorStatus = app.status
+    const { data: claimed, error: claimError } = await supabase
+      .from("membership_applications")
+      .update({ status: "approving", updated_at: new Date().toISOString() })
+      .in("status", ["submitted", "pending_review", "ai_approved"])
+      .eq("id", applicationId)
+      .select("status")
+      .maybeSingle()
+
+    if (claimError) {
+      console.error("Approve CAS claim error:", claimError)
+      Sentry.captureException(claimError, { tags: { flow: "application_approve" }, extra: { applicationId } })
+      return Response.json({ status: false, message: "Failed to claim application for approval" }, { status: 500 })
+    }
+
+    if (!claimed) {
+      // Another admin is already approving this application
+      return Response.json({ success: true, message: "Application already being approved" })
+    }
+
     // Idempotency guard: when an application is approved, bumped back to
     // need_clarification, then approved again, member_id and assigned_amasi_number
     // are already set and a members row already exists. Re-running the insert
@@ -107,6 +132,11 @@ export async function POST(request: NextRequest) {
         // Get next AMASI number atomically via sequence
         const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
         if (seqError || !seqNum) {
+          // Revert CAS claim so a retry can re-claim
+          await supabase
+            .from("membership_applications")
+            .update({ status: priorStatus, updated_at: new Date().toISOString() })
+            .eq("id", applicationId)
           return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
         }
         nextAmasiNumber = seqNum
@@ -187,6 +217,11 @@ export async function POST(request: NextRequest) {
 
       if (insertError) {
         console.error("Member insert error:", insertError)
+        // Revert CAS claim so a retry can re-claim
+        await supabase
+          .from("membership_applications")
+          .update({ status: priorStatus, updated_at: new Date().toISOString() })
+          .eq("id", applicationId)
         return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
       }
     }

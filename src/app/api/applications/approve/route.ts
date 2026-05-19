@@ -8,6 +8,7 @@ import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
+import { normalizeEmail } from "@/lib/normalize-email"
 
 // Resend + WhatsApp + Zoho token fetch + listsubscribe in one request.
 export const maxDuration = 30
@@ -46,8 +47,36 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Already approved" }, { status: 400 })
     }
 
+    // Normalize email before any writes
+    const appEmail = normalizeEmail(app.email || "")
+
     // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
+
+    // Atomic CAS claim: prevent two admins approving the same application
+    // concurrently. Without this, both would call next_amasi_number() and one
+    // would burn a sequence number without ever creating a member row (the
+    // loser hits the email unique constraint). This mirrors the same pattern in
+    // src/lib/auto-approval.ts ("Atomic claim" comment).
+    const priorStatus = app.status
+    const { data: claimed, error: claimError } = await supabase
+      .from("membership_applications")
+      .update({ status: "approving", updated_at: new Date().toISOString() })
+      .in("status", ["submitted", "pending_review", "ai_approved"])
+      .eq("id", applicationId)
+      .select("status")
+      .maybeSingle()
+
+    if (claimError) {
+      console.error("Approve CAS claim error:", claimError)
+      Sentry.captureException(claimError, { tags: { flow: "application_approve" }, extra: { applicationId } })
+      return Response.json({ status: false, message: "Failed to claim application for approval" }, { status: 500 })
+    }
+
+    if (!claimed) {
+      // Another admin is already approving this application
+      return Response.json({ success: true, message: "Application already being approved" })
+    }
 
     // Idempotency guard: when an application is approved, bumped back to
     // need_clarification, then approved again, member_id and assigned_amasi_number
@@ -103,6 +132,11 @@ export async function POST(request: NextRequest) {
         // Get next AMASI number atomically via sequence
         const { data: seqNum, error: seqError } = await supabase.rpc("next_amasi_number")
         if (seqError || !seqNum) {
+          // Revert CAS claim so a retry can re-claim
+          await supabase
+            .from("membership_applications")
+            .update({ status: priorStatus, updated_at: new Date().toISOString() })
+            .eq("id", applicationId)
           return Response.json({ status: false, message: "Failed to assign membership number" }, { status: 500 })
         }
         nextAmasiNumber = seqNum
@@ -115,7 +149,7 @@ export async function POST(request: NextRequest) {
         first_name: app.first_name,
         middle_name: app.middle_name,
         last_name: app.last_name,
-        email: app.email,
+        email: appEmail,
         phone: app.phone || null,
         mobile_code: app.mobile_code,
         membership_type: app.membership_type,
@@ -183,6 +217,11 @@ export async function POST(request: NextRequest) {
 
       if (insertError) {
         console.error("Member insert error:", insertError)
+        // Revert CAS claim so a retry can re-claim
+        await supabase
+          .from("membership_applications")
+          .update({ status: priorStatus, updated_at: new Date().toISOString() })
+          .eq("id", applicationId)
         return Response.json({ status: false, message: "Failed to create member record" }, { status: 500 })
       }
     }
@@ -220,7 +259,7 @@ export async function POST(request: NextRequest) {
 
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
-        to: app.email,
+        to: appEmail,
         subject: `Welcome to AMASI — Membership #${nextAmasiNumber}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
@@ -273,7 +312,7 @@ export async function POST(request: NextRequest) {
               listkey: listKey,
               resfmt: "JSON",
               contactinfo: JSON.stringify({
-                "Contact Email": app.email,
+                "Contact Email": appEmail,
                 "First Name": app.first_name || "",
                 "Last Name": app.last_name || "",
               }),

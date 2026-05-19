@@ -175,7 +175,7 @@ export async function autoApproveApplication(
   const { data: priorMember } = await supabase
     .from("members")
     .select("amasi_number")
-    .eq("email", input.email)
+    .ilike("email", input.email)
     .maybeSingle()
 
   if (priorMember && typeof priorMember.amasi_number === "number") {

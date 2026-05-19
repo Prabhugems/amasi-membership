@@ -15,6 +15,7 @@ import {
 } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
 import { escapeHtml } from "@/lib/html-escape"
+import { normalizeEmail } from "@/lib/normalize-email"
 
 // AI scoring + auto-approval + admin email + WhatsApp + Zoho in one request.
 export const maxDuration = 60
@@ -102,6 +103,11 @@ export async function POST(request: NextRequest) {
 
     if (!formData || !referenceNumber) {
       return Response.json({ status: false, message: "Missing data" }, { status: 400 })
+    }
+
+    // Normalize email casing before any DB reads/writes
+    if (formData.email) {
+      formData.email = normalizeEmail(formData.email)
     }
 
     const supabase = createAdminClient()

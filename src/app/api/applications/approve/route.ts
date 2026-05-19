@@ -8,6 +8,7 @@ import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
+import { normalizeEmail } from "@/lib/normalize-email"
 
 // Resend + WhatsApp + Zoho token fetch + listsubscribe in one request.
 export const maxDuration = 30
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
     if (app.status === "approved") {
       return Response.json({ status: false, message: "Already approved" }, { status: 400 })
     }
+
+    // Normalize email before any writes
+    const appEmail = normalizeEmail(app.email || "")
 
     // Create member record with retry loop for AMASI number race condition (Bug 1)
     const fullName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name || "Member"
@@ -115,7 +119,7 @@ export async function POST(request: NextRequest) {
         first_name: app.first_name,
         middle_name: app.middle_name,
         last_name: app.last_name,
-        email: app.email,
+        email: appEmail,
         phone: app.phone || null,
         mobile_code: app.mobile_code,
         membership_type: app.membership_type,
@@ -220,7 +224,7 @@ export async function POST(request: NextRequest) {
 
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
-        to: app.email,
+        to: appEmail,
         subject: `Welcome to AMASI — Membership #${nextAmasiNumber}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
@@ -273,7 +277,7 @@ export async function POST(request: NextRequest) {
               listkey: listKey,
               resfmt: "JSON",
               contactinfo: JSON.stringify({
-                "Contact Email": app.email,
+                "Contact Email": appEmail,
                 "First Name": app.first_name || "",
                 "Last Name": app.last_name || "",
               }),

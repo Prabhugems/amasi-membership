@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: `Invalid amount for ${membershipType} membership. Expected ${expectedFee.amount}` }, { status: 400 })
     }
 
-    const expectedCurrency = expectedFee.currency
-    if (currency && currency !== expectedCurrency) {
-      return Response.json({ status: false, message: `Invalid currency for ${membershipType}. Expected ${expectedCurrency}` }, { status: 400 })
+    // Validate client-supplied currency if provided; server value always wins.
+    if (currency && currency !== expectedFee.currency) {
+      return Response.json({ status: false, message: `Invalid currency for ${membershipType}. Expected ${expectedFee.currency}` }, { status: 400 })
     }
 
     // Document gate + duplicate-payment guard. Both require email; a missing
@@ -155,9 +155,15 @@ export async function POST(request: NextRequest) {
     const PROCESSING_FEE = isILM ? 0 : (Number(process.env.PROCESSING_FEE_INR) || 100)
     const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
 
+    // Use server-determined currency — never trust the client value.
+    // Without this, an ILM applicant who omits `currency` would get an INR
+    // order (the `currency || "INR"` default) instead of USD, and Razorpay
+    // would process USD cents as INR paise.
+    const orderCurrency = expectedFee.currency
+
     const orderPayload: Record<string, any> = {
       amount: Math.round(amount * 100), // Razorpay expects paise/cents
-      currency: currency || "INR",
+      currency: orderCurrency,
       receipt: referenceNumber,
       partial_payment: false,
       notes: {

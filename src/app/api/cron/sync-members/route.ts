@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { createAdminClient } from "@/lib/supabase"
 
 // Loops up to 100 external HTTP calls to application.amasi.org.
@@ -143,6 +144,13 @@ export async function GET(request: Request) {
         record.name = name || "Unknown"
         record.email = d.email || `member${num}@amasi.org`
         record.status = "active"
+        // Without these the column-no-default schema gives us NULL — caused
+        // the 98 null-id legacy cohort that broke every flow joining via
+        // members.id (signed-url, members/upload, members/{id}/update).
+        record.id = randomUUID()
+        const nowIso = new Date().toISOString()
+        record.created_at = nowIso
+        record.updated_at = nowIso
 
         const { error } = await supabase.from("members").insert(record)
         if (error) {

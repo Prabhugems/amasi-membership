@@ -764,9 +764,11 @@ export default function PendingPage() {
               data-app-card
               className={`row-glow transition-all hover:shadow-md ${borderClass} ${isFocused ? "ring-2 ring-primary/40" : ""} ${isSelected ? "row-active bg-primary/[0.02]" : ""}`}
             >
-              <CardContent className="p-5">
-                {/* Summary row */}
-                <div className="flex items-center gap-4">
+              <CardContent className="p-4 sm:p-5">
+                {/* Summary row — wraps to two lines on narrow screens so the
+                    action buttons drop below the name/info block instead of
+                    pushing past the card edge. */}
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                   {/* Checkbox */}
                   {isActionable(app.status) && (
                     <button
@@ -786,9 +788,9 @@ export default function PendingPage() {
                     </AvatarFallback>
                   </Avatar>
 
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 basis-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-bold text-sm">{fullName}</p>
+                      <p className="font-bold text-sm break-words">{fullName}</p>
                       <Badge variant={
                         app.status === "approved" || app.status === "ai_approved" ? "success" :
                         app.status === "rejected" || app.status === "documents_unreadable" ? "destructive" :
@@ -805,7 +807,7 @@ export default function PendingPage() {
                       </Badge>
                       {/* Inline AI confidence meter */}
                       {aiScore >= 0 && (
-                        <div className="flex items-center gap-1.5 min-w-[100px]">
+                        <div className="flex items-center gap-1.5 min-w-[80px] sm:min-w-[100px]">
                           <Sparkles className={`h-3 w-3 shrink-0 ${
                             aiScore >= 80 ? "text-emerald-500" : aiScore >= 50 ? "text-amber-500" : "text-red-500"
                           }`} />
@@ -870,19 +872,19 @@ export default function PendingPage() {
                       })()}
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground flex-wrap">
-                      <span className="font-medium">{app.email}</span>
+                      <span className="font-medium break-all">{app.email}</span>
                       <span className="text-border">|</span>
                       <span>{app.phone}</span>
                       <span className="text-border">|</span>
                       <span className="font-semibold">{MEMBERSHIP_TYPE_LABELS[app.membership_type] || app.membership_type}</span>
                       <span className="text-border">|</span>
-                      <span className="font-mono">{app.reference_number}</span>
+                      <span className="font-mono whitespace-nowrap">{app.reference_number}</span>
                       <span className="text-border">|</span>
-                      <span>{formatDate(app.created_at)}</span>
+                      <span className="whitespace-nowrap">{formatDate(app.created_at)}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
                     {isActionable(app.status) && (
                       <div className="relative">
                         <Button
@@ -1026,7 +1028,7 @@ export default function PendingPage() {
                               <img src={profileDoc?.fileUrl || profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
                             </button>
                           )}
-                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">
                             <div>
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Full Name</span>
                               <p className="font-semibold">{fullName}</p>
@@ -1077,7 +1079,7 @@ export default function PendingPage() {
                           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                             <Stethoscope className="h-3.5 w-3.5" /> Medical Registration
                           </p>
-                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
                             <div>
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">MCI / Council No</span>
                               <p className="font-semibold">{app.mci_council_number || "N/A"}</p>

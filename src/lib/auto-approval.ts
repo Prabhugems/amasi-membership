@@ -189,6 +189,8 @@ export async function autoApproveApplication(
         assigned_amasi_number: priorMember.amasi_number,
         reviewed_at: new Date().toISOString(),
         review_notes: input.reviewNotes,
+        needs_manual_review: false,
+        manual_review_reason: null,
       })
       .eq("id", input.applicationId)
 
@@ -388,6 +390,8 @@ export async function autoApproveApplication(
       reviewed_by: null,
       reviewed_at: new Date().toISOString(),
       review_notes: input.reviewNotes,
+      needs_manual_review: false,
+      manual_review_reason: null,
     })
     .eq("id", input.applicationId)
 

@@ -196,6 +196,12 @@ export async function POST(request: NextRequest) {
         reviewed_at: new Date().toISOString(),
         review_notes: notes || "Manually approved by admin",
         member_id: memberId,
+        // Approval supersedes any AI-flagged review state. Without this, the
+        // /pending queue and dashboard "manual review" counter keep showing
+        // approved rows as still-flagged (106 rows accumulated this way before
+        // the fix). Audit trail lives in ai_decisions.override_reason.
+        needs_manual_review: false,
+        manual_review_reason: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)

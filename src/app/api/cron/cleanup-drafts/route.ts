@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
@@ -208,15 +209,13 @@ export async function GET(request: Request) {
         planAction(draft, "send_reminder_18h", why)
         continue
       }
-      // Update reminder_sent_at FIRST (so the row is excluded from future
-      // reminder picks even if the email send fails or we skip the address).
-      await supabase
-        .from("draft_applications")
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq("id", draft.id)
-      // Skip the email send for excluded addresses (test/internal) but keep
-      // the state change above so the cron doesn't re-pick this row each hour.
+      // Skip the email send for excluded addresses (test/internal). Mark
+      // reminder_sent_at so the row drops out of future picks; no send needed.
       if (isExcludedEmail(draft.email)) {
+        await supabase
+          .from("draft_applications")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", draft.id)
         await logMembershipAuditEvent({
           action: "draft_reminder_skipped_excluded",
           entityType: "draft_application",
@@ -243,6 +242,10 @@ export async function GET(request: Request) {
         </p>
         `,
       )
+      // Send-then-update. Setting reminder_sent_at only after a successful
+      // send means transient Resend failures get re-picked next run (still
+      // capped by the broader retry budget upstream). The Sentry capture
+      // gives loud visibility for what used to be silent loss.
       try {
         await resend!.emails.send({
           from: fromEmail,
@@ -250,9 +253,17 @@ export async function GET(request: Request) {
           subject: "Complete your AMASI membership application",
           html,
         })
+        await supabase
+          .from("draft_applications")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", draft.id)
         summary.reminders_sent++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] reminder email ${draft.email}:`, errMessage(err))
+        Sentry.captureException(err, {
+          tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email" },
+          extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
+        })
       }
     }
 

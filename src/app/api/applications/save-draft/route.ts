@@ -14,12 +14,7 @@ async function verifyMemberSession(email: string): Promise<boolean> {
 
 export async function PUT(request: NextRequest) {
   try {
-    // Rate limit: 30 requests per 15 minutes per IP
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = await checkRateLimit(`save-draft:${ip}`, 60, 15 * 60 * 1000)
-    if (!rl.allowed) {
-      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
-    }
 
     const body = await request.json()
     const { email, current_step, step_data, payment_order_id, payment_id, lastUpdatedAt } = body
@@ -43,6 +38,16 @@ export async function PUT(request: NextRequest) {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
+
+    // Rate limit per (ip, email). Per-IP-only previously bucketed every
+    // hospital NAT user together — five colleagues filling apps from the
+    // same WAN tripped each other's 429s during AMASICON. Tuple keying
+    // gives each applicant their own budget while still throttling abuse
+    // (session check above means only OTP-verified emails reach this).
+    const rl = await checkRateLimit(`save-draft:${ip}:${normalizedEmail}`, 60, 15 * 60 * 1000)
+    if (!rl.allowed) {
+      return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
+    }
 
     // Check if draft exists
     const { data: existing } = await supabase

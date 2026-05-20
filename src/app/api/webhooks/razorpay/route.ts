@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
           .update({
             payment_status: "paid",
             payment_id: paymentId,
+            payment_amount: amount,
             updated_at: new Date().toISOString(),
           })
           .eq("reference_number", referenceNumber)

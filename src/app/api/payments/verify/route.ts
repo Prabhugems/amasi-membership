@@ -273,6 +273,7 @@ export async function POST(request: NextRequest) {
         .update({
           payment_status: "paid",
           payment_id: razorpay_payment_id,
+          payment_amount: amount || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", applicationId)

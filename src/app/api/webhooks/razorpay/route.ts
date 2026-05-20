@@ -253,6 +253,51 @@ export async function POST(request: NextRequest) {
                 console.log(
                   `[webhook] recovery: auto-approved ${referenceNumber} → AMASI #${result.amasiNumber}`,
                 )
+                // Defense in depth: autoApproveApplication can return
+                // success=true even when its application-row UPDATE failed
+                // (the member exists, helper treats post-member-insert
+                // failures as soft per auto-approval.ts:383-403). If a
+                // Razorpay retry re-runs this branch the helper would
+                // short-circuit on existing-member guards, leaving the
+                // app row permanently stuck at status='submitted'.
+                // Re-verify and force the link if needed — idempotent.
+                const { data: postApp } = await supabase
+                  .from("membership_applications")
+                  .select("status, member_id, assigned_amasi_number")
+                  .eq("id", row.id as string)
+                  .maybeSingle()
+                if (postApp && postApp.status === "submitted" && result.amasiNumber) {
+                  const { data: memberRow } = await supabase
+                    .from("members")
+                    .select("id")
+                    .eq("amasi_number", result.amasiNumber)
+                    .maybeSingle()
+                  if (memberRow?.id) {
+                    const { error: forceUpdateErr } = await supabase
+                      .from("membership_applications")
+                      .update({
+                        status: "approved",
+                        assigned_amasi_number: result.amasiNumber,
+                        member_id: memberRow.id,
+                        reviewed_at: new Date().toISOString(),
+                        review_notes: "Auto-approved via webhook recovery (force-relink after soft-fail).",
+                        needs_manual_review: false,
+                        manual_review_reason: null,
+                        ai_verified: true,
+                      })
+                      .eq("id", row.id as string)
+                      .eq("status", "submitted")
+                    if (forceUpdateErr) {
+                      const Sentry = await import("@sentry/nextjs")
+                      Sentry.captureException(forceUpdateErr, {
+                        tags: { route: "webhooks/razorpay", op: "recovery-force-relink" },
+                        extra: { referenceNumber, amasiNumber: result.amasiNumber },
+                      })
+                    } else {
+                      console.log(`[webhook] recovery: force-relinked ${referenceNumber} → AMASI #${result.amasiNumber}`)
+                    }
+                  }
+                }
               } else {
                 // Helper has already logged. We intentionally do NOT mutate
                 // the application or notify on failure here — the main

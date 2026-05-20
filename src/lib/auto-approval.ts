@@ -317,11 +317,14 @@ export async function autoApproveApplication(
   // 2. Create member row
   const fullName = [input.firstName, input.middleName, input.lastName].filter(Boolean).join(" ")
   const memberId = crypto.randomUUID()
-  const today = new Date().toISOString().split("T")[0]
+  const nowIso = new Date().toISOString()
+  const today = nowIso.split("T")[0]
 
   const { error: memberInsertError } = await supabase.from("members").insert({
     id: memberId,
     amasi_number: amasiNumber,
+    created_at: nowIso,
+    updated_at: nowIso,
     name: fullName,
     first_name: input.firstName,
     middle_name: input.middleName,

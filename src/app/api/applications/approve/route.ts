@@ -108,9 +108,12 @@ export async function POST(request: NextRequest) {
         nextAmasiNumber = seqNum
       }
 
+      const nowIso = new Date().toISOString()
       const { error: insertError } = await supabase.from("members").insert({
         id: memberId,
         amasi_number: nextAmasiNumber,
+        created_at: nowIso,
+        updated_at: nowIso,
         name: fullName,
         first_name: app.first_name,
         middle_name: app.middle_name,

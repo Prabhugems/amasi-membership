@@ -8,6 +8,15 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Lock, Mail, Loader2, ShieldCheck, Eye, EyeOff, KeyRound } from "lucide-react"
 
+// Open-redirect guard for ?redirect=. Allow only same-origin paths.
+// Rejects protocol-relative ("//evil.com"), backslash-prefixed
+// ("/\evil.com" — some browsers normalize "\" to "/"), and absolute URLs.
+function safeRedirectPath(value: string | null): string {
+  if (!value || !value.startsWith("/")) return "/"
+  if (value.startsWith("//") || value.startsWith("/\\")) return "/"
+  return value
+}
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -49,8 +58,7 @@ function LoginForm() {
         return
       }
 
-      const redirect = searchParams.get("redirect") || "/"
-      router.push(redirect)
+      router.push(safeRedirectPath(searchParams.get("redirect")))
     } catch {
       setError("Something went wrong. Please try again.")
     } finally {
@@ -77,8 +85,7 @@ function LoginForm() {
         return
       }
 
-      const redirect = searchParams.get("redirect") || "/"
-      router.push(redirect)
+      router.push(safeRedirectPath(searchParams.get("redirect")))
     } catch {
       setError("Something went wrong. Please try again.")
     } finally {

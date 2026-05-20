@@ -174,7 +174,7 @@ export async function autoApproveApplication(
   // new sequence number.
   const { data: priorMember } = await supabase
     .from("members")
-    .select("amasi_number")
+    .select("id, amasi_number")
     .eq("email", input.email)
     .maybeSingle()
 
@@ -187,6 +187,7 @@ export async function autoApproveApplication(
       .update({
         status: "approved",
         assigned_amasi_number: priorMember.amasi_number,
+        member_id: priorMember.id,
         reviewed_at: new Date().toISOString(),
         review_notes: input.reviewNotes,
         needs_manual_review: false,
@@ -390,6 +391,7 @@ export async function autoApproveApplication(
     .update({
       status: "approved",
       assigned_amasi_number: amasiNumber,
+      member_id: memberId,
       reviewed_by: null,
       reviewed_at: new Date().toISOString(),
       review_notes: input.reviewNotes,

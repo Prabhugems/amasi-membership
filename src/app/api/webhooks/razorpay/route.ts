@@ -101,7 +101,10 @@ export async function POST(request: NextRequest) {
       // produced a payment row and needed admin backfill. Standard /apply
       // flow was unaffected because /api/payments/verify writes the row
       // first and the idempotency guard above short-circuits the webhook.
-      const { error: payErr } = await supabase.from("membership_payments").insert({
+      // Upsert (not insert) so a concurrent webhook retry / verify race
+      // is absorbed by the DB unique index on gateway_payment_id.
+      // ignoreDuplicates: true = first writer wins, second is a no-op.
+      const { error: payErr } = await supabase.from("membership_payments").upsert({
         member_email: memberEmail,
         gateway_order_id: orderId,
         gateway_payment_id: paymentId,
@@ -109,7 +112,7 @@ export async function POST(request: NextRequest) {
         status: "paid",
         amount,
         currency: payment.currency || "INR",
-      })
+      }, { onConflict: "gateway_payment_id", ignoreDuplicates: true })
       if (payErr) {
         const Sentry = await import("@sentry/nextjs")
         Sentry.captureException(payErr, {

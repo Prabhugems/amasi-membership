@@ -115,9 +115,11 @@ export async function POST(request: NextRequest) {
       applicationId = app?.id || null
     }
 
-    // Record payment if not already exists
+    // Record payment if not already exists. Upsert (not insert) so the
+    // check-then-write race against the live webhook is absorbed by the
+    // DB unique index on gateway_payment_id.
     if (!existing) {
-      const { error: lookupInsertErr } = await supabase.from("membership_payments").insert({
+      const { error: lookupInsertErr } = await supabase.from("membership_payments").upsert({
         application_id: applicationId,
         member_email: referenceNumber || email || phone || trimmed,
         gateway_order_id: orderId,
@@ -131,7 +133,7 @@ export async function POST(request: NextRequest) {
           note: "Verified via payment lookup",
           total: amountInr,
         },
-      })
+      }, { onConflict: "gateway_payment_id", ignoreDuplicates: true })
       if (lookupInsertErr) {
         const Sentry = await import("@sentry/nextjs")
         Sentry.captureException(lookupInsertErr, {

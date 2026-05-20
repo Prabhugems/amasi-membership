@@ -218,7 +218,10 @@ export async function POST(request: NextRequest) {
 
     // Record payment (or backfill application_id on a webhook-first race).
     if (!skipPaymentInsert) {
-      const { error: insertError } = await supabase.from("membership_payments").insert({
+      // Upsert (not insert) so a concurrent webhook landing first is
+      // absorbed by the DB unique index on gateway_payment_id rather
+      // than this writer hitting a constraint violation.
+      const { error: insertError } = await supabase.from("membership_payments").upsert({
         application_id: applicationId || null,
         member_email: email || referenceNumber, // using as reference tracker
         gateway_order_id: razorpay_order_id,
@@ -237,7 +240,7 @@ export async function POST(request: NextRequest) {
           note: PROCESSING_FEE > 0 ? "₹100 processing fee (incl GST) to be settled to Events 360" : "No processing fee for ILM",
           applicant_email: email || null,
         },
-      })
+      }, { onConflict: "gateway_payment_id", ignoreDuplicates: true })
 
       if (insertError) {
         console.error("Payment insert error:", insertError)

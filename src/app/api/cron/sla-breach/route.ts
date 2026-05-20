@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error("SLA breach cron error:", error.message)
+    Sentry.captureException(error, { tags: { component: "cron", cron: "sla-breach" } })
     return Response.json({ error: error.message }, { status: 500 })
   }
 

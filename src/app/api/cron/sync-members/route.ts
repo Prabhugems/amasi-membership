@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
+import { logMembershipAuditEvent } from "@/lib/audit-log"
 
 // Loops up to 100 external HTTP calls to application.amasi.org.
 export const maxDuration = 60
@@ -155,6 +157,7 @@ export async function GET(request: Request) {
         const { error } = await supabase.from("members").insert(record)
         if (error) {
           console.error(`Sync: failed #${num}:`, error.message)
+          Sentry.captureException(error, { tags: { component: "cron", cron: "sync-members", op: "member-insert" }, extra: { amasi_number: num } })
         } else {
           imported.push({ amasi: num, name, email: d.email || "" })
         }
@@ -162,11 +165,28 @@ export async function GET(request: Request) {
         consecutiveNotFound++
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`Sync: error fetching #${num}:`, msg)
+        Sentry.captureException(err, { tags: { component: "cron", cron: "sync-members", op: "legacy-fetch" }, extra: { amasi_number: num } })
       }
     }
 
     const message = `Synced ${imported.length} new members (checked ${currentMax + 1} to ${currentMax + 100})`
     console.log(`Sync: ${message}`)
+
+    // Heartbeat for observability — without this the cron is invisible
+    // (no admin audit entries existed despite running every 6h for a month).
+    await logMembershipAuditEvent({
+      action: "cron_sync_members_ran",
+      entityType: "cron",
+      entityId: `sync-members-${Date.now()}`,
+      performedBy: "system:cron-sync-members",
+      newData: {
+        current_max: currentMax,
+        checked_from: currentMax + 1,
+        checked_to: currentMax + 100,
+        imported_count: imported.length,
+        not_found_count: notFound.length,
+      },
+    }, supabase).catch(err => console.error("Sync: audit log failed:", err))
 
     return Response.json({
       status: true,
@@ -177,6 +197,7 @@ export async function GET(request: Request) {
     })
   } catch (error: unknown) {
     console.error("Sync error:", error)
+    Sentry.captureException(error, { tags: { component: "cron", cron: "sync-members", op: "outer" } })
     return Response.json({ error: "Sync failed" }, { status: 500 })
   }
 }

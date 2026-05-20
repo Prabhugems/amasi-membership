@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
         status: newStatus,
         review_notes: message,
         reviewed_at: new Date().toISOString(),
+        needs_manual_review: false,
+        manual_review_reason: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)

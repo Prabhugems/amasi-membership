@@ -205,6 +205,7 @@ export async function POST(request: NextRequest) {
         // the fix). Audit trail lives in ai_decisions.override_reason.
         needs_manual_review: false,
         manual_review_reason: null,
+        ai_verified: true,
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)

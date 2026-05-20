@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
         status: "rejected",
         reviewed_at: new Date().toISOString(),
         review_notes: reason,
+        needs_manual_review: false,
+        manual_review_reason: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", applicationId)

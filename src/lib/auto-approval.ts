@@ -192,6 +192,7 @@ export async function autoApproveApplication(
         review_notes: input.reviewNotes,
         needs_manual_review: false,
         manual_review_reason: null,
+        ai_verified: true,
       })
       .eq("id", input.applicationId)
 
@@ -397,6 +398,7 @@ export async function autoApproveApplication(
       review_notes: input.reviewNotes,
       needs_manual_review: false,
       manual_review_reason: null,
+      ai_verified: true,
     })
     .eq("id", input.applicationId)
 

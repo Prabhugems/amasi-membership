@@ -1,6 +1,35 @@
 import { createAdminClient } from "@/lib/supabase"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+// Mask an email so identification is preserved (first 3 chars + domain)
+// but the full address is not retrievable. "naveen@gmail.com" → "nav***@gmail.com".
+function maskEmail(value: string): string {
+  const at = value.indexOf("@")
+  if (at < 1) return "***"
+  const local = value.slice(0, at)
+  const domain = value.slice(at)
+  return `${local.slice(0, Math.min(3, local.length))}***${domain}`
+}
+
+// Recursively scrub PII (currently: email-shaped strings under any key
+// named "email" or under "applicant_email"/"member_email") from a
+// payload before it's persisted to membership_audit_log.new_data.
+// One choke point is much safer than touching every call site.
+function scrubAuditPayload(value: unknown): unknown {
+  if (value == null) return value
+  if (Array.isArray(value)) return value.map(scrubAuditPayload)
+  if (typeof value !== "object") return value
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string" && /^(email|member_email|applicant_email|to|from)$/i.test(k) && v.includes("@")) {
+      out[k] = maskEmail(v)
+    } else {
+      out[k] = scrubAuditPayload(v)
+    }
+  }
+  return out
+}
+
 /**
  * Write a row to `membership_audit_log`. Use this for system/cron/member-
  * lifecycle events (campaign sent, refund initiated, draft expired, etc.).
@@ -30,8 +59,8 @@ export async function logMembershipAuditEvent(params: {
       action: params.action,
       entity_type: params.entityType,
       entity_id: params.entityId,
-      old_data: params.oldData ?? null,
-      new_data: params.newData ?? null,
+      old_data: params.oldData ? scrubAuditPayload(params.oldData) : null,
+      new_data: params.newData ? scrubAuditPayload(params.newData) : null,
       performed_by: params.performedBy ?? null,
       ip_address: params.ipAddress ?? null,
     })

@@ -221,14 +221,18 @@ export default function PendingPage() {
   })
 
   const approveMutation = useMutation({
-    mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
+    mutationFn: async ({ id, notes, force }: { id: string; notes: string; force?: boolean }) => {
       const res = await fetch("/api/applications/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applicationId: id, notes }),
+        body: JSON.stringify({ applicationId: id, notes, force: force === true }),
       })
-      if (!res.ok) throw new Error("Request failed")
-      return res.json()
+      // Surface server-side error message (the docs-missing 400 from the
+      // approve gate carries a specific reason in `message`) instead of
+      // collapsing every non-ok to a generic "Request failed".
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.message || "Request failed")
+      return json
     },
     onSuccess: (data) => {
       if (data.status) {
@@ -1534,7 +1538,25 @@ export default function PendingPage() {
                         <Button
                           size="sm"
                           className="bg-emerald-600 hover:bg-emerald-700 shadow-sm"
-                          onClick={() => approveMutation.mutate({ id: app.id, notes: approveNotes || "Manually approved" })}
+                          onClick={() => {
+                            // Confirm before approving anything the system has
+                            // flagged for manual review (failed OCR, missing
+                            // docs, name mismatch, user-bypass etc.). Native
+                            // window.confirm is enough — this is a guardrail,
+                            // not a frequent action.
+                            if (app.needs_manual_review) {
+                              const ok = window.confirm(
+                                "This application is flagged for manual review.\n\n" +
+                                  "Please confirm you have:\n" +
+                                  "  • Reviewed all uploaded documents\n" +
+                                  "  • Verified the applicant's eligibility\n" +
+                                  "  • Read the review reason on this card\n\n" +
+                                  "Proceed with approval?"
+                              )
+                              if (!ok) return
+                            }
+                            approveMutation.mutate({ id: app.id, notes: approveNotes || "Manually approved" })
+                          }}
                           disabled={approveMutation.isPending}
                         >
                           {approveMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1.5" />}

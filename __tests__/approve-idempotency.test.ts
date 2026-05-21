@@ -146,9 +146,16 @@ const BASE_APP: Record<string, unknown> = {
   imr_registration_no: null,
   asi_membership_no: "ASI-123",
   asi_state: "UP",
+  // Fixture reflects a fully-completed LM application. The document-validation
+  // gate added in this same change requires every required doc to be present
+  // with `status: "extracted"` and a non-empty `fileUrl` (photo is exempt by
+  // canonical name). Required docs for LM: mci_certificate,
+  // pg_degree_certificate, asi_member_certificate.
   documents: {
-    photo: { url: "https://storage.test/photo.jpg", fileUrl: null },
-    mci_certificate: { fileUrl: "https://storage.test/mci.jpg", url: null },
+    photo: { status: "extracted", url: "https://storage.test/photo.jpg", fileUrl: "https://storage.test/photo.jpg" },
+    mci_certificate: { status: "extracted", fileUrl: "https://storage.test/mci.jpg" },
+    pg_degree_certificate: { status: "extracted", fileUrl: "https://storage.test/pg.jpg" },
+    asi_member_certificate: { status: "extracted", fileUrl: "https://storage.test/asi.jpg" },
   },
 }
 

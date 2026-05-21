@@ -8,6 +8,8 @@ import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
+import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
+import { getMembershipType } from "@/lib/membership-types"
 
 // Resend + WhatsApp + Zoho token fetch + listsubscribe in one request.
 export const maxDuration = 30
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest) {
     const session = await getAdminSession()
     if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { applicationId, notes } = await request.json()
+    const { applicationId, notes, force } = await request.json()
 
     if (!applicationId) {
       return Response.json({ status: false, message: "Application ID required" }, { status: 400 })
@@ -44,6 +46,42 @@ export async function POST(request: NextRequest) {
 
     if (app.status === "approved") {
       return Response.json({ status: false, message: "Already approved" }, { status: 400 })
+    }
+
+    // Document-validation gate. Skipped when:
+    //   (a) re-approving an application that already has member_id set — docs
+    //       were validated at the original approval.
+    //   (b) admin explicitly passes force=true (used when the application was
+    //       recovered out of band, e.g. SQL backfill after a dropped Razorpay
+    //       verify-callback, and the admin has verified docs by hand).
+    //
+    // Before this gate, /api/applications/approve happily wrote a members row
+    // with mci_certificate=null / letter_hod=null when docs were missing —
+    // silently creating incomplete member records (the kilroy ACM case,
+    // 2026-05-21).
+    if (!force && !app.member_id) {
+      const membershipType = getMembershipType(app.membership_type)
+      if (!membershipType) {
+        return Response.json(
+          { status: false, message: `Unknown membership type on application: ${app.membership_type}` },
+          { status: 400 }
+        )
+      }
+      const docValidation = validateRequiredDocuments(app.documents || {}, membershipType.requiredDocs)
+      if (!docValidation.valid) {
+        const missingLabels = docValidation.missing.map(lookupDocumentLabel)
+        return Response.json(
+          {
+            status: false,
+            message:
+              `Cannot approve — missing or invalid required documents: ${missingLabels.join(", ")}. ` +
+              `Use "Request Clarification" to ask the applicant for a valid re-upload, or retry with force=true if you have verified the docs out of band.`,
+            missing: docValidation.missing,
+            missingLabels,
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // Create member record with retry loop for AMASI number race condition (Bug 1)

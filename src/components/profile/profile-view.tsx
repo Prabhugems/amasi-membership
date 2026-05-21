@@ -51,7 +51,7 @@ function membershipLabel(type: string | undefined) {
   switch (type) {
     case "LM":  return "Life Member"
     case "ALM": return "Associate Life Member"
-    case "ACM": return "Associate College Member"
+    case "ACM": return "Associate Candidate Member"
     case "ILM": return "International Life Member"
     default:    return type
   }

@@ -1,3 +1,5 @@
+// @auth: public — Sentry SDK smoke test; intentionally open so anyone can
+// confirm the error pipeline is wired up end-to-end.
 import * as Sentry from "@sentry/nextjs"
 
 export async function GET() {

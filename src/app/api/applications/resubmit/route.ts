@@ -1,3 +1,5 @@
+// @auth: public — applicant re-uploads docs after rejection, before approval;
+// applicationId + caller email are matched against the row in the handler.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

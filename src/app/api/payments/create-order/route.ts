@@ -1,3 +1,6 @@
+// @auth: public — applicant creates a Razorpay order during /apply, before
+// approval and before a member session exists. Amount is validated against
+// the server-side MEMBERSHIP_FEES table; rate-limited per IP.
 import { NextRequest } from "next/server"
 import Razorpay from "razorpay"
 import { checkRateLimit } from "@/lib/rate-limit"

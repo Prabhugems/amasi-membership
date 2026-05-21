@@ -1,3 +1,6 @@
+// @auth: public — Zoho OAuth redirect; security is the single-use
+// authorization code exchanged for tokens inline. Callers cannot have an
+// admin cookie at this point in the OAuth dance.
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { exchangeCode } from "@/lib/zoho"

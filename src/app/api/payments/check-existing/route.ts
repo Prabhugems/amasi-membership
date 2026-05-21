@@ -1,3 +1,6 @@
+// @auth: public — applicant checks for a pre-existing payment during /apply
+// before approval; runs post-OTP but before any persistent session. Rate-
+// limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

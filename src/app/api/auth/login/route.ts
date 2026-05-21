@@ -1,3 +1,5 @@
+// @auth: public — issues the admin session itself; cannot require an admin
+// cookie before there is one. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { signToken, setAdminCookie } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"

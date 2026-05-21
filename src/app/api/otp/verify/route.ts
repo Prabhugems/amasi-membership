@@ -1,3 +1,5 @@
+// @auth: public — verifies an email OTP and may issue the member session
+// itself; cannot require a session before there is one. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"

@@ -1,3 +1,6 @@
+// @auth: public — CSAT rating link from email; the csat_token in the URL is
+// the ownership proof (looked up against support_tickets.csat_token). Rate-
+// limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

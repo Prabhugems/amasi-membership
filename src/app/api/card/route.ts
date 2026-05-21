@@ -1,3 +1,5 @@
+// @auth: public — membership card view by AMASI number; rendered into emails
+// and on the public /m/[id] page. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

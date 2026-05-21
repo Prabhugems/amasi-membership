@@ -1,3 +1,5 @@
+// @auth: public — public member directory with PUBLIC_SELECT fields; member
+// session is a soft-auth upgrade to MEMBER_SELECT (logged to directory_access_log).
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

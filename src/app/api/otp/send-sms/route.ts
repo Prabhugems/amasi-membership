@@ -1,3 +1,5 @@
+// @auth: public — issues an SMS OTP; runs before the recipient has any
+// session. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

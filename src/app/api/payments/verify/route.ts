@@ -1,3 +1,7 @@
+// @auth: public — Razorpay client callback after checkout; integrity verified
+// inline via HMAC-SHA256 of "order_id|payment_id" against razorpay_signature
+// using RAZORPAY_KEY_SECRET. No user session required (applicant hasn't been
+// approved yet).
 import { NextRequest } from "next/server"
 import crypto from "crypto"
 import * as Sentry from "@sentry/nextjs"

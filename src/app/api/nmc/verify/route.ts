@@ -1,3 +1,5 @@
+// @auth: public — NMC registration verification during apply flow, before any
+// account exists.
 import { NextRequest } from "next/server"
 import https from "node:https"
 import tls from "node:tls"

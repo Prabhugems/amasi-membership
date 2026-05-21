@@ -1,3 +1,5 @@
+// @auth: public — Apple/Google wallet pass generator keyed by AMASI number;
+// linked from email cards. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

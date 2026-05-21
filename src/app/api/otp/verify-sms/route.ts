@@ -1,3 +1,5 @@
+// @auth: public — verifies an SMS OTP for the apply flow; runs before the
+// applicant has any session. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

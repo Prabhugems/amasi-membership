@@ -1,3 +1,5 @@
+// @auth: public — credential PDF (FMAS/DIPMAS/MMAS/COURSE_CERT) by AMASI
+// number + type; emailed link target. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

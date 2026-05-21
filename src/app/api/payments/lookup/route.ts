@@ -1,3 +1,5 @@
+// @auth: public — applicant looks up their own payment by Razorpay payment ID
+// during /apply, before a session exists; rate-limited 5/15min per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

@@ -1,3 +1,5 @@
+// @auth: public — applicant submits before any account exists; the OTP-verified
+// email + reference number in the body are the integrity check.
 import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"

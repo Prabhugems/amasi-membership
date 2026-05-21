@@ -1,3 +1,5 @@
+// @auth: public — applicant downloads their own payment receipt by payment ID
+// or member_email (emailed link target); rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

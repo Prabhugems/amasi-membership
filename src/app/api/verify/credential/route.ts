@@ -1,3 +1,5 @@
+// @auth: public — public credential verifier (QR scan landing); auth is the
+// signed verify-token in the query string, parsed by readVerifyToken.
 import type { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { readVerifyToken } from "@/lib/credentials/verify-token"

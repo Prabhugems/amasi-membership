@@ -1,3 +1,5 @@
+// @auth: public — issues an email OTP; runs before the recipient has any
+// session. Rate-limited per IP+email to throttle abuse.
 import { NextRequest } from "next/server"
 import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"

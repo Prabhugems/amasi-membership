@@ -1,3 +1,5 @@
+// @auth: public — membership certificate PDF by AMASI number; emailed/printed
+// link target. Rate-limited per IP.
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"

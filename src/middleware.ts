@@ -52,6 +52,10 @@ const PUBLIC_ROUTES = [
   "/card",
   "/profile",
   "/directory",
+  // Provisional Electoral Roll (masked PII) + objection form. The roll API
+  // (/api/electoral-roll/*) is allowlisted below; the admin triage page lives
+  // under /admin/electoral-roll which is auth-gated by default.
+  "/electoral-roll",
   // Sentry SDK tunnel (next.config.ts: tunnelRoute). Client error reports POST
   // here; without this allowlist the middleware redirected to /login (307) and
   // the POST followed into a 405, silently dropping every client-side Sentry
@@ -84,6 +88,9 @@ const PUBLIC_API_ROUTES = [
   "/api/v1/",
   "/api/members/search",
   "/api/directory",
+  // Public electoral roll (masked email/phone) + objection submission.
+  // Admin surface lives under /api/admin/electoral-roll/* (auth-gated).
+  "/api/electoral-roll",
   "/api/members/upload",
   "/api/nmc",
   "/api/webhooks/",
@@ -198,6 +205,14 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
 
   // Allow member update API (needs member auth, not admin)
   if (pathname.match(/^\/api\/members\/[^/]+\/update$/)) {
+    return NextResponse.next()
+  }
+
+  // Allow member clinic + experience APIs — same shape as /update: dynamic
+  // member-id segment, in-handler getMemberSession() + verifyMemberOwnership
+  // IDOR check. Without these, /profile silently renders empty clinic/work
+  // experience cards for non-admin members (the fetches .catch and swallow).
+  if (pathname.match(/^\/api\/members\/[^/]+\/(clinic|experience)$/)) {
     return NextResponse.next()
   }
 

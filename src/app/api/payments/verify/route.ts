@@ -248,6 +248,13 @@ export async function POST(request: NextRequest) {
 
       if (insertError) {
         console.error("Payment insert error:", insertError)
+        // Surface to Sentry so a silently-failing verify doesn't disappear into
+        // logs. Razorpay has the money; our DB doesn't. Triage the orphan via
+        // the reconciliation cron OR manual recovery (kilroy 2026-05-21 case).
+        Sentry.captureException(insertError, {
+          tags: { flow: "payment_verify", op: "membership-payments-insert", severity: "fatal" },
+          extra: { razorpay_payment_id, razorpay_order_id, referenceNumber, applicationId },
+        })
         return Response.json({ status: false, message: "Failed to record payment" }, { status: 500 })
       }
     } else if (existingPayment) {
@@ -286,8 +293,30 @@ export async function POST(request: NextRequest) {
         .eq("id", applicationId)
 
       if (updateError) {
+        // Critical silent-failure case: payment is recorded but the application
+        // stays with payment_status='pending'. Admin sees the applicant in
+        // /pending without the "Payment Received" badge, applicant looks
+        // unpaid. Surface to Sentry so this doesn't sit unnoticed.
         console.error("Application payment status update error:", updateError)
+        Sentry.captureException(updateError, {
+          tags: { flow: "payment_verify", op: "application-payment-status-update", severity: "high" },
+          extra: { razorpay_payment_id, applicationId, referenceNumber },
+        })
       }
+    } else {
+      // No applicationId on a verify call means the client never created an
+      // application row (or lost track of it) before paying. Payment is
+      // recorded but unlinked — the row sits orphan in membership_payments
+      // until the reconciliation cron or a manual recovery picks it up.
+      // This is the dropped-verify-callback pattern from kilroy 2026-05-21.
+      Sentry.captureMessage(
+        "[payments/verify] called without applicationId — payment recorded but unlinked",
+        {
+          level: "warning",
+          tags: { flow: "payment_verify", reason: "missing_application_id" },
+          extra: { razorpay_payment_id, razorpay_order_id, referenceNumber, email },
+        }
+      )
     }
 
     void recordStepEvent({

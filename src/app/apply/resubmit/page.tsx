@@ -15,6 +15,7 @@ import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { INDIAN_STATES } from "@/lib/membership-types"
 import { ProfileOtp } from "@/components/profile/profile-otp"
+import { compressImageIfNeeded } from "@/lib/compress-image"
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -204,6 +205,11 @@ function ResubmitContent() {
   const [application, setApplication] = useState<ApplicationData | null>(null)
   const [errorMessage, setErrorMessage] = useState("")
   const [successMessage, setSuccessMessage] = useState("")
+  // Tracks whether the user has already cleared the initial OTP gate and seen
+  // the editable form. On first OTP verify we re-fetch the full row and show
+  // the form. On a later OTP verify (rare: form was visible >2h, OTP expired)
+  // we re-run performSubmit with the form state the user already typed.
+  const [hasShownForm, setHasShownForm] = useState(false)
 
   const [form, setForm] = useState<FormState>({
     salutation: "", firstName: "", middleName: "", lastName: "",
@@ -221,7 +227,64 @@ function ResubmitContent() {
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
+  /* ---- Pre-fill helper ---- */
+  const prefillFormFromApp = (app: ApplicationData) => {
+    setForm({
+      salutation: app.salutation || "",
+      firstName: app.first_name || "",
+      middleName: app.middle_name || "",
+      lastName: app.last_name || "",
+      fatherName: app.father_name || "",
+      dob: app.date_of_birth || "",
+      gender: app.gender || "",
+      phone: app.phone || "",
+      email: app.email || "",
+      streetLine1: app.street_address_1 || "",
+      streetLine2: app.street_address_2 || "",
+      city: app.city || "",
+      state: app.state || "",
+      pin: app.postal_code || "",
+      country: app.country || "India",
+      pgDegree: app.pg_degree || "",
+      pgCollege: app.pg_college || "",
+      pgUniversity: app.pg_university || "",
+      pgYear: app.pg_year || "",
+      ugCollege: app.ug_college || "",
+      mciCouncilNumber: app.mci_council_number || "",
+      mciCouncilState: app.mci_council_state || "",
+      asiMembershipNo: app.asi_membership_no || "",
+    })
+  }
+
+  /* ---- Re-fetch the full row after OTP, then show the form ---- */
+  const loadFullApplication = async () => {
+    try {
+      const res = await fetch(`/api/applications/status?ref=${encodeURIComponent(ref)}`)
+      const json = await res.json()
+      if (!json.status || !json.data) {
+        setErrorMessage(json.message || "Failed to load your application. Please try again.")
+        setPhase("error")
+        return
+      }
+      const app: ApplicationData = json.data
+      setApplication(app)
+      prefillFormFromApp(app)
+      setHasShownForm(true)
+      setPhase("form")
+    } catch {
+      setErrorMessage("Failed to load application. Please try again later.")
+      setPhase("error")
+    }
+  }
+
   /* ---- Fetch application on mount ---- */
+  // The status API returns a redacted row (status + basic identity only) to
+  // callers without a recent OTP or matching member session. We use that
+  // redacted row to confirm the application exists and is editable, then
+  // require an OTP before showing the form — otherwise the user lands on a
+  // mostly-empty form and gets blocked by required-field validation on a
+  // field they can't see (mci_council_number). If the caller already has a
+  // valid session/OTP, the API returns the full row and we skip OTP.
   useEffect(() => {
     if (!ref) {
       setErrorMessage("No reference number provided. Please use the link from your status page.")
@@ -245,7 +308,7 @@ function ResubmitContent() {
         const app: ApplicationData = json.data
         setApplication(app)
 
-        // Check if the application can be edited
+        // Check if the application can be edited (status is a public field)
         if (!["need_clarification", "resubmit_requested"].includes(app.status)) {
           if (app.status === "approved" || app.status === "ai_approved") {
             setErrorMessage("This application has already been approved. No changes are needed.")
@@ -258,33 +321,19 @@ function ResubmitContent() {
           return
         }
 
-        // Pre-fill form from application data
-        setForm({
-          salutation: app.salutation || "",
-          firstName: app.first_name || "",
-          middleName: app.middle_name || "",
-          lastName: app.last_name || "",
-          fatherName: app.father_name || "",
-          dob: app.date_of_birth || "",
-          gender: app.gender || "",
-          phone: app.phone || "",
-          email: app.email || "",
-          streetLine1: app.street_address_1 || "",
-          streetLine2: app.street_address_2 || "",
-          city: app.city || "",
-          state: app.state || "",
-          pin: app.postal_code || "",
-          country: app.country || "India",
-          pgDegree: app.pg_degree || "",
-          pgCollege: app.pg_college || "",
-          pgUniversity: app.pg_university || "",
-          pgYear: app.pg_year || "",
-          ugCollege: app.ug_college || "",
-          mciCouncilNumber: app.mci_council_number || "",
-          mciCouncilState: app.mci_council_state || "",
-          asiMembershipNo: app.asi_membership_no || "",
-        })
+        // `documents` is one of the auth-gated fields stripped by the status
+        // API's redactRow(). Its absence is our signal that we got a redacted
+        // row and need to OTP-gate the user before showing the form. If it's
+        // present, the caller already had a valid session/OTP — pre-fill and
+        // jump straight to the form.
+        const isRedacted = !("documents" in (json.data as Record<string, unknown>))
+        if (isRedacted) {
+          setPhase("otp_verify")
+          return
+        }
 
+        prefillFormFromApp(app)
+        setHasShownForm(true)
         setPhase("form")
       })
       .catch(() => {
@@ -345,17 +394,49 @@ function ResubmitContent() {
         updates,
       }))
 
-      // Append files if selected
-      Object.entries(files).forEach(([key, file]) => {
-        if (file) formDataObj.append(key, file)
-      })
+      // Compress images client-side so the multipart body stays well under
+      // Vercel's ~4.5 MB request-body cap (otherwise the platform 413s before
+      // the route runs and the user sees "Unexpected token 'R'…").
+      const TOTAL_BODY_BUDGET = 4_000_000
+      let totalBytes = 0
+      for (const [key, file] of Object.entries(files)) {
+        if (!file) continue
+        const result = await compressImageIfNeeded(file)
+        if (!result.ok) {
+          setErrorMessage(result.reason)
+          setPhase("error")
+          return
+        }
+        totalBytes += result.file.size
+        if (totalBytes > TOTAL_BODY_BUDGET) {
+          setErrorMessage("The combined size of your documents is too large. Please reduce each file to under 1.5 MB and try again.")
+          setPhase("error")
+          return
+        }
+        formDataObj.append(key, result.file)
+      }
 
       const res = await fetch("/api/applications/resubmit", {
         method: "POST",
         body: formDataObj,
       })
 
-      const json = await res.json()
+      // Platform-layer errors (Vercel 413, gateway 502/504, etc.) return plain
+      // text — JSON.parse blows up otherwise. Read as text and shape into the
+      // same {status, message} envelope the API would have returned.
+      const rawBody = await res.text()
+      let json: { status?: boolean; message?: string }
+      try {
+        json = rawBody ? JSON.parse(rawBody) : {}
+      } catch {
+        json = {
+          status: false,
+          message:
+            res.status === 413
+              ? "Files are too large to upload. Please reduce each file to under 1.5 MB and try again."
+              : `Server error (${res.status}). Please try again or contact support if this keeps happening.`,
+        }
+      }
 
       // OTP gate: the API requires a verified OTP within 2 hours. If missing,
       // transition to OTP verify; after verify, performSubmit() runs again.
@@ -431,6 +512,13 @@ function ResubmitContent() {
   }
 
   /* ---- OTP verify state ---- */
+  // Used for two scenarios:
+  //   1. Initial gate (hasShownForm === false): user landed from the email
+  //      link and we need to verify them before we can fetch & pre-fill
+  //      their data. onVerified loads the full row and transitions to form.
+  //   2. Re-verify mid-session (hasShownForm === true): the resubmit POST
+  //      hit the 2h OTP expiry window. onVerified retries the submit with
+  //      the form state still in memory.
   if (phase === "otp_verify" && application) {
     return (
       <div className="max-w-3xl mx-auto space-y-6 py-8">
@@ -439,16 +527,39 @@ function ResubmitContent() {
             <div className="flex items-start gap-3">
               <Info className="h-5 w-5 mt-0.5 shrink-0 text-blue-600" />
               <div className="text-sm text-blue-800">
-                <p className="font-semibold mb-0.5">One quick step before we resubmit</p>
-                <p>For security, please verify your email with a one-time code. Your edits and uploaded files are saved — we will submit them automatically once you verify.</p>
+                {hasShownForm ? (
+                  <>
+                    <p className="font-semibold mb-0.5">One quick step before we resubmit</p>
+                    <p>For security, please verify your email with a one-time code. Your edits and uploaded files are saved — we will submit them automatically once you verify.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold mb-0.5">Verify your email to continue</p>
+                    <p>For your protection, we need to confirm you own this application before showing your details. We&apos;ll send a 6-digit code to your registered email.</p>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
         <ProfileOtp
           email={application.email}
-          onVerified={() => { void performSubmit() }}
-          onBack={() => setPhase("form")}
+          onVerified={() => {
+            if (hasShownForm) {
+              void performSubmit()
+            } else {
+              setPhase("loading")
+              void loadFullApplication()
+            }
+          }}
+          onBack={() => {
+            if (hasShownForm) {
+              setPhase("form")
+            } else {
+              // No form to fall back to yet — send them to the status page.
+              window.location.href = `/apply/status${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`
+            }
+          }}
         />
       </div>
     )

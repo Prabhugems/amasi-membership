@@ -1,16 +1,9 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
-
-// Public-safe field list for anonymous callers. Excludes PII such as email,
-// phone, DOB, address, MCI number/state, and all document URLs except photo.
-const PUBLIC_SELECT =
-  "id, name, membership_type, amasi_number, city, state, zone, pg_degree, status, profile_photo"
-// Authenticated-member field list: PUBLIC_SELECT plus contact fields the
-// mobile member-directory needs for mailto:/tel: actions. Still excludes
-// DOB, address, MCI, and document URLs.
-const MEMBER_SELECT = `${PUBLIC_SELECT}, email, mobile, mobile_code`
+import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
 
 // Union of fields the response mapper reads off a Supabase row. Every
 // field is optional because the SELECT varies by auth tier (admin = *,
@@ -73,43 +66,46 @@ export async function GET(request: NextRequest) {
 
     const selectFields = isAdmin ? "*" : isMember ? MEMBER_SELECT : PUBLIC_SELECT
 
-    let data = null
+    // .throwOnError() routes Postgres/PostgREST errors into the outer
+    // catch where they reach Sentry. Without it, a column typo on the
+    // SELECT list (the `mobile` regression in 49bbbfe) returned data=null
+    // here and the response below masqueraded as a clean "No data found".
+    let data: unknown[] | null = null
 
     if (isEmail) {
-      const { data: result, error } = await supabase
+      const { data: result } = await supabase
         .from("members")
         .select(selectFields)
         .ilike("email", query.trim())
         .limit(1)
-      if (error) console.error("members.search email query failed:", error)
+        .throwOnError()
       data = result
     } else if (isPhone) {
-      const { data: result, error } = await supabase
+      const { data: result } = await supabase
         .from("members")
         .select(selectFields)
         .eq("phone", query.trim())
         .limit(1)
-      if (error) console.error("members.search phone query failed:", error)
+        .throwOnError()
       data = result
     } else {
-      // Search by name or amasi number
       const asNum = parseInt(query)
       if (!isNaN(asNum)) {
-        const { data: result, error } = await supabase
+        const { data: result } = await supabase
           .from("members")
           .select(selectFields)
           .eq("amasi_number", asNum)
           .limit(1)
-        if (error) console.error("members.search amasi_number query failed:", error)
+          .throwOnError()
         data = result
       } else {
-        const { data: result, error } = await supabase
+        const { data: result } = await supabase
           .from("members")
           .select(selectFields)
           .ilike("name", `%${query}%`)
           .order("name", { ascending: true })
           .limit(30)
-        if (error) console.error("members.search name query failed:", error)
+          .throwOnError()
         data = result
       }
     }
@@ -156,6 +152,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ status: false, message: "No data found.", data: [] })
   } catch (error: unknown) {
     console.error("Member search error:", error)
+    Sentry.captureException(error, {
+      tags: { flow: "members_search", tier: isAdmin ? "admin" : isMember ? "member" : "public" },
+    })
     return Response.json({ status: false, message: "Search failed", data: [] }, { status: 500 })
   }
 }

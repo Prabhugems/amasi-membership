@@ -20,6 +20,7 @@ import {
 } from "@/lib/document-keys"
 import { validatePersonalDetails } from "@/lib/validators"
 import type { ApplicationFormData } from "@/lib/membership-types"
+import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
 
 // ---------------------------------------------------------------------------
 // 1. Razorpay signature verification (payment integrity)
@@ -427,5 +428,77 @@ describe("members.search public field redaction", () => {
     // CHANGELOG.
     expect(PUBLIC_SELECT_FIELDS.length).toBeLessThanOrEqual(11)
   })
+
+  it("the route's PUBLIC_SELECT constant matches this test's expected list", () => {
+    // Bind the test's PII-redaction assertions to the real exported constant.
+    // Without this, the local PUBLIC_SELECT_FIELDS array can drift from the
+    // route and the redaction tests above pass vacuously.
+    const fromRoute = PUBLIC_SELECT.split(",").map((c) => c.trim())
+    expect(fromRoute.sort()).toEqual([...PUBLIC_SELECT_FIELDS].sort())
+  })
 })
-// test
+
+// ---------------------------------------------------------------------------
+// 6. members.search authed-member SELECT column validity
+//
+// Catches: schema drift between the SELECT column list and the real
+// `members` table — the bug class that produced 49bbbfe → c791ac0
+// (MEMBER_SELECT referenced `mobile`, real column is `phone`; the
+// swallowed Postgres 42703 returned `{status:false, data:[]}` with HTTP
+// 200, breaking every authed mobile search for ~10 days).
+//
+// Why static analysis, not an HTTP integration test: the existing test
+// file is pure (no Next handler in-process, no Supabase mock). Adding
+// HTTP infra for one test would dwarf the fix. This test binds against
+// the exported constant, so any future column rename in MEMBER_SELECT
+// must explicitly update VALID_MEMBERS_COLUMNS — that drift gate is the
+// only thing that would have caught 49bbbfe at PR time.
+// ---------------------------------------------------------------------------
+describe("members.search MEMBER_SELECT column validity", () => {
+  // Real columns on public.members verified against the live schema on
+  // 2026-05-22. If you add a column to the table, add it here too — this
+  // set is the gate for what MEMBER_SELECT is allowed to reference.
+  const VALID_MEMBERS_COLUMNS = new Set([
+    "id",
+    "name",
+    "membership_type",
+    "amasi_number",
+    "city",
+    "state",
+    "zone",
+    "pg_degree",
+    "status",
+    "profile_photo",
+    "email",
+    "phone",
+    "mobile_code",
+  ])
+
+  function parseSelect(s: string): string[] {
+    return s.split(",").map((c) => c.trim())
+  }
+
+  it("every column in MEMBER_SELECT exists on the members table", () => {
+    for (const col of parseSelect(MEMBER_SELECT)) {
+      expect(
+        VALID_MEMBERS_COLUMNS.has(col),
+        `members.${col} is not a real column (would 42703 against live schema)`
+      ).toBe(true)
+    }
+  })
+
+  it("MEMBER_SELECT references `phone`, not the bogus `mobile` (regression: 49bbbfe)", () => {
+    const cols = parseSelect(MEMBER_SELECT)
+    expect(cols).toContain("phone")
+    expect(cols).not.toContain("mobile")
+  })
+
+  it("MEMBER_SELECT is a strict superset of PUBLIC_SELECT", () => {
+    const pub = new Set(parseSelect(PUBLIC_SELECT))
+    const mem = new Set(parseSelect(MEMBER_SELECT))
+    for (const col of pub) {
+      expect(mem.has(col), `MEMBER_SELECT must include public column ${col}`).toBe(true)
+    }
+    expect(mem.size).toBeGreaterThan(pub.size)
+  })
+})

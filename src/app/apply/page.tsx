@@ -31,6 +31,39 @@ import { Autocomplete } from "@/components/ui/autocomplete"
 import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
 import { generateRefNumber, FIELD_HELP } from "@/lib/application-utils"
 import { FieldHelp } from "@/components/ui/field-help"
+
+// Unload-safe diagnostic relay. The in-process Sentry SDK queues events
+// but does not reliably flush before page unload, so saveDraftToServer
+// failures captured during a tab close were vanishing. sendBeacon's
+// browser-managed background dispatch survives unload; the server-side
+// /api/client-log handler relays to Sentry. fetch keepalive is a fallback
+// for browsers that refused the beacon (queue full, payload-size cap).
+type ClientLogPayload = {
+  message: string
+  level?: "info" | "warning" | "error" | "fatal"
+  tags?: Record<string, string>
+  extra?: Record<string, unknown>
+}
+
+function postClientLog(payload: ClientLogPayload): void {
+  try {
+    if (typeof navigator === "undefined") return
+    const body = JSON.stringify(payload)
+    if (typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([body], { type: "application/json" })
+      if (navigator.sendBeacon("/api/client-log", blob)) return
+    }
+    fetch("/api/client-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // Diagnostics must never throw into the caller's flow.
+  }
+}
+
 const UPLOAD_TIPS: Record<string, { dos: string[]; donts: string[]; aiReads: string[] }> = {
   mci_certificate: {
     dos: ["Upload your MCI/State Medical Council registration certificate — not a degree or marksheet"],
@@ -506,7 +539,27 @@ function ApplyForm() {
     // { email_verified: true } so the save actually runs.
     const isInitialPostVerifySave = extraData?.email_verified === true
     if (!formData.email) return { ok: true, error: null }
-    if (!isInitialPostVerifySave && !emailVerified) return { ok: true, error: null }
+    if (!isInitialPostVerifySave && !emailVerified) {
+      // Defensive observability for Layer 1's eventual root-cause fix: this
+      // branch silently no-ops the save when the closure-captured
+      // `emailVerified` is false. If a post-OTP upload ever calls a stale
+      // saveDraftToServer (the docmanjir@gmail.com 2026-05-22 closure-
+      // staleness pattern in CLAUDE.md), it lands here without persisting.
+      // The fingerprint groups all hits into one Sentry issue.
+      Sentry.captureMessage(
+        "apply: saveDraftToServer silent_skip (emailVerified=false at call site)",
+        {
+          level: "warning",
+          fingerprint: ["save-draft-silent-skip"],
+          tags: { component: "apply-flow", reason: "silent_skip", step: String(step) },
+          extra: {
+            hasExtraData: !!extraData,
+            uploadsKeyCount: Object.keys(uploads).length,
+          },
+        },
+      )
+      return { ok: true, error: null }
+    }
 
     const buildBody = () => {
       const safeUploads = Object.fromEntries(
@@ -633,11 +686,13 @@ function ApplyForm() {
     await new Promise(r => setTimeout(r, 500))
     const second = await attempt(first.nextLastUpdatedAt)
     if (!second.ok) {
-      // Surface to Sentry so the fire-and-forget callers in this page
-      // (post-upload, post-review, post-order, post-OTP) are no longer
-      // invisible. UX is unchanged — callers decide whether to block on
-      // the return value.
-      Sentry.captureMessage("apply: saveDraftToServer failed after retry", {
+      // Surface to Sentry via the unload-safe /api/client-log relay so the
+      // fire-and-forget callers in this page (post-upload, post-review,
+      // post-order, post-OTP) are no longer invisible even when the user
+      // closes the tab mid-flight. UX is unchanged — callers decide whether
+      // to block on the return value.
+      postClientLog({
+        message: "apply: saveDraftToServer failed after retry",
         level: "warning",
         tags: { component: "apply-flow", step: String(step), error: second.error || "unknown" },
         extra: { firstError: first.error, hasExtraData: !!extraData },

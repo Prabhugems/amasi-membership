@@ -111,6 +111,11 @@ const PUBLIC_API_ROUTES = [
   // IP rate limit (60 req/15min) and only returns published+public rows.
   "/api/announcements",
   "/api/sentry-test",
+  // Unload-safe relay for client-side Sentry events. Public because callers
+  // POST via navigator.sendBeacon during tab close, before any user gesture
+  // is possible. The handler does its own input sanitization, rate-limits
+  // per IP, and returns 204 with no body (never echoes input).
+  "/api/client-log",
   "/api/verify/",
   // Sidebar badge counts polled every 60s by admin UI. Handler does its
   // own getAdminSession() check and returns zeros (not 401) for

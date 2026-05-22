@@ -3,10 +3,87 @@
 // the server-side MEMBERSHIP_FEES table; rate-limited per IP.
 import { NextRequest } from "next/server"
 import Razorpay from "razorpay"
+import * as Sentry from "@sentry/nextjs"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createAdminClient } from "@/lib/supabase"
 import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
+
+// Observation-only: when the document gate refuses to mint an order, this
+// helper detects the "OCR succeeded but uploads is empty" mismatch (the
+// docmanjir@gmail.com 2026-05-22 case) and pages Sentry at fatal severity.
+// It NEVER throws back into the request flow and NEVER changes the response.
+async function alertIfPaidPathBlockedByLostUploads(args: {
+  supabase: ReturnType<typeof createAdminClient>
+  emailKey: string
+  typeKey: string
+  draftId: string | null
+  draftUploads: Record<string, unknown> | null
+  requiredDocs: string[]
+  rejectionReason: string
+}): Promise<void> {
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { data: events } = await args.supabase
+      .from("application_step_events")
+      .select("metadata, created_at")
+      .eq("email", args.emailKey)
+      .eq("event_type", "doc_upload")
+      .eq("status", "extracted")
+      .gte("created_at", oneHourAgo)
+      .order("created_at", { ascending: false })
+      .limit(50)
+
+    if (!events || events.length === 0) return
+
+    const extractedDocTypes = new Set<string>()
+    for (const ev of events) {
+      const md = (ev as { metadata?: { docType?: unknown } | null }).metadata
+      const docType = md && typeof md.docType === "string" ? md.docType : null
+      if (docType) extractedDocTypes.add(docType)
+    }
+
+    const requiredNonProfile = args.requiredDocs.filter((d) => d !== "profile")
+    const uploadsKeys = args.draftUploads
+      ? new Set(Object.keys(args.draftUploads))
+      : new Set<string>()
+    const extractedButMissing = [...extractedDocTypes].filter(
+      (d) => requiredNonProfile.includes(d) && !uploadsKeys.has(d),
+    )
+
+    // Only fire on concrete evidence: a required doc was OCR-extracted on
+    // record but is not present in the draft's persisted uploads. Without
+    // this guard the alarm would fire on ordinary "user hasn't uploaded
+    // yet" rejections and lose signal.
+    if (extractedButMissing.length === 0) return
+
+    Sentry.captureMessage(
+      "paid_path_blocked_by_lost_uploads: extracted docs missing from draft.step_data.uploads",
+      {
+        level: "fatal",
+        fingerprint: ["paid-path-blocked-by-lost-uploads"],
+        tags: {
+          component: "payments/create-order",
+          reason: "paid_path_blocked_by_lost_uploads",
+          membership_type: args.typeKey,
+          rejection_reason: args.rejectionReason,
+        },
+        extra: {
+          applicant_email: args.emailKey,
+          draft_id: args.draftId,
+          membership_type: args.typeKey,
+          required_docs: requiredNonProfile,
+          uploads_keys: [...uploadsKeys],
+          extracted_doc_types: [...extractedDocTypes],
+          extracted_but_missing_from_uploads: extractedButMissing,
+          extracted_events_count: events.length,
+        },
+      },
+    )
+  } catch {
+    // Observability must never break the payment path.
+  }
+}
 
 // Razorpay SDK with potential retry-without-transfer fallback.
 export const maxDuration = 20
@@ -63,7 +140,7 @@ export async function POST(request: NextRequest) {
     // draft via /api/applications/save-draft before reaching this endpoint.
     const { data: draftRow } = await supabase
       .from("draft_applications")
-      .select("step_data")
+      .select("id, step_data")
       .eq("email", emailKey)
       .eq("membership_type", typeKey)
       .order("updated_at", { ascending: false })
@@ -72,11 +149,21 @@ export async function POST(request: NextRequest) {
 
     const draftStepData = draftRow?.step_data as { uploads?: Record<string, unknown> } | null
     const draftUploads = draftStepData?.uploads || null
+    const draftId = (draftRow as { id?: string } | null)?.id ?? null
     const membershipTypeConfig = getMembershipType(typeKey)
     if (!membershipTypeConfig) {
       return Response.json({ status: false, message: "Unknown membership type" }, { status: 400 })
     }
     if (!draftUploads) {
+      await alertIfPaidPathBlockedByLostUploads({
+        supabase,
+        emailKey,
+        typeKey,
+        draftId,
+        draftUploads: null,
+        requiredDocs: membershipTypeConfig.requiredDocs,
+        rejectionReason: "no_draft_uploads",
+      })
       return Response.json({
         status: false,
         error: "documents_incomplete",
@@ -93,6 +180,15 @@ export async function POST(request: NextRequest) {
     // call sites that share it.
     const docCheck = validateRequiredDocuments(draftUploads, membershipTypeConfig.requiredDocs)
     if (!docCheck.valid) {
+      await alertIfPaidPathBlockedByLostUploads({
+        supabase,
+        emailKey,
+        typeKey,
+        draftId,
+        draftUploads,
+        requiredDocs: membershipTypeConfig.requiredDocs,
+        rejectionReason: docCheck.reason,
+      })
       return Response.json({
         status: false,
         error: docCheck.reason,

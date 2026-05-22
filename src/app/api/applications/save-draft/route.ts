@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { getMemberSession } from "@/lib/auth"
@@ -109,6 +110,10 @@ export async function PUT(request: NextRequest) {
 
       if (updateError) {
         console.error("Draft update error:", updateError)
+        Sentry.captureException(updateError, {
+          tags: { route: "applications/save-draft", op: "update", reason: "save_draft_write_failure" },
+          extra: { draft_id: existing.id, current_step, has_payment_order_id: payment_order_id !== undefined, has_payment_id: payment_id !== undefined },
+        })
         return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
       }
 
@@ -157,6 +162,10 @@ export async function PUT(request: NextRequest) {
 
     if (insertError) {
       console.error("Draft insert error:", insertError)
+      Sentry.captureException(insertError, {
+        tags: { route: "applications/save-draft", op: "insert", reason: "save_draft_write_failure" },
+        extra: { current_step, membership_type, has_payment_order_id: payment_order_id !== undefined, has_payment_id: payment_id !== undefined },
+      })
       return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
     }
 

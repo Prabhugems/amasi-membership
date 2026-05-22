@@ -107,6 +107,9 @@ const PUBLIC_API_ROUTES = [
   // getMemberSession + active-member check + per-member Upstash rate
   // limit (10 req/min). Exact path only.
   "/api/members/sync",
+  // Member-facing announcements. Anonymous read; handler does its own
+  // IP rate limit (60 req/15min) and only returns published+public rows.
+  "/api/announcements",
   "/api/sentry-test",
   "/api/verify/",
   // Sidebar badge counts polled every 60s by admin UI. Handler does its

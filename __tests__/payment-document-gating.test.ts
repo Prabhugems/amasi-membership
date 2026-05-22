@@ -40,10 +40,17 @@ vi.mock("@/lib/rate-limit", () => ({
 
 // ── Supabase mock ───────────────────────────────────────────────────────────
 // The create-order route runs three queries:
-//   1. draft_applications.select("step_data")...        → returns draftRow (or null)
+//   1. draft_applications.select("id, step_data")...    → returns draftRow (or null)
 //   2. draft_applications.select("id, current_step")... → returns null (no paid draft)
 //   3. membership_applications.select(...)...           → returns null (no existing app)
 // We dispatch by `.select(arg)` to keep the mock concise.
+//
+// The route also queries `application_step_events` from the lost-uploads
+// observability helper on rejection paths only. That helper wraps its query
+// in try/catch and never throws back into the request flow, so an
+// "Unmocked table" throw inside `from("application_step_events")` is
+// absorbed and does not affect the route's response. We deliberately do
+// not mock that table to keep this suite focused on the gating contract.
 type UploadEntry = { status: string; extracted: Record<string, unknown>; fileUrl: string | null; message?: string }
 type DraftRow = { id: string; step_data: { uploads: Record<string, UploadEntry> } }
 let draftRow: DraftRow | null = null
@@ -71,7 +78,11 @@ vi.mock("@/lib/supabase", () => ({
     from: (table: string) => {
       if (table === "draft_applications") {
         return makeChainable((selectArg) => {
-          if (selectArg === "step_data") return draftRow
+          // Route widened from "step_data" → "id, step_data" so the
+          // lost-uploads alarm can include draft_id in the Sentry payload.
+          // The old string is kept here for backward compat with any
+          // pre-Layer-2 callers that might be re-introduced in tests.
+          if (selectArg === "id, step_data" || selectArg === "step_data") return draftRow
           // duplicate-payment guard (selectArg === "id, current_step")
           return null
         })

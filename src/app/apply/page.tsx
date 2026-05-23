@@ -26,6 +26,7 @@ import { validatePersonalDetails, validateEducation, validateRegistration } from
 import { detectFace, preloadFaceDetection } from "@/lib/face-detect"
 import { prepareFileForUpload } from "@/lib/upload-prep"
 import { restoreDraftUploads } from "@/lib/restore-draft-uploads"
+import { shouldSkipDraftSave } from "@/lib/should-skip-draft-save"
 import type { ManualReviewReasonCode } from "@/lib/document-keys"
 import type { MemberData } from "@/lib/api"
 import { Autocomplete } from "@/components/ui/autocomplete"
@@ -431,6 +432,28 @@ function ApplyForm() {
     if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
   }, [selectedType])
   const [emailVerified, setEmailVerified] = useState(false)
+  // Shadow of emailVerified for use inside saveDraftToServer's closure.
+  //
+  // The original guard read emailVerified from the useCallback closure;
+  // on slow connections a save fired on the same tick as
+  // setEmailVerified(true) saw the stale `false` and silently skipped,
+  // stranding the applicant ("upload spins, can't go to next step" —
+  // Sentry AMASI-MEMBERSHIP-16 across 6+ real users).
+  //
+  // The ref is updated TWO ways:
+  //   1. synchronously at each setEmailVerified(...) call site below
+  //      (search this file for `emailVerifiedRef.current =`) — closes the
+  //      one-render-cycle window where a useEffect-only sync wouldn't
+  //      have run yet
+  //   2. via useEffect on the next line as a safety net for any future
+  //      setEmailVerified caller that forgets the synchronous update
+  //
+  // saveDraftToServer reads `emailVerifiedRef.current`, never the captured
+  // closure value — see src/lib/should-skip-draft-save.ts.
+  const emailVerifiedRef = useRef(false)
+  useEffect(() => {
+    emailVerifiedRef.current = emailVerified
+  }, [emailVerified])
   const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "done">("input")
   const [otpCode, setOtpCode] = useState("")
   const [otpCooldown, setOtpCooldown] = useState(0)
@@ -507,6 +530,7 @@ function ApplyForm() {
         setFormData({ ...INITIAL_FORM_DATA, ...savedFormData, email: draft.email })
         if (savedType) setSelectedType(savedType)
         setEmailVerified(true)
+        emailVerifiedRef.current = true // sync with setEmailVerified to close the AMASI-MEMBERSHIP-16 race window
         setVerifyStep("done")
         setDraftUpdatedAt(draft.updated_at)
 
@@ -533,32 +557,40 @@ function ApplyForm() {
     })()
   }, [])
 
-  // Save draft to server after each step change (only after email is verified)
+  // Save draft to server after each step change (only after email is verified).
+  //
+  // The verification guard reads `emailVerifiedRef.current`, NOT the captured
+  // closure value, so a save that fires on the same tick as
+  // setEmailVerified(true) sees the current value rather than stale false.
+  // See the emailVerifiedRef declaration above for the full incident note
+  // (AMASI-MEMBERSHIP-16).
   const saveDraftToServer = useCallback(async (step: number, extraData?: Record<string, unknown>): Promise<{ ok: boolean; error: string | null }> => {
-    // The initial post-OTP-verify save fires on the same tick as setEmailVerified(true);
-    // the closure here still sees the stale `false`. Trust the caller when they pass
-    // { email_verified: true } so the save actually runs.
-    const isInitialPostVerifySave = extraData?.email_verified === true
-    if (!formData.email) return { ok: true, error: null }
-    if (!isInitialPostVerifySave && !emailVerified) {
-      // Defensive observability for Layer 1's eventual root-cause fix: this
-      // branch silently no-ops the save when the closure-captured
-      // `emailVerified` is false. If a post-OTP upload ever calls a stale
-      // saveDraftToServer (the docmanjir@gmail.com 2026-05-22 closure-
-      // staleness pattern in CLAUDE.md), it lands here without persisting.
-      // The fingerprint groups all hits into one Sentry issue.
-      Sentry.captureMessage(
-        "apply: saveDraftToServer silent_skip (emailVerified=false at call site)",
-        {
-          level: "warning",
-          fingerprint: ["save-draft-silent-skip"],
-          tags: { component: "apply-flow", reason: "silent_skip", step: String(step) },
-          extra: {
-            hasExtraData: !!extraData,
-            uploadsKeyCount: Object.keys(uploads).length,
+    const skipDecision = shouldSkipDraftSave({
+      emailVerifiedRefCurrent: emailVerifiedRef.current,
+      extraData,
+      hasEmail: !!formData.email,
+    })
+    if (skipDecision.skip) {
+      if (skipDecision.reason === "unverified") {
+        // Genuinely-unverified saves still fire the diagnostic warning.
+        // Post-fix this branch should be rare — it should only fire when
+        // a save call is made before the user has actually verified (e.g.
+        // a programming error or an upload triggered pre-OTP). The
+        // stale-closure false-positives that were dominating
+        // AMASI-MEMBERSHIP-16 are eliminated by the ref read above.
+        Sentry.captureMessage(
+          "apply: saveDraftToServer silent_skip (emailVerified=false at call site)",
+          {
+            level: "warning",
+            fingerprint: ["save-draft-silent-skip"],
+            tags: { component: "apply-flow", reason: "silent_skip", step: String(step) },
+            extra: {
+              hasExtraData: !!extraData,
+              uploadsKeyCount: Object.keys(uploads).length,
+            },
           },
-        },
-      )
+        )
+      }
       return { ok: true, error: null }
     }
 
@@ -700,7 +732,10 @@ function ApplyForm() {
       })
     }
     return { ok: second.ok, error: second.error }
-  }, [emailVerified, formData, selectedType, uploads, draftUpdatedAt])
+    // `emailVerified` deliberately omitted from deps — the guard reads
+    // emailVerifiedRef.current, so the callback doesn't need to recreate
+    // when emailVerified changes. See the AMASI-MEMBERSHIP-16 note above.
+  }, [formData, selectedType, uploads, draftUpdatedAt])
 
   // Auto-save draft every 30 seconds
   useEffect(() => {
@@ -1912,6 +1947,7 @@ function ApplyForm() {
           const data = await res.json()
           if (data.status) {
             setEmailVerified(true)
+            emailVerifiedRef.current = true // sync with setEmailVerified to close the AMASI-MEMBERSHIP-16 race window
             toast.success("Email verified!")
 
             // Check if server has a draft with meaningful progress (beyond just OTP send)
@@ -1968,7 +2004,7 @@ function ApplyForm() {
       <div className="max-w-md mx-auto px-4 py-4 sm:py-6">
         <ProgressBar currentPhase={phase} />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false) }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 min-h-[44px]">
+          <button onClick={() => { setPhase(selectedType ? "landing" : "check"); setVerifyStep("input"); setOtpCode(""); setEmailVerified(false); emailVerifiedRef.current = false /* sync — see AMASI-MEMBERSHIP-16 */ }} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6 min-h-[44px]">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 

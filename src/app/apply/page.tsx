@@ -1085,6 +1085,14 @@ function ApplyForm() {
       delete copy[docType]
       return copy
     })
+    // Stage B (2026-05-23): the new server-side per-key merge keeps the
+    // existing entry when a key is omitted from incoming.uploads. To
+    // propagate a deliberate user removal we must post step_data.uploads
+    // with the docType set to `null` — the server's mergeDraftUploads
+    // recognises that as the explicit removal sentinel. Fire-and-forget
+    // matches the rest of the apply page; observability lives inside
+    // saveDraftToServer.
+    void saveDraftToServer(3, { uploads: { [docType]: null } })
   }
 
   const handleProcessAll = async () => {

@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit"
 import { getMemberSession } from "@/lib/auth"
 import { recordStepEvent } from "@/lib/funnel-tracking"
 import { checkDuplicateApplication } from "@/lib/application-utils"
+import { mergeDraftUploads } from "@/lib/merge-draft-uploads"
 
 /** Verify the caller has a valid member JWT cookie matching the given email. */
 async function verifyMemberSession(email: string): Promise<boolean> {
@@ -83,8 +84,29 @@ export async function PUT(request: NextRequest) {
       // Always use optimistic locking for existing drafts
       const lockValue = lastUpdatedAt || existing.updated_at
 
-      // Merge step_data with existing data
-      const mergedStepData = { ...(existing.step_data || {}), ...(step_data || {}) }
+      // Merge step_data with existing data.
+      //
+      // Non-uploads keys (formData, membership_type, email_verified, etc.):
+      // shallow override, same as pre-Stage-B. Behavior unchanged.
+      //
+      // `uploads`: per-key merge via mergeDraftUploads (Stage B, 2026-05-23).
+      // The shallow-merge wholesale-replace pattern caused six paid
+      // applicants to lose their fileUrls on 2026-05-23. mergeDraftUploads
+      // refuses to clobber an existing fileUrl with a null/empty one and
+      // treats `uploads = {}` as a no-op. Removal is now opt-in via a
+      // null sentinel (apply/page.tsx handleRemoveFile patched in lockstep).
+      const existingStepData = (existing.step_data || {}) as Record<string, unknown>
+      const incomingStepData = (step_data || {}) as Record<string, unknown>
+      const mergedStepData: Record<string, unknown> = {
+        ...existingStepData,
+        ...incomingStepData,
+      }
+      if ("uploads" in incomingStepData) {
+        mergedStepData.uploads = mergeDraftUploads(
+          existingStepData.uploads as Record<string, unknown> | null | undefined,
+          incomingStepData.uploads as Record<string, unknown> | null | undefined,
+        )
+      }
 
       const updatePayload: Record<string, unknown> = {
         current_step,

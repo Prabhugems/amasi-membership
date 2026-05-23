@@ -83,6 +83,8 @@ const PUBLIC_API_ROUTES = [
   "/api/card",
   "/api/certificate",
   "/api/credential",
+  "/api/events",
+  "/api/courses",
   // External partner API (Bearer api-key auth enforced inside route via verifyApiKey).
   // Without this, /api/v1/* 401s at middleware before the key check runs.
   "/api/v1/",

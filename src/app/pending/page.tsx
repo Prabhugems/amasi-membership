@@ -17,7 +17,9 @@ import {
   User, GraduationCap, Stethoscope, Camera, ExternalLink,
   Calendar, StickyNote, Filter, ChevronUp,
   Keyboard, CheckSquare, Square, MinusSquare, X,
+  Pencil,
 } from "lucide-react"
+import { EditApplicationFieldsDialog } from "@/components/admin/edit-application-fields-dialog"
 import { toast } from "sonner"
 import { formatDate, getInitials } from "@/lib/utils"
 import { DOC_LABELS } from "@/lib/membership-types"
@@ -196,6 +198,7 @@ export default function PendingPage() {
   const [showCompare, setShowCompare] = useState<string | null>(null)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [nmcResults, setNmcResults] = useState<Record<string, { loading: boolean; reachable?: boolean; verified?: boolean; doctors?: any[]; message?: string }>>({})
+  const [editingApp, setEditingApp] = useState<any>(null)
 
   const verifyNmc = useCallback(async (appId: string, regNo: string, state?: string) => {
     setNmcResults((prev) => ({ ...prev, [appId]: { loading: true } }))
@@ -903,6 +906,11 @@ export default function PendingPage() {
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setShowActions(null)} />
                             <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl border bg-card shadow-xl py-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-accent text-foreground flex items-center gap-2.5 transition-colors"
+                                onClick={() => { setShowActions(null); setEditingApp(app) }}>
+                                <Pencil className="h-4 w-4" /> Edit details
+                              </button>
+                              <div className="border-t my-1" />
                               <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 flex items-center gap-2.5 transition-colors"
                                 onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode(null); setApproveNotes(""); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
                                 <CheckCircle className="h-4 w-4" /> Approve
@@ -1580,6 +1588,14 @@ export default function PendingPage() {
       )}
         </motion.div>
       </AnimatePresence>
+
+      {/* Edit application fields */}
+      <EditApplicationFieldsDialog
+        open={!!editingApp}
+        onOpenChange={(open) => { if (!open) setEditingApp(null) }}
+        app={editingApp}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ["applications"] })}
+      />
 
       {/* Document Lightbox */}
       <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>

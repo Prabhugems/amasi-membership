@@ -8,6 +8,8 @@
  */
 import { describe, it, expect } from "vitest"
 import crypto from "node:crypto"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import {
   normalizeDocumentKey,
   requiresExtraction,
@@ -21,6 +23,13 @@ import {
 import { validatePersonalDetails } from "@/lib/validators"
 import type { ApplicationFormData } from "@/lib/membership-types"
 import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
+import {
+  EDITABLE_APPLICATION_FIELDS,
+  FINAL_APPLICATION_STATUSES,
+  partitionEditableUpdates,
+  computeFieldDiff,
+  deriveZoneFromStateChange,
+} from "@/lib/edit-application-fields"
 
 // ---------------------------------------------------------------------------
 // 1. Razorpay signature verification (payment integrity)
@@ -500,5 +509,201 @@ describe("members.search MEMBER_SELECT column validity", () => {
       expect(mem.has(col), `MEMBER_SELECT must include public column ${col}`).toBe(true)
     }
     expect(mem.size).toBeGreaterThan(pub.size)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 7. Admin edit-application-fields allowlist + diff (Feature 1)
+//
+// Catches: a locked field (email, phone, payment_*, status, member_id,
+// assigned_amasi_number, documents, ai_*) sneaking into the allowlist;
+// no-op writes generating spurious audit rows; the zone-derived-from-state
+// invariant breaking. Mirrors the route gate in
+// src/app/api/applications/[id]/edit-fields/route.ts.
+//
+// Also asserts statically that the route does NOT import auto-approval — the
+// edit path must never re-trigger AI approval. That import would be the
+// single-line regression that this static check is positioned to catch.
+// ---------------------------------------------------------------------------
+describe("admin edit-application-fields", () => {
+  it("the editable allowlist contains every UI-editable column we shipped", () => {
+    // If you add a key to EDITABLE_APPLICATION_FIELDS, add it here too.
+    // The intersection makes drift in either direction loud.
+    const expected = [
+      "salutation", "first_name", "middle_name", "last_name", "father_name",
+      "date_of_birth", "gender", "nationality",
+      "street_address_1", "street_address_2", "city", "state", "postal_code", "country",
+      "clinic_name", "clinic_street_address_1", "clinic_street_address_2",
+      "clinic_city", "clinic_state", "clinic_postal_code", "clinic_country",
+      "landline", "std_code",
+      "ug_degree", "ug_college", "ug_university", "ug_year",
+      "pg_degree", "pg_college", "pg_university", "pg_year",
+      "ss_degree", "ss_college", "ss_university", "ss_year",
+      "mci_council_number", "mci_council_state", "imr_registration_no",
+      "asi_membership_no", "asi_state",
+    ]
+    for (const key of expected) {
+      expect(EDITABLE_APPLICATION_FIELDS.has(key), `${key} should be editable`).toBe(true)
+    }
+    expect(EDITABLE_APPLICATION_FIELDS.size).toBe(expected.length)
+  })
+
+  it("the editable allowlist does NOT contain identity, payment, lifecycle, or AI columns", () => {
+    // Each of these has a real reason to be locked; see
+    // src/lib/edit-application-fields.ts for the rationale.
+    const locked = [
+      "email", "phone", "mobile_code",
+      "payment_status", "payment_id", "payment_amount", "gateway_payment_id",
+      "reference_number", "application_number",
+      "status", "member_id", "assigned_amasi_number",
+      "documents",
+      "ai_score", "ai_confidence", "ai_verified", "ai_flags",
+      "needs_manual_review", "manual_review_reason",
+      "created_at", "updated_at", "reviewed_at",
+      "review_notes", "internal_notes",
+      // membership_type is reserved for the (not-yet-built) tier-change route.
+      "membership_type",
+      // zone is derived from state server-side, not directly editable.
+      "zone",
+    ]
+    for (const key of locked) {
+      expect(
+        EDITABLE_APPLICATION_FIELDS.has(key),
+        `${key} must NOT be editable`,
+      ).toBe(false)
+    }
+  })
+
+  it("partitionEditableUpdates separates allowed keys from rejected keys", () => {
+    const result = partitionEditableUpdates({
+      first_name: "Asha",
+      email: "hacker@example.com",
+      city: "Bengaluru",
+      payment_status: "refunded",
+      assigned_amasi_number: 99999,
+    })
+    expect(Object.keys(result.accepted).sort()).toEqual(["city", "first_name"])
+    expect(result.rejected.sort()).toEqual([
+      "assigned_amasi_number",
+      "email",
+      "payment_status",
+    ])
+  })
+
+  it("computeFieldDiff skips fields whose normalized value matches current", () => {
+    const current = {
+      first_name: "Asha",
+      city: "  Bengaluru  ",
+      ug_year: 2010,
+      father_name: null,
+    }
+    // Same values after trim + null-coercion — should be empty diff.
+    const diff = computeFieldDiff(current, {
+      first_name: "Asha",
+      city: "Bengaluru",
+      ug_year: "2010", // string vs number — same year, no change
+      father_name: "", // empty string normalizes to null, matches current null
+    })
+    expect(diff.fieldCount).toBe(0)
+    expect(diff.changes).toEqual({})
+  })
+
+  it("computeFieldDiff captures changes with from/to and a fieldCount", () => {
+    const current = { first_name: "Asha", city: "Chennai" }
+    const diff = computeFieldDiff(current, {
+      first_name: "Aasha",
+      city: "Chennai", // unchanged
+    })
+    expect(diff.fieldCount).toBe(1)
+    expect(diff.changes).toEqual({
+      first_name: { from: "Asha", to: "Aasha" },
+    })
+  })
+
+  it("deriveZoneFromStateChange recomputes zone when state changes (the home-state derivation)", () => {
+    const current = { state: "Tamil Nadu", zone: "South Zone" }
+    const diff = computeFieldDiff(current, { state: "Maharashtra" })
+    expect(diff.fieldCount).toBe(1)
+    const z = deriveZoneFromStateChange(current, diff)
+    expect(z).toEqual({ zone: "West Zone" })
+  })
+
+  it("deriveZoneFromStateChange is a no-op when state didn't change", () => {
+    const current = { state: "Tamil Nadu", zone: "South Zone" }
+    const diff = computeFieldDiff(current, { city: "Coimbatore" })
+    const z = deriveZoneFromStateChange(current, diff)
+    expect(z).toEqual({})
+  })
+
+  it("deriveZoneFromStateChange returns null zone for an unknown state", () => {
+    const current = { state: "Tamil Nadu", zone: "South Zone" }
+    const diff = computeFieldDiff(current, { state: "Atlantis" })
+    const z = deriveZoneFromStateChange(current, diff)
+    expect(z).toEqual({ zone: null })
+  })
+
+  it("FINAL_APPLICATION_STATUSES blocks edits on approved and rejected rows only", () => {
+    // Other statuses (submitted, pending_review, ai_approved, need_clarification,
+    // resubmit_requested, documents_unreadable, auto_approved) MUST remain editable
+    // — those are the actionable states an admin reaches via the /pending queue.
+    expect(FINAL_APPLICATION_STATUSES.has("approved")).toBe(true)
+    expect(FINAL_APPLICATION_STATUSES.has("rejected")).toBe(true)
+    for (const open of [
+      "submitted",
+      "pending_review",
+      "ai_approved",
+      "auto_approved",
+      "need_clarification",
+      "resubmit_requested",
+      "documents_unreadable",
+    ]) {
+      expect(FINAL_APPLICATION_STATUSES.has(open)).toBe(false)
+    }
+  })
+
+  it("the edit-fields route does NOT import autoApproveApplication (regression guard)", () => {
+    // Static-string check — if a future PR wires auto-approval into the edit
+    // path, this fires before it ships. The check is intentionally cheap and
+    // independent of a Next handler harness.
+    const routePath = path.resolve(
+      __dirname,
+      "..",
+      "src/app/api/applications/[id]/edit-fields/route.ts",
+    )
+    const source = readFileSync(routePath, "utf8")
+    expect(source.includes("autoApproveApplication")).toBe(false)
+    expect(source.includes("auto-approval")).toBe(false)
+  })
+
+  it("the edit-fields route does NOT touch payment, status, AI, or AMASI-number columns", () => {
+    // Same static check, but for the specific column names the route must
+    // never write. Catches a future PR that adds e.g. status: 'approved' to
+    // the UPDATE payload (an end-run around the approve route).
+    const routePath = path.resolve(
+      __dirname,
+      "..",
+      "src/app/api/applications/[id]/edit-fields/route.ts",
+    )
+    const source = readFileSync(routePath, "utf8")
+    // The audit-log details may legitimately contain these column names if a
+    // locked-field rejection mentions them — but only inside string literals
+    // for error messages. We assert they don't appear as object keys in an
+    // update() payload by looking for ":" assignments.
+    const forbiddenAssignments = [
+      /\bstatus\s*:\s*['"]/, // status: 'approved'
+      /\bmember_id\s*:/,
+      /\bassigned_amasi_number\s*:/,
+      /\bpayment_status\s*:/,
+      /\bpayment_id\s*:/,
+      /\bai_score\s*:/,
+      /\bai_verified\s*:/,
+      /\bneeds_manual_review\s*:/,
+    ]
+    for (const re of forbiddenAssignments) {
+      expect(
+        re.test(source),
+        `edit-fields route must not assign ${re.source}`,
+      ).toBe(false)
+    }
   })
 })

@@ -252,6 +252,7 @@ export async function POST(request: NextRequest) {
         // logs. Razorpay has the money; our DB doesn't. Triage the orphan via
         // the reconciliation cron OR manual recovery (kilroy 2026-05-21 case).
         Sentry.captureException(insertError, {
+          level: "fatal",
           tags: { flow: "payment_verify", op: "membership-payments-insert", severity: "fatal" },
           extra: { razorpay_payment_id, razorpay_order_id, referenceNumber, applicationId },
         })
@@ -299,6 +300,7 @@ export async function POST(request: NextRequest) {
         // unpaid. Surface to Sentry so this doesn't sit unnoticed.
         console.error("Application payment status update error:", updateError)
         Sentry.captureException(updateError, {
+          level: "error",
           tags: { flow: "payment_verify", op: "application-payment-status-update", severity: "high" },
           extra: { razorpay_payment_id, applicationId, referenceNumber },
         })

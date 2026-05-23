@@ -307,6 +307,10 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("Razorpay order error:", error)
+    Sentry.captureException(error, {
+      level: "error",
+      tags: { route: "payments/create-order", op: "create_order_unhandled" },
+    })
     return Response.json({ status: false, message: "Payment could not be initiated. Please try again." }, { status: 500 })
   }
 }

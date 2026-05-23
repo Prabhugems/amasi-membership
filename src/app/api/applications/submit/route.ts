@@ -319,6 +319,11 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error("Application insert error:", insertError)
+      Sentry.captureException(insertError, {
+        level: "fatal",
+        tags: { route: "applications/submit", op: "application_insert_failure" },
+        extra: { referenceNumber, paymentId },
+      })
       return Response.json({ status: false, message: "Failed to save application" }, { status: 500 })
     }
 

@@ -8,6 +8,7 @@ import {
 } from "@/lib/document-keys"
 import { extractDocument } from "@/lib/document-extraction"
 import { recordStepEvent } from "@/lib/funnel-tracking"
+import { persistOcrUploadToDraft } from "@/lib/persist-ocr-upload"
 
 // Vercel Pro defaults to 15s, but Claude vision on a multi-page certificate
 // can take 20–40s, plus the OCR.space fallback. Without this the function is
@@ -113,10 +114,16 @@ export async function POST(request: NextRequest) {
     // must be in Supabase before we look at it. The reviewer queue depends
     // on this — without a fileUrl, "needs manual review" is meaningless.
     // ---------------------------------------------------------------------
+    // Stage C (2026-05-23): supabase client is hoisted out of the storage
+    // block so it's in scope for the persistOcrUploadToDraft calls on the
+    // two success-return paths below (outcome:"stored" and "extracted").
+    // The storage upload itself still happens BEFORE any draft mutate —
+    // the storage-before-mutate ordering is preserved.
+    const { createAdminClient } = await import("@/lib/supabase")
+    const supabase = createAdminClient()
+
     let fileUrl: string | null = null
     {
-      const { createAdminClient } = await import("@/lib/supabase")
-      const supabase = createAdminClient()
       const folder = requiresExtraction(docType) ? docType : "photo"
       const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
       const { error: uploadError } = await supabase.storage.from("uploads").upload(fileName, buffer, {
@@ -152,6 +159,23 @@ export async function POST(request: NextRequest) {
         step: 3,
         status: "uploaded",
         metadata: { docType, bytes: buffer.length, ocr_skipped: true },
+      })
+      // ── Stage C: server-side draft write (outcome:"stored") ──
+      // Persist the upload entry into draft.step_data.uploads.<rawDocType>
+      // so the client's fire-and-forget save-draft is no longer load-bearing.
+      // Uses the RAW docType (e.g. "profile"), NOT the normalized canonical
+      // ("photo") — see persist-ocr-upload.ts ALLOWED_DOC_KEYS rationale.
+      // Failures inside the helper are logged + swallowed; the response
+      // shape below is unchanged regardless of persist result.
+      await persistOcrUploadToDraft({
+        supabase,
+        email: (session.email as string) || "",
+        docKey: rawDocType,
+        entry: {
+          status: "uploaded",
+          fileUrl,
+          extracted: {},
+        },
       })
       return Response.json({
         outcome: "stored",
@@ -222,6 +246,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // ── Stage C: server-side draft write (outcome:"extracted") ──
+    // Persist the extracted entry into draft.step_data.uploads.<rawDocType>.
+    // Uses the RAW client-sent key, NOT the normalized canonical — the
+    // client hard-codes "profile" in React state and writing under the
+    // normalized "photo" would duplicate-and-corrupt the JSONB. See
+    // persist-ocr-upload.ts. Failures inside the helper are logged +
+    // swallowed; the response below is unchanged regardless.
+    await persistOcrUploadToDraft({
+      supabase,
+      email: (session.email as string) || "",
+      docKey: rawDocType,
+      entry: {
+        status: "extracted",
+        fileUrl,
+        extracted: result.extracted,
+        message: `Extracted ${Object.keys(result.extracted || {}).length} fields`,
+      },
+    })
+
     return Response.json({
       outcome: "extracted",
       success: true,                       // legacy
@@ -232,7 +275,7 @@ export async function POST(request: NextRequest) {
       engine: result.engine,
       fileUrl,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("OCR API error:", error)
     Sentry.captureException(error, { tags: { flow: "ocr_upload", stage: "top_catch" } })
     // We don't have a fileUrl here — anything in the try-block before storage

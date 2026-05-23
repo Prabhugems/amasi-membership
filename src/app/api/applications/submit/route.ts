@@ -307,7 +307,17 @@ export async function POST(request: NextRequest) {
         // Null for documents_unreadable (no per-check scoring ran).
         ocr_score: documentsUnreadable ? null : approval.totalScore,
         documents: Object.fromEntries(
-          Object.entries(uploads || {}).map(([k, v]: [string, any]) => [k, { status: v.status, extracted: v.extracted, message: v.message, fileUrl: v.fileUrl || null }])
+          Object.entries(uploads || {}).map(([k, v]: [string, any]) => [k, {
+            status: v.status,
+            extracted: v.extracted,
+            message: v.message,
+            fileUrl: v.fileUrl || null,
+            // Preserve bypass markers — without them, validateRequiredDocuments
+            // rule #4 fails at admin-approve time and the row needs a manual
+            // patch (see Barman 2026-05-23 case). Mirrors the shape the client
+            // sends in the submit payload (apply/page.tsx).
+            ...(v.bypass === true ? { bypass: true, bypassReason: v.bypassReason } : {}),
+          }])
         ),
         ocr_data: Object.fromEntries(
           Object.entries(uploads || {}).filter(([, v]: [string, any]) => v.extracted).map(([k, v]: [string, any]) => [k, v.extracted])

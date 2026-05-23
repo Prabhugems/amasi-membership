@@ -14,6 +14,40 @@ import { getMembershipType } from "@/lib/membership-types"
 // Razorpay orders.fetch + payments.transfer fallback can exceed 15s Vercel default.
 export const maxDuration = 30
 
+// Shape of the JSON body posted by the /apply checkout handler. All optional
+// because they originate from a client-controlled payload and are validated
+// individually below (signature + required-field checks).
+interface VerifyBody {
+  razorpay_order_id?: string
+  razorpay_payment_id?: string
+  razorpay_signature?: string
+  referenceNumber?: string
+  applicationId?: string
+  amount?: number
+  currency?: string
+  email?: string
+  membershipType?: string
+}
+
+// Razorpay SDK gap: `payments.transfer(paymentId, params)` is a documented
+// runtime method (Razorpay Route — split a captured payment) but the SDK's
+// TS types don't declare it. We use this contained shape for the call site.
+// `notes` values may be undefined — Razorpay drops undefined fields at JSON
+// serialization, matching the pre-typed behavior.
+type PaymentsWithTransfer = {
+  transfer: (
+    paymentId: string,
+    params: {
+      transfers: Array<{
+        account: string
+        amount: number
+        currency: string
+        notes?: Record<string, string | undefined>
+      }>
+    },
+  ) => Promise<unknown>
+}
+
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
@@ -22,7 +56,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
     }
 
-    const body = await request.json()
+    const body = (await request.json()) as VerifyBody
     const {
       razorpay_order_id,
       razorpay_payment_id,
@@ -33,7 +67,7 @@ export async function POST(request: NextRequest) {
       currency,
       email,
       membershipType,
-    } = body as Record<string, any>
+    } = body
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return Response.json({ status: false, message: "Payment details missing" }, { status: 400 })
@@ -70,14 +104,17 @@ export async function POST(request: NextRequest) {
 
         // Check if transfer was included in the order
         const order = await razorpay.orders.fetch(razorpay_order_id)
-        if ((order as any).transfers?.items?.length > 0) {
+        // Razorpay SDK type doesn't include `transfers` on the fetched order,
+        // but the runtime payload does when the order was created with one.
+        const orderWithTransfers = order as { transfers?: { items?: unknown[] } }
+        if ((orderWithTransfers.transfers?.items?.length ?? 0) > 0) {
           transferStatus = "success"
           console.log(`Route transfer via order: ₹${PROCESSING_FEE} for ${referenceNumber}`)
         } else {
           // Fallback: try payment-level transfer
           const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
           try {
-            await (razorpay.payments as any).transfer(razorpay_payment_id, {
+            await (razorpay.payments as unknown as PaymentsWithTransfer).transfer(razorpay_payment_id, {
               transfers: [{
                 account: EVENTS360_ACCOUNT_ID,
                 amount: PROCESSING_FEE * 100,
@@ -87,21 +124,23 @@ export async function POST(request: NextRequest) {
             })
             transferStatus = "success"
             console.log(`Route transfer via payment fallback: ₹${PROCESSING_FEE} for ${referenceNumber}`)
-          } catch (fallbackErr: any) {
+          } catch (fallbackErr) {
+            const fbErr = fallbackErr as { error?: { description?: string; code?: string }; message?: string }
             transferStatus = "failed"
-            transferError = fallbackErr?.error?.description || fallbackErr?.message || "Unknown error"
+            transferError = fbErr?.error?.description || fbErr?.message || "Unknown error"
             console.error(`Route transfer FAILED for ${referenceNumber}:`, JSON.stringify({
               error: transferError,
-              code: fallbackErr?.error?.code,
+              code: fbErr?.error?.code,
               paymentId: razorpay_payment_id,
               amount: PROCESSING_FEE,
             }))
           }
         }
-      } catch (checkErr: any) {
+      } catch (checkErr) {
+        const cErr = checkErr as { message?: string }
         transferStatus = "failed"
-        transferError = checkErr?.message || "Could not verify transfer"
-        console.error(`Route transfer check error for ${referenceNumber}:`, checkErr.message)
+        transferError = cErr?.message || "Could not verify transfer"
+        console.error(`Route transfer check error for ${referenceNumber}:`, cErr?.message)
       }
     }
 
@@ -342,7 +381,7 @@ export async function POST(request: NextRequest) {
       paymentId: razorpay_payment_id,
       paidButBroken,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Payment verify error:", error)
     Sentry.captureException(error, { tags: { flow: "payment_verify" } })
     return Response.json({ status: false, message: "Payment verification failed" }, { status: 500 })

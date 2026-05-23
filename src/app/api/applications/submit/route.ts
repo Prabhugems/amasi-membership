@@ -21,6 +21,20 @@ import { escapeHtml } from "@/lib/html-escape"
 // AI scoring + auto-approval + admin email + WhatsApp + Zoho in one request.
 export const maxDuration = 60
 
+// Shape of an entry in the `uploads` map posted by the /apply submit handler.
+// Mirrors the client payload built at apply/page.tsx:1366-1377. All optional —
+// the server's validateRequiredDocuments + scoring logic handles missing
+// fields. `bypass` markers come from the manual-review path; preserved on
+// persist (commit 2f45802).
+interface UploadEntry {
+  status?: string
+  extracted?: Record<string, unknown>
+  message?: string
+  fileUrl?: string | null
+  bypass?: boolean
+  bypassReason?: string
+}
+
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")
@@ -307,7 +321,7 @@ export async function POST(request: NextRequest) {
         // Null for documents_unreadable (no per-check scoring ran).
         ocr_score: documentsUnreadable ? null : approval.totalScore,
         documents: Object.fromEntries(
-          Object.entries(uploads || {}).map(([k, v]: [string, any]) => [k, {
+          Object.entries((uploads || {}) as Record<string, UploadEntry>).map(([k, v]) => [k, {
             status: v.status,
             extracted: v.extracted,
             message: v.message,
@@ -320,7 +334,7 @@ export async function POST(request: NextRequest) {
           }])
         ),
         ocr_data: Object.fromEntries(
-          Object.entries(uploads || {}).filter(([, v]: [string, any]) => v.extracted).map(([k, v]: [string, any]) => [k, v.extracted])
+          Object.entries((uploads || {}) as Record<string, UploadEntry>).filter(([, v]) => v.extracted).map(([k, v]) => [k, v.extracted])
         ),
         status: applicationStatus,
       })
@@ -561,7 +575,7 @@ export async function POST(request: NextRequest) {
       applicationId,
       message: "Application submitted. Documents will be reviewed by our admin team.",
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Application submit error:", error)
     Sentry.captureException(error, { tags: { flow: "application_submit" } })
     return Response.json({ status: false, message: "Failed to submit application" }, { status: 500 })

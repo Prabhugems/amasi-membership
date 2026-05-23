@@ -88,6 +88,36 @@ async function alertIfPaidPathBlockedByLostUploads(args: {
 // Razorpay SDK with potential retry-without-transfer fallback.
 export const maxDuration = 20
 
+// Local shape for the order-creation payload. The Razorpay TS types do NOT
+// declare the `transfers` field on orders.create's argument, but the runtime
+// HTTP API accepts and acts on it (Razorpay Route). We keep our payload
+// strongly typed here and use a contained cast at the SDK call site.
+interface OrderPayload {
+  amount: number
+  currency: string
+  receipt: string
+  partial_payment: false
+  notes: Record<string, string | undefined>
+  transfers?: Array<{
+    account: string
+    amount: number
+    currency: string
+    notes: Record<string, string>
+    on_hold: 0
+  }>
+}
+
+// Minimal subset of Razorpay's order response we forward to the client.
+// The SDK's `Orders.RazorpayOrder` lives behind a deep import path; we
+// avoid that and only type the three fields we actually read below.
+// `amount` is `number | string` per Razorpay's API (string in some SDK
+// versions, number in others — match both to stay forward-compatible).
+interface CreatedOrder {
+  id: string
+  amount: number | string
+  currency: string
+}
+
 // Server-side fee lookup — source of truth for membership fees
 const MEMBERSHIP_FEES: Record<string, { amount: number; currency: string }> = {
   LM:  { amount: 4230, currency: "INR" },
@@ -254,7 +284,7 @@ export async function POST(request: NextRequest) {
     const PROCESSING_FEE = isILM ? 0 : (Number(process.env.PROCESSING_FEE_INR) || 100)
     const EVENTS360_ACCOUNT_ID = process.env.EVENTS360_RAZORPAY_ACCOUNT_ID || "acc_SYV3ZpQvinGqOW"
 
-    const orderPayload: Record<string, any> = {
+    const orderPayload: OrderPayload = {
       amount: Math.round(amount * 100), // Razorpay expects paise/cents
       currency: currency || "INR",
       receipt: referenceNumber,
@@ -281,18 +311,21 @@ export async function POST(request: NextRequest) {
       }]
     }
 
-    let order: any
+    let order: CreatedOrder
     try {
-      order = await razorpay.orders.create(orderPayload as any)
-    } catch (orderErr: any) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Razorpay SDK TS types don't declare `transfers` on orders.create payload; runtime HTTP API accepts it (Razorpay Route).
+      order = (await razorpay.orders.create(orderPayload as any)) as unknown as CreatedOrder
+    } catch (orderErr) {
       // If transfer fails, retry without transfer — don't block payment
-      const errMsg = orderErr?.error?.description || orderErr?.message || ""
+      const err = orderErr as { error?: { description?: string }; message?: string }
+      const errMsg = err?.error?.description || err?.message || ""
       console.error("Order with transfer failed:", errMsg)
 
       if (PROCESSING_FEE > 0) {
         console.log("Retrying order without transfer...")
         delete orderPayload.transfers
-        order = await razorpay.orders.create(orderPayload as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same Razorpay SDK type gap as above; retry path without `transfers` still hits the same param-type mismatch.
+        order = (await razorpay.orders.create(orderPayload as any)) as unknown as CreatedOrder
       } else {
         throw orderErr
       }
@@ -305,7 +338,7 @@ export async function POST(request: NextRequest) {
       currency: order.currency,
       transferIncluded: !!orderPayload.transfers,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Razorpay order error:", error)
     Sentry.captureException(error, {
       level: "error",

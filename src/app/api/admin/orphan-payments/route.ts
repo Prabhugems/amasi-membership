@@ -35,9 +35,35 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const days = clampInt(url.searchParams.get("days"), DEFAULT_DAYS, MAX_DAYS)
   const limit = clampInt(url.searchParams.get("limit"), DEFAULT_LIMIT, MAX_LIMIT)
+  const countOnly = url.searchParams.get("count") === "1"
 
   const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
   const supabase = createAdminClient()
+
+  // Cheap path for the sidebar badge: skip the draft-correlation joins and
+  // return only the count. Polled every 60s per admin session.
+  if (countOnly) {
+    const { count, error: countError } = await supabase
+      .from("membership_payments")
+      .select("id", { count: "exact", head: true })
+      .is("application_id", null)
+      .eq("status", "paid")
+      .gte("created_at", sinceIso)
+
+    if (countError) {
+      console.error("[admin/orphan-payments] count error:", countError)
+      return Response.json(
+        { status: false, message: "Failed to count orphan payments" },
+        { status: 500 }
+      )
+    }
+
+    return Response.json({
+      status: true,
+      total: count ?? 0,
+      lookback_days: days,
+    })
+  }
 
   const { data: orphans, error } = await supabase
     .from("membership_payments")

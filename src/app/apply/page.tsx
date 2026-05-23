@@ -25,6 +25,7 @@ import type { ExtractionResult } from "@/lib/ai-extract"
 import { validatePersonalDetails, validateEducation, validateRegistration } from "@/lib/validators"
 import { detectFace, preloadFaceDetection } from "@/lib/face-detect"
 import { prepareFileForUpload } from "@/lib/upload-prep"
+import { restoreDraftUploads } from "@/lib/restore-draft-uploads"
 import type { ManualReviewReasonCode } from "@/lib/document-keys"
 import type { MemberData } from "@/lib/api"
 import { Autocomplete } from "@/components/ui/autocomplete"
@@ -2081,24 +2082,13 @@ function ApplyForm() {
                             const type = getMembershipType(mType)
                             if (type) setSelectedType(type)
                           }
-                          // Restore uploads state (without File objects — shows previously processed docs)
+                          // Restore uploads state (without File objects — shows previously processed docs).
+                          // Stage A (2026-05-23): the previous inline loop dropped fileUrl + bypass + bypassReason,
+                          // producing the silent-loss path that stranded six paid applicants on 2026-05-23.
+                          // restoreDraftUploads (src/lib/restore-draft-uploads.ts) preserves them; see the file
+                          // header for full rationale and unit tests.
                           if (stepData.uploads && typeof stepData.uploads === "object") {
-                            const restoredUploads: Record<string, UploadEntry> = {}
-                            for (const [k, v] of Object.entries(stepData.uploads as Record<string, Record<string, unknown>>)) {
-                              if (v && typeof v === "object") {
-                                const status = (v.status as UploadEntry["status"]) || "uploaded"
-                                const extracted = (v.extracted && typeof v.extracted === "object" ? v.extracted : {}) as Record<string, unknown>
-                                const message = typeof v.message === "string" ? v.message : "Restored from previous session"
-                                restoredUploads[k] = {
-                                  file: null,
-                                  preview: "",
-                                  status,
-                                  extracted,
-                                  message,
-                                }
-                              }
-                            }
-                            setUploads(restoredUploads)
+                            setUploads(restoreDraftUploads(stepData.uploads))
                           }
                           // Set existing payment if draft had a verified payment
                           if (serverDraft.has_verified_payment && draftData?.data?.payment_id) {

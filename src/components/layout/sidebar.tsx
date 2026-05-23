@@ -31,6 +31,7 @@ import {
   TrendingDown,
   Award,
   Calendar,
+  CreditCard,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -40,7 +41,7 @@ interface NavItem {
   name: string
   href: string
   icon: typeof LayoutDashboard
-  badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete"
+  badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete" | "orphanPayments"
   superAdminOnly?: boolean
   // When true, render as <a target="_blank"> instead of <Link>. Used for
   // cross-app shortcuts (e.g. the AMASI events admin portal at events.amasi.org).
@@ -59,6 +60,7 @@ const sections: NavSection[] = [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Pending Actions", href: "/pending", icon: ClipboardCheck, badgeKey: "pending" },
       { name: "Incomplete Applications", href: "/incomplete", icon: Clock, badgeKey: "incomplete" },
+      { name: "Orphan Payments", href: "/admin/orphan-payments", icon: CreditCard, badgeKey: "orphanPayments" },
       { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Events", href: "https://events.amasi.org", icon: Calendar, external: true },
@@ -88,11 +90,12 @@ const sections: NavSection[] = [
 ]
 
 function useBadgeCounts(enabled: boolean) {
-  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number }>({
+  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number; orphanPayments: number }>({
     pending: 0,
     tickets: 0,
     upgrades: 0,
     incomplete: 0,
+    orphanPayments: 0,
   })
 
   useEffect(() => {
@@ -101,16 +104,24 @@ function useBadgeCounts(enabled: boolean) {
 
     async function fetchCounts() {
       try {
-        const res = await fetch("/api/badges")
-        if (!res.ok) return
-        const data = await res.json()
+        // Orphan-payment count comes from the WS-A view's own endpoint
+        // (head/count mode) — keeps /api/badges out of the payment-flow blast
+        // radius. Independent fetch so a transient failure on one doesn't
+        // zero the other.
+        const [badgesRes, orphanRes] = await Promise.all([
+          fetch("/api/badges"),
+          fetch("/api/admin/orphan-payments?count=1&days=30"),
+        ])
         if (cancelled) return
-        setCounts({
-          pending: data.pending ?? 0,
-          tickets: data.tickets ?? 0,
-          upgrades: data.upgrades ?? 0,
-          incomplete: data.incomplete ?? 0,
-        })
+        const badgesData = badgesRes.ok ? await badgesRes.json() : null
+        const orphanData = orphanRes.ok ? await orphanRes.json() : null
+        setCounts((prev) => ({
+          pending: badgesData?.pending ?? prev.pending,
+          tickets: badgesData?.tickets ?? prev.tickets,
+          upgrades: badgesData?.upgrades ?? prev.upgrades,
+          incomplete: badgesData?.incomplete ?? prev.incomplete,
+          orphanPayments: orphanData?.total ?? prev.orphanPayments,
+        }))
       } catch {
         // silently fail — badges just show 0
       }

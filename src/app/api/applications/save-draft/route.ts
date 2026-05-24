@@ -139,10 +139,25 @@ export async function PUT(request: NextRequest) {
         return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
       }
 
-      // If no row returned, it's a conflict (optimistic lock failed)
+      // If no row returned, it's a conflict (optimistic lock failed). Re-SELECT
+      // to get the actual current updated_at — `existing.updated_at` is the
+      // value we read BEFORE the failed update, which in a 2-writer race
+      // equals the client's stale lastUpdatedAt. Echoing it back makes the
+      // client retry with the same stale value and 409 forever. See Sentry
+      // AMASI-MEMBERSHIP-D (37 users, step 3 parallel OCR save burst).
       if (!updated) {
+        const { data: fresh } = await supabase
+          .from("draft_applications")
+          .select("updated_at")
+          .eq("id", existing.id)
+          .maybeSingle()
         return Response.json(
-          { status: false, code: "CONFLICT", message: "Draft was modified by another session.", serverUpdatedAt: existing.updated_at },
+          {
+            status: false,
+            code: "CONFLICT",
+            message: "Draft was modified by another session.",
+            serverUpdatedAt: fresh?.updated_at ?? existing.updated_at,
+          },
           { status: 409 }
         )
       }

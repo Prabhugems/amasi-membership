@@ -68,6 +68,10 @@ const PUBLIC_API_ROUTES = [
   "/api/applications/submit",
   "/api/applications/status",
   "/api/applications/check-duplicate",
+  // WS-C: applicant creates a pending_payment app row after OTP verify, before
+  // payment. Gated behind WSC_EARLY_APPLICATION_ENABLED; flag OFF → 404.
+  // Handler does its own OTP-window gate.
+  "/api/applications/create-pending",
   "/api/applications/resubmit",
   // save-draft handles its own member-JWT check via verifyMemberSession;
   // without this line, middleware blocked every client-side draft save

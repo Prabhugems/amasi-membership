@@ -66,6 +66,7 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
     // submission with the same email could otherwise sneak past the dup check.
     if (
       app.status === "pending" ||
+      app.status === "pending_payment" ||
       app.status === "submitted" ||
       app.status === "under_review" ||
       app.status === "pending_review" ||

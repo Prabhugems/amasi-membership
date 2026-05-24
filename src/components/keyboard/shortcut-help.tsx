@@ -37,6 +37,8 @@ const SHORTCUTS: ShortcutGroup[] = [
   {
     title: "Pending Applications",
     items: [
+      { keys: ["J"], label: "Next application (auto-expands)" },
+      { keys: ["K"], label: "Previous application" },
       { keys: ["A"], label: "Approve focused application" },
       { keys: ["R"], label: "Reject focused application" },
     ],

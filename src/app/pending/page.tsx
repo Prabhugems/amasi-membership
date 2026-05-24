@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -17,11 +18,11 @@ import {
   User, GraduationCap, Stethoscope, Camera, ExternalLink,
   Calendar, StickyNote, Filter, ChevronUp,
   Keyboard, CheckSquare, Square, MinusSquare, X,
-  Pencil,
+  Pencil, ArrowLeft,
 } from "lucide-react"
 import { EditApplicationFieldsDialog } from "@/components/admin/edit-application-fields-dialog"
 import { toast } from "sonner"
-import { formatDate, getInitials } from "@/lib/utils"
+import { formatDate, getInitials, cn } from "@/lib/utils"
 import { DOC_LABELS } from "@/lib/membership-types"
 import type { DocType } from "@/lib/membership-types"
 import { parseManualReviewReason, type ManualReviewReasonCode } from "@/lib/document-keys"
@@ -175,16 +176,37 @@ function CompareRow({ label, formValue, ocrValue }: { label: string; formValue: 
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────────
+// Page-level Suspense wrapper — required because PendingPageInner uses
+// useSearchParams() for the ?id= deep-link param. Without this wrapper,
+// Next 16's static prerender fails at build time only (see CLAUDE.md).
 export default function PendingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PendingPageInner />
+    </Suspense>
+  )
+}
+
+function PendingPageInner() {
   const [tab, setTab] = useState<TabFilter>("pending")
   const reduced = useReducedMotion()
   const [search, setSearch] = useState("")
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Selected (open in detail pane) is URL-backed via ?id= so it's
+  // deep-linkable and back/forward-aware. URL is the source of truth;
+  // setExpandedId writes the URL and React re-renders with the new value.
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const expandedId = searchParams.get("id")
+  const setExpandedId = useCallback((next: string | null) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next) params.set("id", next)
+    else params.delete("id")
+    const qs = params.toString()
+    router.replace(`/pending${qs ? `?${qs}` : ""}`, { scroll: false })
+  }, [searchParams, router])
   const [actionMode, setActionMode] = useState<ActionMode>(null)
   const [actionMessage, setActionMessage] = useState("")
   const [rejectReason, setRejectReason] = useState("")
-  const [approveNotes, setApproveNotes] = useState("")
-  const [showActions, setShowActions] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [focusIndex, setFocusIndex] = useState(-1)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -214,6 +236,10 @@ export default function PendingPage() {
   }, [])
   const queryClient = useQueryClient()
   const listRef = useRef<HTMLDivElement>(null)
+  // The id of the app being acted on — captured at mutate time so onSuccess
+  // can advance to its neighbour in the pre-action list (the acted app
+  // disappears from the post-refetch list, so we can't recompute after).
+  const pendingAdvanceFromId = useRef<string | null>(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["applications", tab],
@@ -241,7 +267,7 @@ export default function PendingPage() {
       if (data.status) {
         toast.success(data.message)
         queryClient.invalidateQueries({ queryKey: ["applications"] })
-        setExpandedId(null)
+        advanceAfterDecision()
         setInternalNote("")
         setShowNotes(null)
       } else {
@@ -267,7 +293,7 @@ export default function PendingPage() {
       if (data.status) {
         toast.success(data.message)
         queryClient.invalidateQueries({ queryKey: ["applications"] })
-        setExpandedId(null)
+        advanceAfterDecision()
         setRejectReason("")
         setActionMode(null)
         setInternalNote("")
@@ -295,7 +321,7 @@ export default function PendingPage() {
       if (data.status) {
         toast.success(data.message)
         queryClient.invalidateQueries({ queryKey: ["applications"] })
-        setExpandedId(null)
+        advanceAfterDecision()
         setActionMode(null)
         setActionMessage("")
         setInternalNote("")
@@ -406,6 +432,57 @@ export default function PendingPage() {
     return true
   }), [data, search, dateFrom, dateTo, membershipTypeFilter, confidenceFilter])
 
+  // Currently-selected application (rendered in the detail pane). null when
+  // nothing is selected, or when the selection has been filtered out by tab/
+  // search/date/etc.
+  const selectedApp = expandedId ? applications.find((a: { id: string }) => a.id === expandedId) : null
+
+  // Expand a neighbour of the just-acted app, or show end-of-queue toast.
+  // Uses the pre-refetch `applications` list so we can find the neighbour
+  // before the acted row disappears from the post-refetch list.
+  const advanceAfterDecision = () => {
+    const fromId = pendingAdvanceFromId.current
+    pendingAdvanceFromId.current = null
+    if (!fromId) {
+      setExpandedId(null)
+      return
+    }
+    const idx = applications.findIndex((a: { id: string }) => a.id === fromId)
+    const nextApp = idx >= 0 ? applications[idx + 1] : null
+    if (nextApp) {
+      setExpandedId(nextApp.id)
+      setFocusIndex(idx + 1)
+    } else {
+      setExpandedId(null)
+      toast("End of queue")
+    }
+  }
+
+  // Navigate j (next) / k (prev) through the filtered list.
+  // Anchors on `expandedId` so the cursor follows the visible card, not the
+  // separate `focusIndex` that the arrow-key path uses.
+  const navigateBy = (offset: 1 | -1) => {
+    if (applications.length === 0) return
+    let nextIdx: number
+    if (expandedId) {
+      const cur = applications.findIndex((a: { id: string }) => a.id === expandedId)
+      if (cur === -1) {
+        nextIdx = offset === 1 ? 0 : applications.length - 1
+      } else {
+        nextIdx = cur + offset
+      }
+    } else {
+      nextIdx = offset === 1 ? 0 : applications.length - 1
+    }
+    if (nextIdx < 0) { toast("Start of queue"); return }
+    if (nextIdx >= applications.length) { toast("End of queue"); return }
+    setExpandedId(applications[nextIdx].id)
+    setFocusIndex(nextIdx)
+    setActionMode(null)
+    setInternalNote("")
+    setShowNotes(null)
+  }
+
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't intercept when typing in an input/textarea
@@ -418,6 +495,12 @@ export default function PendingPage() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault()
       setFocusIndex(prev => Math.max(prev - 1, 0))
+    } else if (e.key === "j") {
+      e.preventDefault()
+      navigateBy(1)
+    } else if (e.key === "k") {
+      e.preventDefault()
+      navigateBy(-1)
     } else if (e.key === "Enter" && focusIndex >= 0 && focusIndex < applications.length) {
       e.preventDefault()
       const app = applications[focusIndex]
@@ -428,7 +511,8 @@ export default function PendingPage() {
     } else if (e.key === "a" && expandedId) {
       // Approve shortcut
       e.preventDefault()
-      approveMutation.mutate({ id: expandedId, notes: approveNotes || "Manually approved" })
+      pendingAdvanceFromId.current = expandedId
+      approveMutation.mutate({ id: expandedId, notes: "Manually approved" })
     } else if (e.key === "r" && expandedId) {
       // Reject shortcut — open reject form
       e.preventDefault()
@@ -444,7 +528,8 @@ export default function PendingPage() {
       }
     }
     // Note: '?' handler removed — the global ShortcutHelp listener handles it.
-  }, [applications, focusIndex, expandedId, approveNotes, approveMutation, lightboxUrl])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applications, focusIndex, expandedId, approveMutation, lightboxUrl])
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown)
@@ -519,11 +604,21 @@ export default function PendingPage() {
         </div>
         <button
           onClick={() => setShowKeyboardHelp(true)}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs text-muted-foreground hover:bg-accent transition-colors"
-          title="Keyboard shortcuts"
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs text-muted-foreground hover:bg-accent transition-colors"
+          title="Keyboard shortcuts — click for full list"
         >
           <Keyboard className="h-3.5 w-3.5" />
-          Shortcuts
+          <span className="flex items-center gap-1.5 font-mono">
+            <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-semibold">J</kbd>
+            <span>next</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-semibold">K</kbd>
+            <span>prev</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-semibold">A</kbd>
+            <span>approve</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-semibold">R</kbd>
+            <span>reject</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-semibold">?</kbd>
+          </span>
         </button>
       </div>
 
@@ -738,18 +833,27 @@ export default function PendingPage() {
         </Card>
       )}
 
-      {/* Application cards */}
-      <div className={`space-y-3 ${selectedIds.size > 0 ? "rows-dimmed" : ""}`} ref={listRef}>
+      {/* Split-pane: list on left (1/3 lg+), detail on right (2/3 lg+).
+          On mobile, only one pane is visible at a time — selecting an app
+          swaps to the detail pane; the back button returns to the list. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3 lg:gap-6">
+
+      {/* Application cards (list column) */}
+      <div
+        className={cn(
+          "space-y-3 lg:col-span-1",
+          selectedIds.size > 0 && "rows-dimmed",
+          expandedId && "hidden lg:block",
+        )}
+        ref={listRef}
+      >
         {applications.map((app: any, idx: number) => {
           const isExpanded = expandedId === app.id
           const isFocused = focusIndex === idx
           const isSelected = selectedIds.has(app.id)
           const fullName = [app.salutation, app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
-          const aiFlags = app.ai_flags || []
-          const docs = app.documents || {}
-          const ocrData = app.ocr_data || {}
           const aiScore = getAiScoreNum(app)
-          const profileDoc = docs.profile || null
+          const profileDoc = (app.documents || {}).profile || null
 
           const borderClass = app.status === "documents_unreadable"
             ? "border-l-4 border-l-red-500"
@@ -769,7 +873,8 @@ export default function PendingPage() {
             <Card
               key={app.id}
               data-app-card
-              className={`row-glow transition-all hover:shadow-md ${borderClass} ${isFocused ? "ring-2 ring-primary/40" : ""} ${isSelected ? "row-active bg-primary/[0.02]" : ""}`}
+              onClick={() => { setExpandedId(isExpanded ? null : app.id); setActionMode(null); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}
+              className={`row-glow transition-all hover:shadow-md cursor-pointer ${borderClass} ${isFocused ? "ring-2 ring-primary/40" : ""} ${isSelected ? "row-active bg-primary/[0.02]" : ""} ${isExpanded ? "ring-2 ring-primary/50 bg-primary/[0.03]" : ""}`}
             >
               <CardContent className="p-4 sm:p-5">
                 {/* Summary row — wraps to two lines on narrow screens so the
@@ -779,7 +884,7 @@ export default function PendingPage() {
                   {/* Checkbox */}
                   {isActionable(app.status) && (
                     <button
-                      onClick={() => toggleSelect(app.id)}
+                      onClick={(e) => { e.stopPropagation(); toggleSelect(app.id) }}
                       className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {isSelected ? <CheckSquare className="h-4.5 w-4.5 text-primary" /> : <Square className="h-4.5 w-4.5" />}
@@ -892,51 +997,10 @@ export default function PendingPage() {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 ml-auto">
-                    {isActionable(app.status) && (
-                      <div className="relative">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9 px-3 shadow-sm"
-                          onClick={() => setShowActions(showActions === app.id ? null : app.id)}
-                        >
-                          My Action <ChevronDown className="h-3.5 w-3.5 ml-1.5" />
-                        </Button>
-                        {showActions === app.id && (
-                          <>
-                            <div className="fixed inset-0 z-40" onClick={() => setShowActions(null)} />
-                            <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-xl border bg-card shadow-xl py-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-accent text-foreground flex items-center gap-2.5 transition-colors"
-                                onClick={() => { setShowActions(null); setEditingApp(app) }}>
-                                <Pencil className="h-4 w-4" /> Edit details
-                              </button>
-                              <div className="border-t my-1" />
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-emerald-50 dark:hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 flex items-center gap-2.5 transition-colors"
-                                onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode(null); setApproveNotes(""); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
-                                <CheckCircle className="h-4 w-4" /> Approve
-                              </button>
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-blue-50 dark:hover:bg-blue-500/15 text-blue-700 dark:text-blue-300 flex items-center gap-2.5 transition-colors"
-                                onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("clarification"); setActionMessage(""); setApproveNotes(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
-                                <MessageSquare className="h-4 w-4" /> Need Clarification
-                              </button>
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-amber-50 dark:hover:bg-amber-500/15 text-amber-700 dark:text-amber-300 flex items-center gap-2.5 transition-colors"
-                                onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("resubmit"); setActionMessage(""); setApproveNotes(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}>
-                                <RotateCcw className="h-4 w-4" /> Ask to Resubmit
-                              </button>
-                              <div className="border-t my-1" />
-                              <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-red-50 dark:hover:bg-red-500/15 text-red-600 dark:text-red-300 flex items-center gap-2.5 transition-colors"
-                                onClick={() => { setShowActions(null); setExpandedId(app.id); setActionMode("reject"); setRejectReason(""); setApproveNotes(""); setActionMessage(""); setInternalNote(""); setShowNotes(null) }}>
-                                <XCircle className="h-4 w-4" /> Reject
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => { setExpandedId(isExpanded ? null : app.id); setActionMode(null); setApproveNotes(""); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}
+                      onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : app.id); setActionMode(null); setActionMessage(""); setRejectReason(""); setInternalNote(""); setShowNotes(null) }}
                       className={`h-9 w-9 p-0 ${isExpanded ? "bg-accent" : ""}`}
                     >
                       {isExpanded ? <ChevronUp className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -944,640 +1008,707 @@ export default function PendingPage() {
                   </div>
                 </div>
 
-                {/* ─── Expanded Detail Panel ─────────────────────────── */}
-                {isExpanded && (
-                  <div className="mt-5 pt-5 border-t space-y-6">
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
 
-                    {/* Application Timeline */}
-                    <div className="bg-muted/30 rounded-xl p-4">
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                        <Calendar className="h-3.5 w-3.5" /> Application Timeline
-                      </p>
-                      <ApplicationTimeline app={app} />
-                    </div>
+      {/* Detail column */}
+      <div className={cn("lg:col-span-2", !selectedApp && "hidden lg:block")}>
+        {(() => {
+          if (!selectedApp) {
+            return (
+              <div className="sticky top-4 border rounded-md bg-card flex flex-col items-center justify-center py-20 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-muted border mb-3">
+                  <Inbox className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium text-foreground">Select an application to review</p>
+                <p className="text-xs text-muted-foreground mt-1">Use J / K to navigate</p>
+              </div>
+            )
+          }
+          const app: any = selectedApp
+          const fullName = [app.salutation, app.first_name, app.middle_name, app.last_name].filter(Boolean).join(" ") || app.name
+          const aiFlags = app.ai_flags || []
+          const docs = app.documents || {}
+          const ocrData = app.ocr_data || {}
+          const aiScore = getAiScoreNum(app)
+          const profileDoc = docs.profile || null
+          return (
+            <Card className="sticky top-4">
+              <CardContent className="p-4 sm:p-5 space-y-6 max-h-[calc(100vh-6rem)] overflow-y-auto">
+                {/* Mobile back button — returns to the list pane on small screens. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="lg:hidden -ml-2"
+                  onClick={() => setExpandedId(null)}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to list
+                </Button>
 
-                    {/* AI Flags with confidence meters */}
-                    {(aiFlags.length > 0 || app.ai_checks) && (
-                      <div className="bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-4">
-                        <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                          <Sparkles className="h-4 w-4" /> AI Verification Results
-                        </p>
+                {/* Application Timeline */}
+                <div className="bg-muted/30 rounded-xl p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                    <Calendar className="h-3.5 w-3.5" /> Application Timeline
+                  </p>
+                  <ApplicationTimeline app={app} />
+                </div>
 
-                        {/* Per-check confidence bars */}
-                        {app.ai_checks && Array.isArray(app.ai_checks) && (
-                          <div className="space-y-2.5">
-                            {app.ai_checks.map((check: any, i: number) => (
-                              <div key={i} className="flex items-center gap-3">
-                                <div className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                                  check.passed ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300" : "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300"
-                                }`}>
-                                  {check.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                </div>
-                                <ConfidenceMeter score={check.score} label={check.check} />
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                {/* AI Flags with confidence meters */}
+                {(aiFlags.length > 0 || app.ai_checks) && (
+                  <div className="bg-amber-50/50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-4">
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" /> AI Verification Results
+                    </p>
 
-                        {/* Overall score */}
-                        {aiScore >= 0 && (
-                          <div className="flex items-center gap-3 pt-2 border-t border-amber-200 dark:border-amber-400/30">
-                            <span className="text-xs font-bold text-amber-800 dark:text-amber-300">Overall Score</span>
-                            <div className="flex-1">
-                              <ConfidenceMeter score={aiScore} />
-                            </div>
-                            <span className={`text-sm font-bold ${
-                              aiScore >= 80 ? "text-emerald-700 dark:text-emerald-300" : aiScore >= 50 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"
-                            }`}>{aiScore}%</span>
-                          </div>
-                        )}
-
-                        {/* Flag list — cleaned up for admin readability */}
-                        {aiFlags.length > 0 && (
-                          <div className="space-y-1.5 pt-2 border-t border-amber-200 dark:border-amber-400/30">
-                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1.5">Review Notes</p>
-                            {aiFlags.map((flag: string, i: number) => {
-                              // Parse "Check: score% ✓/✗ — detail" format into structured display
-                              const match = flag.match(/^(.+?):\s*(\d+)%\s*(✓|✗)\s*—\s*(.+)$/)
-                              if (match) {
-                                const [, check, score, status, detail] = match
-                                const passed = status === "✓"
-                                return (
-                                  <div key={i} className="flex items-start gap-2 text-xs">
-                                    <span className={`shrink-0 mt-0.5 ${passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
-                                      {passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      <span className="font-medium text-foreground">{check}</span>
-                                      {" — "}{detail}
-                                    </span>
-                                  </div>
-                                )
-                              }
-                              // Fallback for non-structured flags
-                              return (
-                                <p key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
-                                  <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
-                                  {flag}
-                                </p>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Member Profile Panel — 2-column grid */}
-                    <div className="grid gap-5 lg:grid-cols-2">
-                      {/* Personal Details */}
-                      <div className="bg-muted/40 rounded-xl p-5 space-y-3">
-                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                          <User className="h-3.5 w-3.5" /> Personal Details
-                        </p>
-                        <div className="flex items-start gap-4">
-                          {(profileDoc?.fileUrl || profileDoc?.url) && (
-                            <button onClick={() => setLightboxUrl(profileDoc?.fileUrl || profileDoc.url)} className="shrink-0">
-                              <img src={profileDoc?.fileUrl || profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
-                            </button>
-                          )}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Full Name</span>
-                              <p className="font-semibold">{fullName}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Gender / DOB</span>
-                              <p>{app.gender || "N/A"} &middot; {formatDate(app.date_of_birth)}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Father&apos;s Name</span>
-                              <p>{app.father_name || "N/A"}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Nationality</span>
-                              <p>{app.nationality || "Indian"}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Email</span>
-                              <p className="truncate">{app.email}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Phone</span>
-                              <p>{app.mobile_code || "+91"} {app.phone}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Address</span>
-                              <p className="text-muted-foreground">
-                                {[app.street_address_1, app.street_address_2, app.city, app.state, app.postal_code, app.country].filter(Boolean).join(", ") || "N/A"}
-                              </p>
-                            </div>
-                            {app.zone && (
-                              <div>
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Zone</span>
-                                <p>{app.zone}</p>
-                              </div>
-                            )}
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Membership Type</span>
-                              <p className="font-medium">{MEMBERSHIP_TYPE_LABELS[app.membership_type] || app.membership_type}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Registration + Payment */}
-                      <div className="space-y-5">
-                        <div className="bg-muted/40 rounded-xl p-5 space-y-3">
-                          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            <Stethoscope className="h-3.5 w-3.5" /> Medical Registration
-                          </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">MCI / Council No</span>
-                              <p className="font-semibold">{app.mci_council_number || "N/A"}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Council State</span>
-                              <p>{app.mci_council_state || "N/A"}</p>
-                            </div>
-                            {app.imr_registration_no && (
-                              <div>
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">IMR Reg No</span>
-                                <p>{app.imr_registration_no}</p>
-                              </div>
-                            )}
-                            {app.asi_membership_no && (
-                              <div>
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">ASI Membership No</span>
-                                <p className="font-medium">{app.asi_membership_no}</p>
-                              </div>
-                            )}
-                            {app.asi_state && (
-                              <div>
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">ASI State</span>
-                                <p>{app.asi_state}</p>
-                              </div>
-                            )}
-                          </div>
-                          {/* NMC Verification */}
-                          {app.mci_council_number && (
-                            <div className="pt-2 border-t">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  onClick={() => verifyNmc(app.id, app.mci_council_number, app.mci_council_state)}
-                                  disabled={nmcResults[app.id]?.loading}
-                                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30 hover:bg-blue-100 dark:hover:bg-blue-500/25 transition-colors disabled:opacity-50"
-                                >
-                                  {nmcResults[app.id]?.loading ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <Search className="h-3 w-3" />
-                                  )}
-                                  {nmcResults[app.id]?.loading ? "Checking..." : "Verify MCI with NMC"}
-                                </button>
-                                {nmcResults[app.id] && !nmcResults[app.id].loading && (
-                                  nmcResults[app.id].verified ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 px-2 py-1 rounded-full">
-                                      <CheckCircle className="h-3 w-3" /> NMC Verified
-                                    </span>
-                                  ) : nmcResults[app.id].reachable === false ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 px-2 py-1 rounded-full">
-                                      <AlertCircle className="h-3 w-3" /> Verification unavailable
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 px-2 py-1 rounded-full">
-                                      <XCircle className="h-3 w-3" /> Not found
-                                    </span>
-                                  )
-                                )}
-                              </div>
-                              {nmcResults[app.id]?.verified && nmcResults[app.id].doctors && nmcResults[app.id].doctors!.length > 0 && (
-                                <div className="mt-2 space-y-1.5">
-                                  {nmcResults[app.id].doctors!.map((doc: any, idx: number) => (
-                                    <div key={idx} className="text-xs bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-400/20 rounded-lg p-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
-                                      <span><span className="text-muted-foreground">Name:</span> <strong>{doc.name}</strong></span>
-                                      <span><span className="text-muted-foreground">Council:</span> {doc.council}</span>
-                                      <span><span className="text-muted-foreground">Degree:</span> {doc.degree}</span>
-                                      <span><span className="text-muted-foreground">University:</span> {doc.university}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {nmcResults[app.id] && !nmcResults[app.id].loading && !nmcResults[app.id].verified && nmcResults[app.id].message && (
-                                <p className={`mt-1.5 text-[10px] ${nmcResults[app.id].reachable === false ? "text-amber-700" : "text-red-500"}`}>{nmcResults[app.id].message}</p>
-                              )}
-                            </div>
-                          )}
-                          <div className="pt-2 border-t">
-                            <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
-                              app.payment_status === "paid"
-                                ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30"
-                                : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30"
+                    {/* Per-check confidence bars */}
+                    {app.ai_checks && Array.isArray(app.ai_checks) && (
+                      <div className="space-y-2.5">
+                        {app.ai_checks.map((check: any, i: number) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <div className={`flex h-5 w-5 items-center justify-center rounded-full ${
+                              check.passed ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300" : "bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300"
                             }`}>
-                              {app.payment_status === "paid" ? "Payment Received" : "Payment Pending"}
-                            </span>
-                            {app.payment_id && <span className="ml-2 text-xs text-muted-foreground font-mono">{app.payment_id}</span>}
-                          </div>
-                        </div>
-
-                        {/* Clinic Address */}
-                        {(app.clinic_name || app.clinic_street_address_1) && (
-                          <div className="bg-muted/40 rounded-xl p-5 space-y-2">
-                            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clinic / Work Address</p>
-                            <div className="text-sm space-y-1">
-                              {app.clinic_name && <p className="font-semibold">{app.clinic_name}</p>}
-                              <p className="text-muted-foreground">
-                                {[app.clinic_street_address_1, app.clinic_street_address_2, app.clinic_city, app.clinic_state, app.clinic_postal_code, app.clinic_country].filter(Boolean).join(", ")}
-                              </p>
-                              {(app.std_code || app.landline) && <p className="text-muted-foreground">Tel: {app.std_code ? `(${app.std_code}) ` : ""}{app.landline}</p>}
+                              {check.passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                             </div>
+                            <ConfidenceMeter score={check.score} label={check.check} />
                           </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Education Qualifications Table */}
-                    <div className="bg-muted/40 rounded-xl p-5">
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                        <GraduationCap className="h-3.5 w-3.5" /> Education Qualifications
-                      </p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Level</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Degree</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">College</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">University</th>
-                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Year</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(app.ug_degree || app.ug_college) && (
-                              <tr className="border-b border-muted">
-                                <td className="px-3 py-2 font-medium">MBBS</td>
-                                <td className="px-3 py-2">{app.ug_degree || "MBBS"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.ug_college || "N/A"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.ug_university || "N/A"}</td>
-                                <td className="px-3 py-2">{app.ug_year || "N/A"}</td>
-                              </tr>
-                            )}
-                            {(app.pg_degree || app.pg_college) && (
-                              <tr className="border-b border-muted">
-                                <td className="px-3 py-2 font-medium">PG</td>
-                                <td className="px-3 py-2">{app.pg_degree || "N/A"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.pg_college || "N/A"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.pg_university || "N/A"}</td>
-                                <td className="px-3 py-2">{app.pg_year || "N/A"}</td>
-                              </tr>
-                            )}
-                            {(app.ss_degree || app.ss_college) && (
-                              <tr>
-                                <td className="px-3 py-2 font-medium">Super Specialty</td>
-                                <td className="px-3 py-2">{app.ss_degree || "N/A"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.ss_college || "N/A"}</td>
-                                <td className="px-3 py-2 max-w-[200px] truncate">{app.ss_university || "N/A"}</td>
-                                <td className="px-3 py-2">{app.ss_year || "N/A"}</td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Documents with thumbnails */}
-                    {Object.keys(docs).length > 0 && (
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                          <FileText className="h-3.5 w-3.5" /> Uploaded Documents
-                        </p>
-                        <div className="flex flex-wrap gap-3">
-                          {Object.entries(docs).map(([key, doc]: [string, any]) => (
-                            <DocThumbnail
-                              key={key}
-                              docKey={key}
-                              doc={doc}
-                              onView={() => {
-                                const url = doc.fileUrl || doc.url
-                                if (url) setLightboxUrl(url)
-                                else toast.error("No document URL available")
-                              }}
-                            />
-                          ))}
-                        </div>
+                        ))}
                       </div>
                     )}
 
-                    {/* Document Comparison View */}
-                    {Object.keys(ocrData).length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                            <Sparkles className="h-3.5 w-3.5" /> AI Extracted Data vs Form Data
-                          </p>
-                          <button
-                            onClick={() => setShowCompare(showCompare === app.id ? null : app.id)}
-                            className="text-xs font-medium text-primary hover:underline"
-                          >
-                            {showCompare === app.id ? "Hide Comparison" : "Show Side-by-Side Comparison"}
-                          </button>
+                    {/* Overall score */}
+                    {aiScore >= 0 && (
+                      <div className="flex items-center gap-3 pt-2 border-t border-amber-200 dark:border-amber-400/30">
+                        <span className="text-xs font-bold text-amber-800 dark:text-amber-300">Overall Score</span>
+                        <div className="flex-1">
+                          <ConfidenceMeter score={aiScore} />
                         </div>
+                        <span className={`text-sm font-bold ${
+                          aiScore >= 80 ? "text-emerald-700 dark:text-emerald-300" : aiScore >= 50 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"
+                        }`}>{aiScore}%</span>
+                      </div>
+                    )}
 
-                        {showCompare === app.id ? (
-                          <div className="overflow-x-auto border rounded-xl">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-muted/50 border-b">
-                                  <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Field</th>
-                                  <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Form Data (Applicant)</th>
-                                  <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">OCR Extracted (AI)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {/* Name comparison across documents */}
-                                {Object.entries(ocrData).map(([docType, extracted]: [string, any]) => {
-                                  if (!extracted || typeof extracted !== "object") return null
-                                  const rows: { label: string; form: string; ocr: string }[] = []
-                                  if (extracted.name) {
-                                    rows.push({
-                                      label: `Name (${docType.replace(/_/g, " ")})`,
-                                      form: fullName,
-                                      ocr: extracted.name,
-                                    })
-                                  }
-                                  if (extracted.degree) {
-                                    rows.push({
-                                      label: `Degree (${docType.replace(/_/g, " ")})`,
-                                      form: app.pg_degree || app.ug_degree || "",
-                                      ocr: extracted.degree,
-                                    })
-                                  }
-                                  if (extracted.college) {
-                                    rows.push({
-                                      label: `College (${docType.replace(/_/g, " ")})`,
-                                      form: app.pg_college || app.ug_college || "",
-                                      ocr: extracted.college,
-                                    })
-                                  }
-                                  if (extracted.university) {
-                                    rows.push({
-                                      label: `University (${docType.replace(/_/g, " ")})`,
-                                      form: app.pg_university || app.ug_university || "",
-                                      ocr: extracted.university,
-                                    })
-                                  }
-                                  if (extracted.registration_number) {
-                                    rows.push({
-                                      label: `Reg. No (${docType.replace(/_/g, " ")})`,
-                                      form: app.mci_council_number || "",
-                                      ocr: extracted.registration_number,
-                                    })
-                                  }
-                                  if (extracted.year) {
-                                    rows.push({
-                                      label: `Year (${docType.replace(/_/g, " ")})`,
-                                      form: app.pg_year || app.ug_year || "",
-                                      ocr: extracted.year,
-                                    })
-                                  }
-                                  return rows.map((row, i) => (
-                                    <CompareRow key={`${docType}-${i}`} label={row.label} formValue={row.form} ocrValue={row.ocr} />
-                                  ))
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          /* Compact OCR data view (original) */
-                          <div className="bg-muted/50 rounded-xl p-4 text-xs space-y-1.5 max-h-40 overflow-auto font-mono">
-                            {Object.entries(ocrData).map(([docType, extracted]: [string, any]) => (
-                              <div key={docType}>
-                                <span className="font-bold text-foreground">{docType}:</span>{" "}
+                    {/* Flag list — cleaned up for admin readability */}
+                    {aiFlags.length > 0 && (
+                      <div className="space-y-1.5 pt-2 border-t border-amber-200 dark:border-amber-400/30">
+                        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1.5">Review Notes</p>
+                        {aiFlags.map((flag: string, i: number) => {
+                          // Parse "Check: score% ✓/✗ — detail" format into structured display
+                          const match = flag.match(/^(.+?):\s*(\d+)%\s*(✓|✗)\s*—\s*(.+)$/)
+                          if (match) {
+                            const [, check, , status, detail] = match
+                            const passed = status === "✓"
+                            return (
+                              <div key={i} className="flex items-start gap-2 text-xs">
+                                <span className={`shrink-0 mt-0.5 ${passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                                  {passed ? <CheckCircle className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                                </span>
                                 <span className="text-muted-foreground">
-                                  {Object.entries(extracted || {})
-                                    .filter(([k]) => k !== "is_valid_medical_document" && k !== "rejection_reason")
-                                    .map(([k, v]) => `${k}=${v}`)
-                                    .join(", ")}
+                                  <span className="font-medium text-foreground">{check}</span>
+                                  {" — "}{detail}
                                 </span>
                               </div>
-                            ))}
+                            )
+                          }
+                          // Fallback for non-structured flags
+                          return (
+                            <p key={i} className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                              <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                              {flag}
+                            </p>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Member Profile Panel — 2-column grid */}
+                <div className="grid gap-5 lg:grid-cols-2">
+                  {/* Personal Details */}
+                  <div className="bg-muted/40 rounded-xl p-5 space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <User className="h-3.5 w-3.5" /> Personal Details
+                    </p>
+                    <div className="flex items-start gap-4">
+                      {(profileDoc?.fileUrl || profileDoc?.url) && (
+                        <button onClick={() => setLightboxUrl(profileDoc?.fileUrl || profileDoc.url)} className="shrink-0">
+                          <img src={profileDoc?.fileUrl || profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
+                        </button>
+                      )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Full Name</span>
+                          <p className="font-semibold">{fullName}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Gender / DOB</span>
+                          <p>{app.gender || "N/A"} &middot; {formatDate(app.date_of_birth)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Father&apos;s Name</span>
+                          <p>{app.father_name || "N/A"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Nationality</span>
+                          <p>{app.nationality || "Indian"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Email</span>
+                          <p className="truncate">{app.email}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Phone</span>
+                          <p>{app.mobile_code || "+91"} {app.phone}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Address</span>
+                          <p className="text-muted-foreground">
+                            {[app.street_address_1, app.street_address_2, app.city, app.state, app.postal_code, app.country].filter(Boolean).join(", ") || "N/A"}
+                          </p>
+                        </div>
+                        {app.zone && (
+                          <div>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Zone</span>
+                            <p>{app.zone}</p>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Membership Type</span>
+                          <p className="font-medium">{MEMBERSHIP_TYPE_LABELS[app.membership_type] || app.membership_type}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Registration + Payment */}
+                  <div className="space-y-5">
+                    <div className="bg-muted/40 rounded-xl p-5 space-y-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <Stethoscope className="h-3.5 w-3.5" /> Medical Registration
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">MCI / Council No</span>
+                          <p className="font-semibold">{app.mci_council_number || "N/A"}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Council State</span>
+                          <p>{app.mci_council_state || "N/A"}</p>
+                        </div>
+                        {app.imr_registration_no && (
+                          <div>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">IMR Reg No</span>
+                            <p>{app.imr_registration_no}</p>
+                          </div>
+                        )}
+                        {app.asi_membership_no && (
+                          <div>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">ASI Membership No</span>
+                            <p className="font-medium">{app.asi_membership_no}</p>
+                          </div>
+                        )}
+                        {app.asi_state && (
+                          <div>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">ASI State</span>
+                            <p>{app.asi_state}</p>
                           </div>
                         )}
                       </div>
-                    )}
-
-                    {/* Admin notes for clarification/resubmit */}
-                    {app.review_notes && (app.status === "need_clarification" || app.status === "resubmit_requested") && (
-                      <div className={`border rounded-xl p-4 ${app.status === "need_clarification" ? "bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-400/30" : "bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-400/30"}`}>
-                        <p className={`text-sm font-bold mb-1 flex items-center gap-2 ${app.status === "need_clarification" ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
-                          {app.status === "need_clarification" ? <MessageSquare className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
-                          {app.status === "need_clarification" ? "Clarification Requested" : "Resubmission Requested"}
-                        </p>
-                        <p className={`text-sm ${app.status === "need_clarification" ? "text-blue-700 dark:text-blue-300" : "text-amber-700 dark:text-amber-300"}`}>{app.review_notes}</p>
-                      </div>
-                    )}
-
-                    {/* Assigned number */}
-                    {app.assigned_amasi_number && (
-                      <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 rounded-xl p-4 flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
-                          <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">AMASI #{app.assigned_amasi_number}</p>
-                          <p className="text-xs text-emerald-600 dark:text-emerald-400">{app.review_notes}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Internal Notes System */}
-                    <div className="border rounded-xl p-4 space-y-3">
-                      <button
-                        onClick={() => setShowNotes(showNotes === app.id ? null : app.id)}
-                        className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
-                      >
-                        <StickyNote className="h-4 w-4" />
-                        Internal Notes
-                        {app.internal_notes && Array.isArray(app.internal_notes) && app.internal_notes.length > 0 && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-muted">{app.internal_notes.length}</span>
-                        )}
-                        <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${showNotes === app.id ? "rotate-180" : ""}`} />
-                      </button>
-
-                      {showNotes === app.id && (
-                        <div className="space-y-3 pt-2">
-                          {/* Existing notes */}
-                          {app.internal_notes && Array.isArray(app.internal_notes) && app.internal_notes.length > 0 && (
-                            <div className="space-y-2 max-h-40 overflow-auto">
-                              {app.internal_notes.map((note: any, i: number) => (
-                                <div key={i} className="bg-muted/50 rounded-lg p-3 text-sm">
-                                  <p className="text-muted-foreground">{note.text || note}</p>
-                                  {note.date && <p className="text-[10px] text-muted-foreground/60 mt-1">{formatDate(note.date)}</p>}
+                      {/* NMC Verification */}
+                      {app.mci_council_number && (
+                        <div className="pt-2 border-t">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => verifyNmc(app.id, app.mci_council_number, app.mci_council_state)}
+                              disabled={nmcResults[app.id]?.loading}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-400/30 hover:bg-blue-100 dark:hover:bg-blue-500/25 transition-colors disabled:opacity-50"
+                            >
+                              {nmcResults[app.id]?.loading ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Search className="h-3 w-3" />
+                              )}
+                              {nmcResults[app.id]?.loading ? "Checking..." : "Verify MCI with NMC"}
+                            </button>
+                            {nmcResults[app.id] && !nmcResults[app.id].loading && (
+                              nmcResults[app.id].verified ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 px-2 py-1 rounded-full">
+                                  <CheckCircle className="h-3 w-3" /> NMC Verified
+                                </span>
+                              ) : nmcResults[app.id].reachable === false ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 px-2 py-1 rounded-full">
+                                  <AlertCircle className="h-3 w-3" /> Verification unavailable
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 px-2 py-1 rounded-full">
+                                  <XCircle className="h-3 w-3" /> Not found
+                                </span>
+                              )
+                            )}
+                          </div>
+                          {nmcResults[app.id]?.verified && nmcResults[app.id].doctors && nmcResults[app.id].doctors!.length > 0 && (
+                            <div className="mt-2 space-y-1.5">
+                              {nmcResults[app.id].doctors!.map((doc: any, idx: number) => (
+                                <div key={idx} className="text-xs bg-emerald-50/60 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-400/20 rounded-lg p-2 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                  <span><span className="text-muted-foreground">Name:</span> <strong>{doc.name}</strong></span>
+                                  <span><span className="text-muted-foreground">Council:</span> {doc.council}</span>
+                                  <span><span className="text-muted-foreground">Degree:</span> {doc.degree}</span>
+                                  <span><span className="text-muted-foreground">University:</span> {doc.university}</span>
                                 </div>
                               ))}
                             </div>
                           )}
-                          {/* Add new note */}
-                          <div className="flex gap-2">
-                            <Input
-                              value={internalNote}
-                              onChange={e => setInternalNote(e.target.value)}
-                              placeholder="Add an internal note (not sent to applicant)..."
-                              className="flex-1 h-9 text-sm"
-                              onKeyDown={e => {
-                                if (e.key === "Enter" && internalNote.trim()) {
-                                  e.stopPropagation()
-                                  noteMutation.mutate({ id: app.id, note: internalNote })
-                                }
-                              }}
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-9"
-                              onClick={() => noteMutation.mutate({ id: app.id, note: internalNote })}
-                              disabled={!internalNote.trim() || noteMutation.isPending}
-                            >
-                              {noteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-                            </Button>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">Notes are private and not visible to the applicant.</p>
+                          {nmcResults[app.id] && !nmcResults[app.id].loading && !nmcResults[app.id].verified && nmcResults[app.id].message && (
+                            <p className={`mt-1.5 text-[10px] ${nmcResults[app.id].reachable === false ? "text-amber-700" : "text-red-500"}`}>{nmcResults[app.id].message}</p>
+                          )}
                         </div>
                       )}
+                      <div className="pt-2 border-t">
+                        <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${
+                          app.payment_status === "paid"
+                            ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30"
+                            : "bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-400/30"
+                        }`}>
+                          {app.payment_status === "paid" ? "Payment Received" : "Payment Pending"}
+                        </span>
+                        {app.payment_id && <span className="ml-2 text-xs text-muted-foreground font-mono">{app.payment_id}</span>}
+                      </div>
                     </div>
 
-                    {/* Need Clarification form */}
-                    {actionMode === "clarification" && (
-                      <div className="bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-400/30 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-300" />
-                          <Label className="text-sm font-semibold text-blue-700 dark:text-blue-300">Need Clarification</Label>
-                        </div>
-                        <p className="text-xs text-blue-600 dark:text-blue-400">The applicant will receive an email with your message asking for additional information.</p>
-                        <Textarea
-                          value={actionMessage}
-                          onChange={(e) => setActionMessage(e.target.value)}
-                          placeholder="e.g. Please provide a clearer copy of your MCI registration certificate..."
-                          className="border-blue-200 bg-white dark:bg-slate-900 min-h-[80px]"
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                            onClick={() => clarificationMutation.mutate({ id: app.id, action: "need_clarification", message: actionMessage })}
-                            disabled={!actionMessage.trim() || clarificationMutation.isPending}
-                          >
-                            {clarificationMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-1.5" />}
-                            Send Clarification Request
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
+                    {/* Clinic Address */}
+                    {(app.clinic_name || app.clinic_street_address_1) && (
+                      <div className="bg-muted/40 rounded-xl p-5 space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clinic / Work Address</p>
+                        <div className="text-sm space-y-1">
+                          {app.clinic_name && <p className="font-semibold">{app.clinic_name}</p>}
+                          <p className="text-muted-foreground">
+                            {[app.clinic_street_address_1, app.clinic_street_address_2, app.clinic_city, app.clinic_state, app.clinic_postal_code, app.clinic_country].filter(Boolean).join(", ")}
+                          </p>
+                          {(app.std_code || app.landline) && <p className="text-muted-foreground">Tel: {app.std_code ? `(${app.std_code}) ` : ""}{app.landline}</p>}
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
 
-                    {/* Ask to Resubmit form */}
-                    {actionMode === "resubmit" && (
-                      <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-300" />
-                          <Label className="text-sm font-semibold text-amber-700 dark:text-amber-300">Ask to Resubmit</Label>
-                        </div>
-                        <p className="text-xs text-amber-600 dark:text-amber-400">The applicant will receive an email with instructions to correct and resubmit their application.</p>
-                        <Textarea
-                          value={actionMessage}
-                          onChange={(e) => setActionMessage(e.target.value)}
-                          placeholder="e.g. Your PG degree certificate appears to be a bank statement. Please upload the correct document..."
-                          className="border-amber-200 bg-white dark:bg-slate-900 min-h-[80px]"
+                {/* Education Qualifications Table */}
+                <div className="bg-muted/40 rounded-xl p-5">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                    <GraduationCap className="h-3.5 w-3.5" /> Education Qualifications
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Level</th>
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Degree</th>
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">College</th>
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">University</th>
+                          <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Year</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(app.ug_degree || app.ug_college) && (
+                          <tr className="border-b border-muted">
+                            <td className="px-3 py-2 font-medium">MBBS</td>
+                            <td className="px-3 py-2">{app.ug_degree || "MBBS"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.ug_college || "N/A"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.ug_university || "N/A"}</td>
+                            <td className="px-3 py-2">{app.ug_year || "N/A"}</td>
+                          </tr>
+                        )}
+                        {(app.pg_degree || app.pg_college) && (
+                          <tr className="border-b border-muted">
+                            <td className="px-3 py-2 font-medium">PG</td>
+                            <td className="px-3 py-2">{app.pg_degree || "N/A"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.pg_college || "N/A"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.pg_university || "N/A"}</td>
+                            <td className="px-3 py-2">{app.pg_year || "N/A"}</td>
+                          </tr>
+                        )}
+                        {(app.ss_degree || app.ss_college) && (
+                          <tr>
+                            <td className="px-3 py-2 font-medium">Super Specialty</td>
+                            <td className="px-3 py-2">{app.ss_degree || "N/A"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.ss_college || "N/A"}</td>
+                            <td className="px-3 py-2 max-w-[200px] truncate">{app.ss_university || "N/A"}</td>
+                            <td className="px-3 py-2">{app.ss_year || "N/A"}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Documents with thumbnails */}
+                {Object.keys(docs).length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                      <FileText className="h-3.5 w-3.5" /> Uploaded Documents
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(docs).map(([key, doc]: [string, any]) => (
+                        <DocThumbnail
+                          key={key}
+                          docKey={key}
+                          doc={doc}
+                          onView={() => {
+                            const url = doc.fileUrl || doc.url
+                            if (url) setLightboxUrl(url)
+                            else toast.error("No document URL available")
+                          }}
                         />
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
-                            onClick={() => clarificationMutation.mutate({ id: app.id, action: "ask_resubmit", message: actionMessage })}
-                            disabled={!actionMessage.trim() || clarificationMutation.isPending}
-                          >
-                            {clarificationMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
-                            Send Resubmit Request
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
-                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Document Comparison View */}
+                {Object.keys(ocrData).length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5" /> AI Extracted Data vs Form Data
+                      </p>
+                      <button
+                        onClick={() => setShowCompare(showCompare === app.id ? null : app.id)}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        {showCompare === app.id ? "Hide Comparison" : "Show Side-by-Side Comparison"}
+                      </button>
+                    </div>
+
+                    {showCompare === app.id ? (
+                      <div className="overflow-x-auto border rounded-xl">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted/50 border-b">
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Field</th>
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Form Data (Applicant)</th>
+                              <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">OCR Extracted (AI)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {/* Name comparison across documents */}
+                            {Object.entries(ocrData).map(([docType, extracted]: [string, any]) => {
+                              if (!extracted || typeof extracted !== "object") return null
+                              const rows: { label: string; form: string; ocr: string }[] = []
+                              if (extracted.name) {
+                                rows.push({
+                                  label: `Name (${docType.replace(/_/g, " ")})`,
+                                  form: fullName,
+                                  ocr: extracted.name,
+                                })
+                              }
+                              if (extracted.degree) {
+                                rows.push({
+                                  label: `Degree (${docType.replace(/_/g, " ")})`,
+                                  form: app.pg_degree || app.ug_degree || "",
+                                  ocr: extracted.degree,
+                                })
+                              }
+                              if (extracted.college) {
+                                rows.push({
+                                  label: `College (${docType.replace(/_/g, " ")})`,
+                                  form: app.pg_college || app.ug_college || "",
+                                  ocr: extracted.college,
+                                })
+                              }
+                              if (extracted.university) {
+                                rows.push({
+                                  label: `University (${docType.replace(/_/g, " ")})`,
+                                  form: app.pg_university || app.ug_university || "",
+                                  ocr: extracted.university,
+                                })
+                              }
+                              if (extracted.registration_number) {
+                                rows.push({
+                                  label: `Reg. No (${docType.replace(/_/g, " ")})`,
+                                  form: app.mci_council_number || "",
+                                  ocr: extracted.registration_number,
+                                })
+                              }
+                              if (extracted.year) {
+                                rows.push({
+                                  label: `Year (${docType.replace(/_/g, " ")})`,
+                                  form: app.pg_year || app.ug_year || "",
+                                  ocr: extracted.year,
+                                })
+                              }
+                              return rows.map((row, i) => (
+                                <CompareRow key={`${docType}-${i}`} label={row.label} formValue={row.form} ocrValue={row.ocr} />
+                              ))
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      /* Compact OCR data view (original) */
+                      <div className="bg-muted/50 rounded-xl p-4 text-xs space-y-1.5 max-h-40 overflow-auto font-mono">
+                        {Object.entries(ocrData).map(([docType, extracted]: [string, any]) => (
+                          <div key={docType}>
+                            <span className="font-bold text-foreground">{docType}:</span>{" "}
+                            <span className="text-muted-foreground">
+                              {Object.entries(extracted || {})
+                                .filter(([k]) => k !== "is_valid_medical_document" && k !== "rejection_reason")
+                                .map(([k, v]) => `${k}=${v}`)
+                                .join(", ")}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
+                  </div>
+                )}
 
-                    {/* Reject form */}
-                    {actionMode === "reject" && (
-                      <div className="bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <XCircle className="h-4 w-4 text-red-600 dark:text-red-300" />
-                          <Label className="text-sm font-semibold text-red-700 dark:text-red-300">Reject Application</Label>
-                        </div>
-                        <Textarea
-                          value={rejectReason}
-                          onChange={(e) => setRejectReason(e.target.value)}
-                          placeholder="e.g. Invalid MCI certificate, degree not verified..."
-                          className="border-red-200 bg-white dark:bg-slate-900 min-h-[80px]"
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="shadow-sm"
-                            onClick={() => rejectMutation.mutate({ id: app.id, reason: rejectReason })}
-                            disabled={!rejectReason.trim() || rejectMutation.isPending}
-                          >
-                            {rejectMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />}
-                            Confirm Rejection
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
-                        </div>
-                      </div>
+                {/* Admin notes for clarification/resubmit */}
+                {app.review_notes && (app.status === "need_clarification" || app.status === "resubmit_requested") && (
+                  <div className={`border rounded-xl p-4 ${app.status === "need_clarification" ? "bg-blue-50 dark:bg-blue-500/15 border-blue-200 dark:border-blue-400/30" : "bg-amber-50 dark:bg-amber-500/15 border-amber-200 dark:border-amber-400/30"}`}>
+                    <p className={`text-sm font-bold mb-1 flex items-center gap-2 ${app.status === "need_clarification" ? "text-blue-800 dark:text-blue-300" : "text-amber-800 dark:text-amber-300"}`}>
+                      {app.status === "need_clarification" ? <MessageSquare className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                      {app.status === "need_clarification" ? "Clarification Requested" : "Resubmission Requested"}
+                    </p>
+                    <p className={`text-sm ${app.status === "need_clarification" ? "text-blue-700 dark:text-blue-300" : "text-amber-700 dark:text-amber-300"}`}>{app.review_notes}</p>
+                  </div>
+                )}
+
+                {/* Assigned number */}
+                {app.assigned_amasi_number && (
+                  <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 rounded-xl p-4 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
+                      <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">AMASI #{app.assigned_amasi_number}</p>
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">{app.review_notes}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Internal Notes System */}
+                <div className="border rounded-xl p-4 space-y-3">
+                  <button
+                    onClick={() => setShowNotes(showNotes === app.id ? null : app.id)}
+                    className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors w-full"
+                  >
+                    <StickyNote className="h-4 w-4" />
+                    Internal Notes
+                    {app.internal_notes && Array.isArray(app.internal_notes) && app.internal_notes.length > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-muted">{app.internal_notes.length}</span>
                     )}
+                    <ChevronDown className={`h-3.5 w-3.5 ml-auto transition-transform ${showNotes === app.id ? "rotate-180" : ""}`} />
+                  </button>
 
-                    {/* Approve with notes (show when no action mode is selected) */}
-                    {!actionMode && isActionable(app.status) && (
-                      <div className="bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-400/30 rounded-xl p-4 space-y-3">
-                        <Label className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Approval Notes (optional)</Label>
+                  {showNotes === app.id && (
+                    <div className="space-y-3 pt-2">
+                      {/* Existing notes */}
+                      {app.internal_notes && Array.isArray(app.internal_notes) && app.internal_notes.length > 0 && (
+                        <div className="space-y-2 max-h-40 overflow-auto">
+                          {app.internal_notes.map((note: any, i: number) => (
+                            <div key={i} className="bg-muted/50 rounded-lg p-3 text-sm">
+                              <p className="text-muted-foreground">{note.text || note}</p>
+                              {note.date && <p className="text-[10px] text-muted-foreground/60 mt-1">{formatDate(note.date)}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Add new note */}
+                      <div className="flex gap-2">
                         <Input
-                          value={approveNotes}
-                          onChange={(e) => setApproveNotes(e.target.value)}
-                          placeholder="e.g. Documents verified manually..."
-                          className="border-emerald-200 bg-white dark:bg-slate-900"
+                          value={internalNote}
+                          onChange={e => setInternalNote(e.target.value)}
+                          placeholder="Add an internal note (not sent to applicant)..."
+                          className="flex-1 h-9 text-sm"
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && internalNote.trim()) {
+                              e.stopPropagation()
+                              noteMutation.mutate({ id: app.id, note: internalNote })
+                            }
+                          }}
                         />
                         <Button
                           size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 shadow-sm"
-                          onClick={() => {
-                            // Confirm before approving anything the system has
-                            // flagged for manual review (failed OCR, missing
-                            // docs, name mismatch, user-bypass etc.). Native
-                            // window.confirm is enough — this is a guardrail,
-                            // not a frequent action.
-                            if (app.needs_manual_review) {
-                              const ok = window.confirm(
-                                "This application is flagged for manual review.\n\n" +
-                                  "Please confirm you have:\n" +
-                                  "  • Reviewed all uploaded documents\n" +
-                                  "  • Verified the applicant's eligibility\n" +
-                                  "  • Read the review reason on this card\n\n" +
-                                  "Proceed with approval?"
-                              )
-                              if (!ok) return
-                            }
-                            approveMutation.mutate({ id: app.id, notes: approveNotes || "Manually approved" })
-                          }}
-                          disabled={approveMutation.isPending}
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => noteMutation.mutate({ id: app.id, note: internalNote })}
+                          disabled={!internalNote.trim() || noteMutation.isPending}
                         >
-                          {approveMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1.5" />}
-                          Approve & Assign Membership Number
+                          {noteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
                         </Button>
                       </div>
-                    )}
+                      <p className="text-[10px] text-muted-foreground">Notes are private and not visible to the applicant.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline action row — always visible when actionable.
+                    Replaces the My Action dropdown + the bottom Approve
+                    block. Approve fires directly; Reject / Clarify /
+                    Resubmit toggle the form below; Edit opens the dialog. */}
+                {isActionable(app.status) && (
+                  <div className="flex flex-wrap gap-2 border rounded-xl p-3 bg-card">
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                      onClick={() => {
+                        // Confirm before approving anything the system has
+                        // flagged for manual review (failed OCR, missing
+                        // docs, name mismatch, user-bypass etc.). Native
+                        // window.confirm is enough — this is a guardrail,
+                        // not a frequent action.
+                        if (app.needs_manual_review) {
+                          const ok = window.confirm(
+                            "This application is flagged for manual review.\n\n" +
+                              "Please confirm you have:\n" +
+                              "  • Reviewed all uploaded documents\n" +
+                              "  • Verified the applicant's eligibility\n" +
+                              "  • Read the review reason on this card\n\n" +
+                              "Proceed with approval?"
+                          )
+                          if (!ok) return
+                        }
+                        setActionMode(null)
+                        setRejectReason("")
+                        setActionMessage("")
+                        pendingAdvanceFromId.current = app.id
+                        approveMutation.mutate({ id: app.id, notes: "Manually approved" })
+                      }}
+                      disabled={approveMutation.isPending}
+                    >
+                      {approveMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-1.5" />}
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-200 text-red-700 hover:bg-red-50 dark:border-red-400/30 dark:text-red-300 dark:hover:bg-red-500/15"
+                      onClick={() => { setActionMode(actionMode === "reject" ? null : "reject"); setActionMessage(""); setRejectReason("") }}
+                    >
+                      <XCircle className="h-4 w-4 mr-1.5" /> Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-400/30 dark:text-blue-300 dark:hover:bg-blue-500/15"
+                      onClick={() => { setActionMode(actionMode === "clarification" ? null : "clarification"); setActionMessage(""); setRejectReason("") }}
+                    >
+                      <MessageSquare className="h-4 w-4 mr-1.5" /> Request Clarification
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-300 dark:hover:bg-amber-500/15"
+                      onClick={() => { setActionMode(actionMode === "resubmit" ? null : "resubmit"); setActionMessage(""); setRejectReason("") }}
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1.5" /> Request Resubmit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditingApp(app)}
+                    >
+                      <Pencil className="h-4 w-4 mr-1.5" /> Edit
+                    </Button>
+                  </div>
+                )}
+
+                {/* Need Clarification form */}
+                {actionMode === "clarification" && (
+                  <div className="bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-400/30 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-300" />
+                      <Label className="text-sm font-semibold text-blue-700 dark:text-blue-300">Need Clarification</Label>
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">The applicant will receive an email with your message asking for additional information.</p>
+                    <Textarea
+                      value={actionMessage}
+                      onChange={(e) => setActionMessage(e.target.value)}
+                      placeholder="e.g. Please provide a clearer copy of your MCI registration certificate..."
+                      className="border-blue-200 bg-white dark:bg-slate-900 min-h-[80px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                        onClick={() => { pendingAdvanceFromId.current = app.id; clarificationMutation.mutate({ id: app.id, action: "need_clarification", message: actionMessage }) }}
+                        disabled={!actionMessage.trim() || clarificationMutation.isPending}
+                      >
+                        {clarificationMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <MessageSquare className="h-4 w-4 mr-1.5" />}
+                        Send Clarification Request
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ask to Resubmit form */}
+                {actionMode === "resubmit" && (
+                  <div className="bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-400/30 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+                      <Label className="text-sm font-semibold text-amber-700 dark:text-amber-300">Ask to Resubmit</Label>
+                    </div>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">The applicant will receive an email with instructions to correct and resubmit their application.</p>
+                    <Textarea
+                      value={actionMessage}
+                      onChange={(e) => setActionMessage(e.target.value)}
+                      placeholder="e.g. Your PG degree certificate appears to be a bank statement. Please upload the correct document..."
+                      className="border-amber-200 bg-white dark:bg-slate-900 min-h-[80px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+                        onClick={() => { pendingAdvanceFromId.current = app.id; clarificationMutation.mutate({ id: app.id, action: "ask_resubmit", message: actionMessage }) }}
+                        disabled={!actionMessage.trim() || clarificationMutation.isPending}
+                      >
+                        {clarificationMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1.5" />}
+                        Send Resubmit Request
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reject form */}
+                {actionMode === "reject" && (
+                  <div className="bg-red-50 dark:bg-red-500/15 border border-red-200 dark:border-red-400/30 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-red-600 dark:text-red-300" />
+                      <Label className="text-sm font-semibold text-red-700 dark:text-red-300">Reject Application</Label>
+                    </div>
+                    <Textarea
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="e.g. Invalid MCI certificate, degree not verified..."
+                      className="border-red-200 bg-white dark:bg-slate-900 min-h-[80px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="shadow-sm"
+                        onClick={() => { pendingAdvanceFromId.current = app.id; rejectMutation.mutate({ id: app.id, reason: rejectReason }) }}
+                        disabled={!rejectReason.trim() || rejectMutation.isPending}
+                      >
+                        {rejectMutation.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />}
+                        Confirm Rejection
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setActionMode(null)}>Cancel</Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
           )
-        })}
+        })()}
+      </div>
+
       </div>
 
       {/* Total count */}
@@ -1625,7 +1756,9 @@ export default function PendingPage() {
           </DialogHeader>
           <div className="space-y-3 text-sm">
             {[
-              { keys: ["Up", "Down"], desc: "Navigate between applications" },
+              { keys: ["J"], desc: "Next application (auto-expands)" },
+              { keys: ["K"], desc: "Previous application" },
+              { keys: ["Up", "Down"], desc: "Move row focus" },
               { keys: ["Enter"], desc: "Expand / collapse application" },
               { keys: ["A"], desc: "Approve expanded application" },
               { keys: ["R"], desc: "Open reject form for expanded application" },

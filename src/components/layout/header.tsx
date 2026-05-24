@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle"
 import { FocusToggle } from "@/components/focus/focus-toggle"
 import { useRouter, usePathname } from "next/navigation"
 import { useState } from "react"
-import { useAdminRole } from "@/hooks/use-admin-role"
+import { useAdminRoleState } from "@/hooks/use-admin-role"
 import { cn } from "@/lib/utils"
 
 const PUBLIC_ROUTES = ["/apply", "/member", "/verify", "/support", "/card", "/login"]
@@ -25,12 +25,19 @@ const PUBLIC_NAV_ITEMS = [
 export function Header() {
   const router = useRouter()
   const pathname = usePathname()
-  const adminRole = useAdminRole()
+  const { resolved, adminRole } = useAdminRoleState()
   const [query, setQuery] = useState("")
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   // Pages with their own standalone layout — render no header at all.
   if (PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + "/"))) return null
+
+  // Hold a neutral 64px bar until /api/auth/me resolves, so we never commit
+  // the public-nav variant for an admin in the loading window. Once resolved,
+  // the branches below pick the correct variant.
+  if (!resolved) {
+    return <header className="sticky top-0 z-20 border-b bg-card h-16" />
+  }
 
   if (adminRole === null) {
     return (

@@ -1281,6 +1281,48 @@ function ApplyForm() {
       return
     }
 
+    // WS-C commit 3: create the pending_payment app row right before payment so
+    // a successful payment that never reaches /api/applications/submit still has
+    // an app row to attach to (no orphan). Gated server-side by
+    // WSC_EARLY_APPLICATION_ENABLED — flag OFF returns 404 (silent no-op).
+    // All failure modes are non-blocking; the user must reach payment regardless.
+    // Recovery flow (existingPayment) returns earlier in this handler, so we
+    // never call create-pending for the orphan-rescue path.
+    try {
+      const cpRes = await fetch("/api/applications/create-pending", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formData.email,
+          membershipType: formData.membershipType || type?.id || type?.name,
+          referenceNumber: ref,
+          name: `${formData.firstName} ${formData.lastName}`.trim() || undefined,
+        }),
+      })
+      if (cpRes.status === 409) {
+        Sentry.captureMessage("create-pending: ALREADY_EXISTS at pay step", {
+          level: "info",
+          fingerprint: ["wsc-create-pending-already-exists"],
+          tags: { component: "apply/pay", reason: "already_exists" },
+          extra: { referenceNumber: ref, membershipType: formData.membershipType },
+        })
+      } else if (cpRes.status !== 200 && cpRes.status !== 201 && cpRes.status !== 404) {
+        Sentry.captureMessage(`create-pending: unexpected status ${cpRes.status}`, {
+          level: "warning",
+          fingerprint: ["wsc-create-pending-unexpected", String(cpRes.status)],
+          tags: { component: "apply/pay", reason: "unexpected_status" },
+          extra: { status: cpRes.status, referenceNumber: ref, membershipType: formData.membershipType },
+        })
+      }
+    } catch (cpErr) {
+      Sentry.captureException(cpErr, {
+        level: "warning",
+        fingerprint: ["wsc-create-pending-network-error"],
+        tags: { component: "apply/pay", reason: "network_error" },
+        extra: { referenceNumber: ref, membershipType: formData.membershipType },
+      })
+    }
+
     // Step 1: Create Razorpay order
     let orderId = ""
     try {

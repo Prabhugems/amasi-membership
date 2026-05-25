@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   const { data: orphans, error } = await supabase
     .from("membership_payments")
     .select(
-      "id, gateway_payment_id, gateway_order_id, amount, currency, member_email, reference_number, created_at"
+      "id, gateway_payment_id, gateway_order_id, amount, currency, member_email, created_at"
     )
     .is("application_id", null)
     .eq("status", "paid")
@@ -86,9 +86,12 @@ export async function GET(request: NextRequest) {
 
   const rows = orphans ?? []
 
-  const refs = Array.from(
-    new Set(rows.map((r) => r.reference_number).filter((r): r is string => !!r))
-  )
+  // Build the draft-hint set by email only. This endpoint previously also
+  // tried to match by membership_payments.reference_number, but that column
+  // does not exist on the table — pure schema drift (see CONTEXT.md).
+  // The select above and the lookup below were aligned with the real
+  // schema in 2026-05-25; the email-match path was the only one that
+  // ever produced hits anyway.
   const emails = Array.from(
     new Set(
       rows
@@ -98,25 +101,12 @@ export async function GET(request: NextRequest) {
     )
   )
 
-  const refQuery = refs.length
-    ? supabase
-        .from("draft_applications")
-        .select("id, email, reference_number, status, updated_at")
-        .in("reference_number", refs)
-    : null
-  const emailQuery = emails.length
-    ? supabase
+  const byEmail = emails.length
+    ? await supabase
         .from("draft_applications")
         .select("id, email, reference_number, status, updated_at")
         .in("email", emails)
     : null
-
-  const [byRef, byEmail] = await Promise.all([refQuery, emailQuery])
-
-  const refMap = new Map<string, DraftHit>()
-  for (const d of ((byRef?.data ?? []) as DraftHit[])) {
-    if (d.reference_number) refMap.set(d.reference_number, d)
-  }
 
   // Email can collide across drafts (no unique constraint); keep the most
   // recent and flag whether multiple matched so admins know the hint is fuzzy.
@@ -135,7 +125,6 @@ export async function GET(request: NextRequest) {
   }
 
   const data = rows.map((r) => {
-    const refHit = r.reference_number ? refMap.get(r.reference_number) : undefined
     const emailKey = !isPlaceholderEmail(r.member_email)
       ? r.member_email!.toLowerCase()
       : null
@@ -145,18 +134,12 @@ export async function GET(request: NextRequest) {
       | {
           draft_id: string
           draft_status: string | null
-          match_source: "reference_number" | "email"
+          match_source: "email"
           email_match_count?: number
         }
       | null = null
 
-    if (refHit) {
-      draft_hint = {
-        draft_id: refHit.id,
-        draft_status: refHit.status,
-        match_source: "reference_number",
-      }
-    } else if (emailEntry) {
+    if (emailEntry) {
       draft_hint = {
         draft_id: emailEntry.hit.id,
         draft_status: emailEntry.hit.status,
@@ -172,7 +155,6 @@ export async function GET(request: NextRequest) {
       amount: r.amount,
       currency: r.currency,
       member_email: r.member_email,
-      reference_number: r.reference_number,
       created_at: r.created_at,
       draft_hint,
     }

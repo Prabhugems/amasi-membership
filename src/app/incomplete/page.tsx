@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { EditDraftDialog } from "@/components/admin/edit-draft-dialog"
 import { useAdminRole } from "@/hooks/use-admin-role"
 import { toast } from "sonner"
 import { formatDate } from "@/lib/utils"
 import {
   Search, Loader2, Inbox, Eye, Trash2, Send, Clock,
   AlertTriangle, CreditCard, RotateCcw, FileX, PauseCircle,
-  XCircle, AlertCircle, Mail, MessageCircle,
+  XCircle, AlertCircle, Mail, MessageCircle, Pencil,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -218,6 +219,7 @@ function IncompletePageInner() {
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
   const [unexpireDialogDraft, setUnexpireDialogDraft] = useState<IncompleteDraft | null>(null)
+  const [editDialogDraft, setEditDialogDraft] = useState<IncompleteDraft | null>(null)
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
   const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
@@ -446,6 +448,22 @@ function IncompletePageInner() {
 
   // ─── Render action buttons based on status ─────────────────────────────
   const renderActions = useCallback((draft: IncompleteDraft) => {
+    // Edit button (Phase 4a) — super_admin only; never shown on in_progress
+    // drafts (applicant has an active session, race risk) or completed
+    // (doesn't appear on /incomplete anyway). Same gate the server enforces.
+    const editBtn =
+      adminRole === "super_admin" && draft.status !== "in_progress" && draft.status !== "completed" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-400/30 hover:bg-slate-50 dark:hover:bg-slate-500/15 gap-1.5"
+          onClick={() => setEditDialogDraft(draft)}
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </Button>
+      ) : null
+
     if (draft.status === "in_progress") {
       return (
         <Button size="sm" variant="ghost" className="h-8 px-2.5 text-muted-foreground" disabled>
@@ -457,6 +475,7 @@ function IncompletePageInner() {
     if (draft.status === "stuck") {
       return (
         <div className="flex items-center gap-1.5">
+          {editBtn}
           <Button
             size="sm"
             variant="outline"
@@ -483,6 +502,7 @@ function IncompletePageInner() {
     if (draft.status === "payment_on_hold") {
       return (
         <div className="flex items-center gap-1.5">
+          {editBtn}
           <Button
             size="sm"
             variant="outline"
@@ -508,18 +528,22 @@ function IncompletePageInner() {
 
     if (draft.status === "refund_initiated") {
       return (
-        <Button size="sm" variant="ghost" className="h-8 px-3 text-xs text-muted-foreground gap-1.5" disabled>
-          <RotateCcw className="h-3 w-3" />
-          Refund Pending
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {editBtn}
+          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs text-muted-foreground gap-1.5" disabled>
+            <RotateCcw className="h-3 w-3" />
+            Refund Pending
+          </Button>
+        </div>
       )
     }
 
     if (draft.status === "expired") {
-      // Unexpire is the only action for an expired row. Super_admin-gated
-      // both client-side (button hidden for non-super_admin per the
-      // useAdminRole pattern in CLAUDE.md) and server-side (the endpoint
-      // 403s for non-super_admin regardless).
+      // Unexpire is the only state-transition action for an expired row.
+      // Super_admin-gated both client-side (button hidden for non-super_admin
+      // per the useAdminRole pattern in CLAUDE.md) and server-side (the
+      // endpoint 403s for non-super_admin regardless). Edit button appears
+      // alongside it for super_admin via editBtn.
       if (adminRole !== "super_admin") {
         return (
           <Button size="sm" variant="ghost" className="h-8 px-3 text-xs text-muted-foreground gap-1.5" disabled>
@@ -529,15 +553,18 @@ function IncompletePageInner() {
         )
       }
       return (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 px-3 text-xs font-medium text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 gap-1.5"
-          onClick={() => setUnexpireDialogDraft(draft)}
-        >
-          <RotateCcw className="h-3 w-3" />
-          Unexpire
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {editBtn}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-3 text-xs font-medium text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 gap-1.5"
+            onClick={() => setUnexpireDialogDraft(draft)}
+          >
+            <RotateCcw className="h-3 w-3" />
+            Unexpire
+          </Button>
+        </div>
       )
     }
 
@@ -986,6 +1013,42 @@ function IncompletePageInner() {
         confirmLabel="Restore Draft"
         onConfirm={() => unexpireDialogDraft && unexpireMutation.mutate(unexpireDialogDraft.id)}
         isPending={unexpireMutation.isPending}
+      />
+
+      {/* ─── Edit Draft Fields Dialog (Phase 4a) ───────────────────────── */}
+      {/* key prop forces a remount when the selected draft changes so the
+          form's lazy initial state picks up the new draft's values without
+          a useEffect (which would lint-warn for setState-in-effect). */}
+      <EditDraftDialog
+        key={editDialogDraft?.id ?? "closed"}
+        open={!!editDialogDraft}
+        onOpenChange={(o) => { if (!o) setEditDialogDraft(null) }}
+        draftId={editDialogDraft?.id ?? null}
+        displayName={editDialogDraft ? draftDisplayName(editDialogDraft) : ""}
+        initialValues={(() => {
+          if (!editDialogDraft) return {}
+          const fd = (editDialogDraft as unknown as {
+            step_data?: { formData?: Record<string, unknown> }
+          }).step_data?.formData ?? {}
+          return {
+            salutation: typeof fd.salutation === "string" ? fd.salutation : "",
+            firstName: typeof fd.firstName === "string" ? fd.firstName : "",
+            middleName: typeof fd.middleName === "string" ? fd.middleName : "",
+            lastName: typeof fd.lastName === "string" ? fd.lastName : "",
+            dob: typeof fd.dob === "string" ? fd.dob : "",
+            mobileCode: typeof fd.mobileCode === "string" ? fd.mobileCode : "",
+            mobile: typeof fd.mobile === "string" ? fd.mobile : "",
+            mciCouncilNumber: typeof fd.mciCouncilNumber === "string" ? fd.mciCouncilNumber : "",
+            mciCouncilState: typeof fd.mciCouncilState === "string" ? fd.mciCouncilState : "",
+          }
+        })()}
+        onSaved={(updated) => {
+          const n = Object.keys(updated).length
+          toast.success(n > 0 ? `Updated ${n} field${n === 1 ? "" : "s"}` : "No changes saved")
+          queryClient.invalidateQueries({ queryKey: ["incomplete-drafts"] })
+          queryClient.invalidateQueries({ queryKey: ["incomplete-counts"] })
+          setEditDialogDraft(null)
+        }}
       />
     </div>
   )

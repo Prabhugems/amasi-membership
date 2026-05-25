@@ -55,6 +55,19 @@ export async function GET(request: NextRequest) {
       const payment_on_hold = rows.filter((r) => r.status === "payment_on_hold").length
       const refund_initiated = rows.filter((r) => r.status === "refund_initiated").length
 
+      // Expired count fetched separately because the main rows query excludes
+      // expired (deliberately — they shouldn't roll into the "Total Incomplete"
+      // stat). The Expired tab populates from this count + a separate list
+      // fetch when the tab is selected.
+      const { count: expiredCount, error: expiredError } = await supabase
+        .from("draft_applications")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "expired")
+
+      if (expiredError) {
+        console.error("Draft expired count error:", expiredError)
+      }
+
       const by_step: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
       for (const r of rows) {
         const step = r.current_step
@@ -63,7 +76,15 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      return Response.json({ total, in_progress, stuck, payment_on_hold, refund_initiated, by_step })
+      return Response.json({
+        total,
+        in_progress,
+        stuck,
+        payment_on_hold,
+        refund_initiated,
+        expired: expiredCount ?? 0,
+        by_step,
+      })
     }
 
     // --- List mode ---
@@ -93,8 +114,9 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({ drafts: data || [] })
-  } catch (error: any) {
-    return Response.json({ status: false, message: error.message }, { status: 500 })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "An unexpected error occurred"
+    return Response.json({ status: false, message }, { status: 500 })
   }
 }
 
@@ -140,12 +162,12 @@ export async function POST(request: NextRequest) {
         const stepData = draft.step_data
         if (stepData && typeof stepData === "object") {
           const urls: string[] = []
-          const extractUrls = (obj: any) => {
+          const extractUrls = (obj: unknown) => {
             if (!obj) return
             if (typeof obj === "string" && obj.includes("/storage/v1/object/")) {
               urls.push(obj)
             } else if (typeof obj === "object") {
-              for (const val of Object.values(obj)) {
+              for (const val of Object.values(obj as Record<string, unknown>)) {
                 extractUrls(val)
               }
             }
@@ -190,7 +212,7 @@ export async function POST(request: NextRequest) {
         action: "draft_deleted",
         entityType: "draft_application",
         entityId: draftId,
-        performedBy: (session as any).email || "admin",
+        performedBy: (session as { email?: string }).email || "admin",
       }, supabase)
 
       return Response.json({ status: true, message: "Draft deleted successfully" })
@@ -346,17 +368,18 @@ export async function POST(request: NextRequest) {
         action: "draft_resumed",
         entityType: "draft_application",
         entityId: draftId,
-        performedBy: (session as any).email || "admin",
+        performedBy: (session as { email?: string }).email || "admin",
       }, supabase)
 
       return Response.json({ status: true, message: "Application resumed and applicant notified" })
     }
 
     return Response.json({ status: false, message: `Unknown action: ${action}` }, { status: 400 })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Incomplete applications POST error:", error)
+    const message = error instanceof Error ? error.message : "An unexpected error occurred"
     return Response.json(
-      { status: false, message: error.message || "An unexpected error occurred" },
+      { status: false, message },
       { status: 500 }
     )
   }

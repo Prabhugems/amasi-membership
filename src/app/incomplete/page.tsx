@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { useAdminRole } from "@/hooks/use-admin-role"
 import { toast } from "sonner"
 import { formatDate } from "@/lib/utils"
 import {
@@ -19,7 +21,7 @@ import {
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type TabFilter = "all" | "in_progress" | "stuck" | "payment_on_hold" | "refund_initiated"
+type TabFilter = "all" | "in_progress" | "stuck" | "payment_on_hold" | "refund_initiated" | "expired"
 type StageFilter = "all" | 1 | 2 | 3 | 4 | 5 | 6
 
 interface IncompleteDraft {
@@ -42,6 +44,7 @@ interface IncompleteCounts {
   stuck: number
   payment_on_hold: number
   refund_initiated: number
+  expired?: number
   by_step?: Record<number, number>
 }
 
@@ -71,6 +74,7 @@ const TAB_STYLES: Record<TabFilter, { icon: typeof Clock; activeClass: string; d
   stuck: { icon: AlertTriangle, activeClass: "bg-red-600 text-white border-red-600", dotColor: "bg-red-500" },
   payment_on_hold: { icon: PauseCircle, activeClass: "bg-amber-600 text-white border-amber-600", dotColor: "bg-amber-500" },
   refund_initiated: { icon: RotateCcw, activeClass: "bg-sky-600 text-white border-sky-600", dotColor: "bg-sky-500" },
+  expired: { icon: XCircle, activeClass: "bg-slate-600 text-white border-slate-600", dotColor: "bg-slate-500" },
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -185,7 +189,22 @@ function StageBreadcrumb({ currentStep }: { currentStep: number }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
-const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated"]
+const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated", "expired"]
+
+// Pull a display name from the draft's step_data.formData when available.
+// Falls back to the email so we always show something the admin can identify
+// the applicant by in confirmation dialogs.
+function draftDisplayName(draft: IncompleteDraft): string {
+  const stepData = (draft as unknown as {
+    step_data?: { formData?: { firstName?: string; lastName?: string; salutation?: string } }
+  }).step_data
+  const fd = stepData?.formData
+  if (fd?.firstName && fd?.lastName) {
+    const sal = fd.salutation ? `${fd.salutation} ` : ""
+    return `${sal}${fd.firstName} ${fd.lastName}`.trim()
+  }
+  return draft.email
+}
 
 function IncompletePageInner() {
   const searchParams = useSearchParams()
@@ -198,9 +217,11 @@ function IncompletePageInner() {
   const [search, setSearch] = useState("")
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
+  const [unexpireDialogDraft, setUnexpireDialogDraft] = useState<IncompleteDraft | null>(null)
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
   const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+  const adminRole = useAdminRole()
 
   // If the URL ?status param changes (e.g., nav from dashboard widget),
   // sync the active tab.
@@ -357,6 +378,32 @@ function IncompletePageInner() {
     },
   })
 
+  // Unexpire — Phase 1 of admin recovery tooling. Calls the new endpoint
+  // /api/admin/drafts/[id]/unexpire (super_admin-only). On success the draft
+  // flips status='expired' → 'in_progress' with deleted_at cleared, ready
+  // for the applicant to resume via /apply.
+  const unexpireMutation = useMutation({
+    mutationFn: async (draftId: string) => {
+      const res = await fetch(`/api/admin/drafts/${draftId}/unexpire`, {
+        method: "POST",
+      })
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Failed to restore draft")
+      }
+      return data
+    },
+    onSuccess: () => {
+      toast.success("Draft restored. Applicant can now resume.")
+      queryClient.invalidateQueries({ queryKey: ["incomplete-drafts"] })
+      queryClient.invalidateQueries({ queryKey: ["incomplete-counts"] })
+      setUnexpireDialogDraft(null)
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to restore draft")
+    },
+  })
+
   // ─── Filter by search + stage ──────────────────────────────────────────
   const drafts = (draftsData?.drafts || []).filter((draft: IncompleteDraft) => {
     if (stage !== "all" && draft.current_step !== stage) return false
@@ -371,6 +418,7 @@ function IncompletePageInner() {
     { key: "stuck", label: "Stuck" },
     { key: "payment_on_hold", label: "Payment on Hold" },
     { key: "refund_initiated", label: "Refund Initiated" },
+    { key: "expired", label: "Expired" },
   ]
 
   const tabCountMap: Record<string, number | undefined> = {
@@ -379,6 +427,7 @@ function IncompletePageInner() {
     stuck: counts?.stuck,
     payment_on_hold: counts?.payment_on_hold,
     refund_initiated: counts?.refund_initiated,
+    expired: counts?.expired,
   }
 
   // Counts for the stage chips. Fall back to computing from the currently
@@ -466,8 +515,34 @@ function IncompletePageInner() {
       )
     }
 
+    if (draft.status === "expired") {
+      // Unexpire is the only action for an expired row. Super_admin-gated
+      // both client-side (button hidden for non-super_admin per the
+      // useAdminRole pattern in CLAUDE.md) and server-side (the endpoint
+      // 403s for non-super_admin regardless).
+      if (adminRole !== "super_admin") {
+        return (
+          <Button size="sm" variant="ghost" className="h-8 px-3 text-xs text-muted-foreground gap-1.5" disabled>
+            <XCircle className="h-3 w-3" />
+            Expired
+          </Button>
+        )
+      }
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 px-3 text-xs font-medium text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-400/30 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 gap-1.5"
+          onClick={() => setUnexpireDialogDraft(draft)}
+        >
+          <RotateCcw className="h-3 w-3" />
+          Unexpire
+        </Button>
+      )
+    }
+
     return null
-  }, [reminderMutation, resumeMutation, pendingReminderId, pendingResumeId])
+  }, [reminderMutation, resumeMutation, pendingReminderId, pendingResumeId, adminRole])
 
   return (
     <div className="space-y-6">
@@ -897,6 +972,21 @@ function IncompletePageInner() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Unexpire Confirmation Dialog ──────────────────────────────── */}
+      <ConfirmDialog
+        open={!!unexpireDialogDraft}
+        onOpenChange={(o) => { if (!o) setUnexpireDialogDraft(null) }}
+        title="Restore expired draft?"
+        description={
+          unexpireDialogDraft
+            ? `${draftDisplayName(unexpireDialogDraft)}'s application will be moved back to in-progress. They can resume from where they left off via /apply (email + OTP). Draft ID: ${unexpireDialogDraft.id.slice(0, 8)}.`
+            : undefined
+        }
+        confirmLabel="Restore Draft"
+        onConfirm={() => unexpireDialogDraft && unexpireMutation.mutate(unexpireDialogDraft.id)}
+        isPending={unexpireMutation.isPending}
+      />
     </div>
   )
 }

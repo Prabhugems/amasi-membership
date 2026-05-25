@@ -714,10 +714,35 @@ function ApplyForm() {
     const first = await attempt(draftUpdatedAt ?? undefined)
     if (first.ok) return { ok: true, error: null }
 
-    // One automatic retry after 500ms, using the fresh server-known value
-    // when the first attempt produced one (the 409 path always does).
+    // Existing-member short-circuit already routed to the "existing" phase
+    // (line ~675-691); retrying would re-trigger the same EXISTING_MEMBER
+    // server response and waste a round trip. Bail out instead.
+    if (first.error === "existing_member") {
+      return { ok: false, error: "existing_member" }
+    }
+
+    // One automatic retry after 500ms. The lastUpdatedAt to use on retry
+    // depends on WHY the first attempt failed:
+    //   - error === "conflict": the server told us its fresh updated_at
+    //     in the 409 response. Use it; this is the optimistic-lock case
+    //     the previous fix (above attempt threading) was designed for.
+    //   - error === "Load failed" / "timeout" / "auth" / etc.: the client
+    //     got a network-side failure, but the request MAY have landed on
+    //     the server (iOS Safari raises "Load failed" for both
+    //     request-side and response-side network problems, indistinguishable).
+    //     If the server did process it, updated_at has moved past what
+    //     React state knows; sending the stale value triggers a spurious
+    //     409. Drop the lock — server falls back to its freshly-read
+    //     existing.updated_at (lockValue || existing.updated_at), which
+    //     by definition matches. This trades the multi-second client-side
+    //     race protection for getting the user past a momentary network
+    //     flap. The save-draft route's server-side TOCTOU window is
+    //     sub-millisecond and rarely matters. AMASI-MEMBERSHIP-D
+    //     (38 users post-network-flap conflict tag) regressed because
+    //     the previous fix only addressed conflict→retry, not network→retry.
     await new Promise(r => setTimeout(r, 500))
-    const second = await attempt(first.nextLastUpdatedAt)
+    const lockForRetry = first.error === "conflict" ? first.nextLastUpdatedAt : undefined
+    const second = await attempt(lockForRetry)
     if (!second.ok) {
       // Surface to Sentry via the unload-safe /api/client-log relay so the
       // fire-and-forget callers in this page (post-upload, post-review,

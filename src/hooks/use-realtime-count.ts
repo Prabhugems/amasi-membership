@@ -33,11 +33,27 @@ export function useRealtimeCount({
 
   useEffect(() => {
     let cancelled = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
 
     const tick = async () => {
       try {
         const res = await fetch(`/api/${table}/count`, { cache: "no-store" })
-        if (cancelled || !res.ok) return
+        if (cancelled) return
+        if (res.status === 401) {
+          // Halt the poll once the admin cookie is gone. Otherwise this
+          // 5s loop fires `Middleware rejected /api/*` warnings
+          // (AMASI-MEMBERSHIP-7) up to ~6 times before the 30s dashboard
+          // query notices the same 401 and redirects via the useEffect in
+          // src/app/page.tsx. Mirrors the `retry: false on 401` pattern on
+          // the heatmap query (page.tsx:239) — halt locally, let the
+          // dashboard query own the redirect to /login.
+          if (intervalId !== null) {
+            clearInterval(intervalId)
+            intervalId = null
+          }
+          return
+        }
+        if (!res.ok) return
         const data = await res.json().catch(() => null)
         if (cancelled || typeof data?.count !== "number") return
 
@@ -58,10 +74,10 @@ export function useRealtimeCount({
       }
     }
 
-    const intervalId = setInterval(tick, pollMs)
+    intervalId = setInterval(tick, pollMs)
     return () => {
       cancelled = true
-      clearInterval(intervalId)
+      if (intervalId !== null) clearInterval(intervalId)
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
     }
   }, [table, flashMs, pollMs])

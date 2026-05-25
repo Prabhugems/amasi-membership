@@ -21,11 +21,15 @@ const REFERENCE_NUMBER_RE = /^AMASI-\d{4}-[A-F0-9]{10}$/
 
 export async function POST(request: NextRequest) {
   if (!featureFlags.wscEarlyApplication()) {
-    Sentry.captureMessage("create-pending called with flag OFF", {
-      level: "info",
-      fingerprint: ["wsc-create-pending-flag-off"],
-      tags: { route: "applications/create-pending", reason: "flag_off" },
-    })
+    // Flag is OFF in production until WS-C commit 4 ships the partial
+    // unique index on membership_applications(email, membership_type)
+    // WHERE status='pending_payment'. Until then this route is supposed
+    // to be invisible: 404 with no Sentry log. The client at
+    // apply/page.tsx:1314 already treats 404 as a silent no-op (it's
+    // the documented expected shape while the flag is off), so logging
+    // each call generated noise without signal once WS-C commit 3
+    // wired the client to call this on every pay step. Sentry issue
+    // AMASI-MEMBERSHIP-1X tracked the noise; stripped 2026-05-25.
     return Response.json({ status: false, message: "Not found" }, { status: 404 })
   }
 

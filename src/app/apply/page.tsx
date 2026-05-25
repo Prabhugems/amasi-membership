@@ -1244,7 +1244,12 @@ function ApplyForm() {
       const dupRes = await fetch("/api/applications/check-duplicate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email, mobile: formData.mobile, mciCouncilNumber: formData.mciCouncilNumber }),
+        body: JSON.stringify({
+          email: formData.email,
+          mobile: formData.mobile,
+          mciCouncilNumber: formData.mciCouncilNumber,
+          mciCouncilState: formData.mciCouncilState,
+        }),
       })
       const dupData = await dupRes.json()
       if (dupData.isDuplicate) {

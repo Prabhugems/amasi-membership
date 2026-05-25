@@ -1,6 +1,7 @@
 // Application utilities: reference numbers, confirmation emails, duplicate detection
 
 import { createAdminClient } from "@/lib/supabase"
+import * as Sentry from "@sentry/nextjs"
 export { generateRefNumber } from "@/lib/reference-number"
 
 /**
@@ -19,8 +20,30 @@ export interface ExistingMember {
   membership_type: string | null
 }
 
+/**
+ * Decide whether an applicant's state and a matched record's state should be
+ * treated as the same registration. Policy: exact case-insensitive match
+ * counts; either side missing (null/empty) falls back to "match" so we stay
+ * over-cautious on legacy data. Returns null only when BOTH sides have a
+ * non-empty state AND they differ — that's the cross-state false positive
+ * we want to stop blocking on (e.g. Goa #3462 vs Jharkhand #3462, two
+ * legitimately different doctors).
+ *
+ * Exported for the throwaway dup-check test; not consumed elsewhere.
+ */
+export function evaluateStateMatch(
+  applicantState: string | null | undefined,
+  matchedRowState: string | null | undefined,
+): { matches: true; reason: "state_match" | "null_state_fallback" } | null {
+  const a = (applicantState ?? "").trim().toLowerCase()
+  const b = (matchedRowState ?? "").trim().toLowerCase()
+  if (a === "" || b === "") return { matches: true, reason: "null_state_fallback" }
+  if (a === b) return { matches: true, reason: "state_match" }
+  return null
+}
+
 /** Check if an application already exists for this email, phone, or registration number */
-export async function checkDuplicateApplication(email: string, mobile: string, mciCouncilNumber?: string): Promise<{
+export async function checkDuplicateApplication(email: string, mobile: string, mciCouncilNumber?: string, mciCouncilState?: string): Promise<{
   isDuplicate: boolean
   existingRef?: string
   existingMember?: ExistingMember
@@ -80,35 +103,85 @@ export async function checkDuplicateApplication(email: string, mobile: string, m
     }
   }
 
-  // Check by registration number (catches same doctor, different email)
+  // Check by registration number — state-aware per policy. When applicant
+  // state AND matched-row state are both present, both must agree
+  // (case-insensitive, trimmed) for a block. Either side missing → fall
+  // back to number-only match (we'd rather wrongly block a real applicant —
+  // recoverable via support — than wrongly admit a duplicate). Closes the
+  // cross-state false positive where two doctors in different state
+  // councils legitimately share a number (e.g. Goa #3462 vs Jharkhand #3462).
   if (mciCouncilNumber && mciCouncilNumber.trim()) {
     const regNum = mciCouncilNumber.trim()
+    const applicantState = (mciCouncilState ?? "").trim()
 
+    // Fetch all reg-number-matching applications (excluding rejected), then
+    // narrow by state in JS — the NULL-fallback policy is conditional and
+    // doesn't translate cleanly into a single .eq() chain. limit(100) is a
+    // defensive ceiling: India has ~35 state medical councils; even if every
+    // council issued the same number and every holder joined AMASI, 100 is
+    // comfortable headroom. The query is indexed on mci_council_number.
     const { data: regApps } = await supabase
       .from("membership_applications")
-      .select("id, reference_number, status, name")
+      .select("id, reference_number, status, name, mci_council_state")
       .eq("mci_council_number", regNum)
       .not("status", "eq", "rejected")
-      .limit(1)
+      .limit(100)
 
-    if (regApps && regApps.length > 0) {
-      return {
-        isDuplicate: true,
-        existingRef: regApps[0].reference_number,
-        message: `An application with registration number ${regNum} already exists (${regApps[0].reference_number}).`,
+    for (const row of regApps || []) {
+      const verdict = evaluateStateMatch(applicantState, row.mci_council_state)
+      if (verdict) {
+        Sentry.captureMessage("Duplicate registration-number block", {
+          level: "warning",
+          fingerprint: ["dup-check-blocked", "applications"],
+          tags: {
+            component: "duplicate-check",
+            matched_table: "applications",
+            reason: verdict.reason,
+          },
+          extra: {
+            registration_number: regNum,
+            applicant_state: applicantState || null,
+            matched_record_state: row.mci_council_state || null,
+            matched_reference: row.reference_number,
+            matched_status: row.status,
+          },
+        })
+        return {
+          isDuplicate: true,
+          existingRef: row.reference_number,
+          message: `An application with registration number ${regNum} already exists (${row.reference_number}).`,
+        }
       }
     }
 
     const { data: regMembers } = await supabase
       .from("members")
-      .select("amasi_number, name")
+      .select("amasi_number, name, mci_council_state")
       .eq("mci_council_number", regNum)
-      .limit(1)
+      .limit(100)
 
-    if (regMembers && regMembers.length > 0) {
-      return {
-        isDuplicate: true,
-        message: `MCI/Council registration number ${regNum} is already linked to AMASI member #${regMembers[0].amasi_number}. If this is your number, please contact support.`,
+    for (const row of regMembers || []) {
+      const verdict = evaluateStateMatch(applicantState, row.mci_council_state)
+      if (verdict) {
+        Sentry.captureMessage("Duplicate registration-number block", {
+          level: "warning",
+          fingerprint: ["dup-check-blocked", "members"],
+          tags: {
+            component: "duplicate-check",
+            matched_table: "members",
+            reason: verdict.reason,
+          },
+          extra: {
+            registration_number: regNum,
+            applicant_state: applicantState || null,
+            matched_record_state: row.mci_council_state || null,
+            matched_amasi_number: row.amasi_number,
+          },
+        })
+        return {
+          isDuplicate: true,
+          message: `MCI/Council registration number ${regNum} is already linked to AMASI member #${row.amasi_number}. If this is your number, please contact support.`,
+        }
       }
     }
   }

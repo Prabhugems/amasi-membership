@@ -14,12 +14,12 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Too many requests" }, { status: 429 })
     }
 
-    const { email, mobile, mciCouncilNumber } = await request.json()
+    const { email, mobile, mciCouncilNumber, mciCouncilState } = await request.json()
     if (!email && !mobile) {
       return Response.json({ status: false, message: "Email or mobile required" }, { status: 400 })
     }
 
-    const result = await checkDuplicateApplication(email || "", mobile || "", mciCouncilNumber)
+    const result = await checkDuplicateApplication(email || "", mobile || "", mciCouncilNumber, mciCouncilState)
 
     // PII gate: `existingMember` echoes name/email/membership_type/amasi_number,
     // which would leak member identity on any email/phone lookup. Only echo it
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     return Response.json({ status: true, ...result })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Duplicate check error:", error)
     return Response.json({ status: false, isDuplicate: false }, { status: 500 })
   }

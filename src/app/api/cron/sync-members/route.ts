@@ -8,12 +8,36 @@ export const maxDuration = 60
 
 const OLD_API = "https://application.amasi.org/api/member_detail_data"
 
+// Paused 2026-05-25. The legacy AMASI app at application.amasi.org was
+// decommissioned after the cutover (CONTEXT.md log entry 2026-05-04); the
+// hostname now returns NXDOMAIN, so every fetch in the loop below blows up
+// with a DNS error. Sentry issue AMASI-MEMBERSHIP-10 accumulated ~200
+// errors over 5 days (cron fires every 6h per vercel.json `0 */6 * * *`,
+// each run captures ~10 events before consecutiveNotFound bails).
+//
+// This is a SOFT pause — the route + the schedule both stay, and the
+// handler short-circuits with 503. Same pattern as cleanup-drafts at
+// route.ts:85. If the legacy bridge is permanently retired, follow up
+// with a separate commit removing the schedule from vercel.json and
+// deleting this file. Until then, keep paused.
+const CRON_PAUSED = true
+
 /**
  * GET /api/cron/sync-members
  * Runs on a schedule to pull new members from the old AMASI system.
  * Fetches members with AMASI numbers higher than our current max.
  */
 export async function GET(request: Request) {
+  if (CRON_PAUSED) {
+    return Response.json(
+      {
+        paused: true,
+        reason: "Legacy host application.amasi.org is NXDOMAIN post-cutover (Sentry AMASI-MEMBERSHIP-10). Manually unpause when/if the legacy bridge is needed again, or retire the route entirely.",
+      },
+      { status: 503 },
+    )
+  }
+
   // Auth: cron secret or admin session
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET?.trim()

@@ -149,13 +149,24 @@ function CertificateContent() {
   }
 
   const handleShareLink = async () => {
-    if (navigator.share) {
+    if (!navigator.share) {
+      handleCopyLink()
+      return
+    }
+    try {
       await navigator.share({
         title: `AMASI Membership Certificate - Dr. ${cert.name}`,
         text: `Verify AMASI membership for Dr. ${cert.name} (#${cert.amasiNumber})`,
         url: verifyUrl,
       })
-    } else {
+    } catch (err) {
+      // AbortError = user cancelled the share sheet. Browsers throw this
+      // as a rejection; without this catch it surfaces as an unhandled
+      // rejection and Sentry reports it as an error (AMASI-MEMBERSHIP-P).
+      // Silent — user cancelled, no UI feedback needed.
+      if (err instanceof Error && err.name === "AbortError") return
+      console.error("Share failed:", err)
+      toast.error("Couldn't share — link copied instead")
       handleCopyLink()
     }
   }

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/supabase"
 import { autoApproveApplication } from "@/lib/auto-approval"
@@ -58,6 +59,22 @@ export async function POST(request: NextRequest) {
       const amount = payment.amount / 100 // paise to rupees
       const referenceNumber = payment.notes?.reference_number
 
+      // Temporary observability — settle whether the webhook's snake_case
+      // read of payment.notes.reference_number actually works at runtime
+      // (the question raised by the duplicate-check audit 2026-05-25).
+      // Compares snake vs camel presence on the actual webhook payload.
+      // Strip this once we've seen enough captures to decide on Issue 1.
+      Sentry.captureMessage("webhook payment.notes keys", {
+        level: "info",
+        tags: { component: "webhooks/razorpay", reason: "notes_keys_probe" },
+        extra: {
+          keys: Object.keys(payment.notes || {}),
+          has_snake: !!payment.notes?.reference_number,
+          has_camel: !!payment.notes?.referenceNumber,
+          payment_id: paymentId,
+        },
+      })
+
       // Check if payment already recorded (idempotency)
       const { data: existing } = await supabase
         .from("membership_payments")
@@ -80,13 +97,22 @@ export async function POST(request: NextRequest) {
       //      to fail the insert and lose the row entirely. Admin can re-link later
       //      from the gateway_payment_id (the Karki/Smita backfill pattern).
       let memberEmail: string | null = null
+      // Track the application_id alongside memberEmail so the payment row
+      // inserts already linked when the reference_number lookup succeeds —
+      // removes orphan-by-default in the happy path. Stays null when
+      // there's no match (paid-before-submit), same as today's implicit
+      // null. Caveat: ignoreDuplicates:true on the upsert below means this
+      // only takes effect on NEW inserts, never retroactively on existing
+      // rows. Existing orphans must still be linked by verify/cron/script.
+      let applicationIdForLink: string | null = null
       if (referenceNumber) {
         const { data: appRow } = await supabase
           .from("membership_applications")
-          .select("email")
+          .select("id, email")
           .eq("reference_number", referenceNumber)
           .maybeSingle()
         memberEmail = appRow?.email ?? null
+        applicationIdForLink = (appRow?.id as string | undefined) ?? null
       }
       if (!memberEmail && typeof payment.email === "string" && payment.email.trim()) {
         memberEmail = payment.email.toLowerCase().trim()
@@ -106,6 +132,7 @@ export async function POST(request: NextRequest) {
       // ignoreDuplicates: true = first writer wins, second is a no-op.
       const { error: payErr } = await supabase.from("membership_payments").upsert({
         member_email: memberEmail,
+        application_id: applicationIdForLink,
         gateway_order_id: orderId,
         gateway_payment_id: paymentId,
         payment_gateway: "razorpay",
@@ -342,7 +369,7 @@ export async function POST(request: NextRequest) {
     }
 
     return Response.json({ status: "ok" })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Razorpay webhook error:", error)
     return Response.json({ error: "Webhook processing failed" }, { status: 500 })
   }

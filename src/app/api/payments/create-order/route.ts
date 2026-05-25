@@ -274,6 +274,68 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Orphan-payment guard: a paid membership_payments row already exists
+    // for this email but isn't linked to a submitted application yet — the
+    // "paid before submit" pattern (Choudhary 2026-05-25 recovery). Without
+    // this guard the applicant can mint a second order and pay twice.
+    // Block on the most-recent orphan; tell them to contact support rather
+    // than re-pay. Does NOT auto-trigger linking — manual recovery via
+    // /api/payments/lookup or a per-applicant script remains the path.
+    const { data: orphanPayment } = await supabase
+      .from("membership_payments")
+      .select("gateway_payment_id, gateway_order_id, amount, currency, created_at")
+      .ilike("member_email", emailKey)
+      .eq("status", "paid")
+      .is("application_id", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (orphanPayment) {
+      const currencySymbol = orphanPayment.currency === "USD" ? "$" : "₹"
+      const paidAt = new Date(orphanPayment.created_at as string)
+      const dateDisplay = paidAt.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+      Sentry.captureMessage("Orphan paid-payment block on create-order", {
+        level: "warning",
+        fingerprint: ["create-order", "orphan-paid-block"],
+        tags: {
+          component: "create-order",
+          reason: "orphan_paid_block",
+        },
+        extra: {
+          applicant_email: emailKey,
+          orphan_gateway_payment_id: orphanPayment.gateway_payment_id,
+          orphan_gateway_order_id: orphanPayment.gateway_order_id,
+          orphan_amount: orphanPayment.amount,
+          orphan_currency: orphanPayment.currency,
+          orphan_created_at: orphanPayment.created_at,
+          attempted_membership_type: typeKey,
+        },
+      })
+      return Response.json(
+        {
+          status: false,
+          code: "PAID_UNLINKED",
+          message:
+            `We've already received a payment from this email, but it isn't ` +
+            `linked to a submitted application yet. Payment received: ` +
+            `${currencySymbol}${orphanPayment.amount} on ${dateDisplay} ` +
+            `(ID ${orphanPayment.gateway_payment_id}). Please do NOT pay ` +
+            `again — email support@amasi.org with this payment ID and ` +
+            `we'll link it to your application.`,
+          paymentId: orphanPayment.gateway_payment_id,
+          paidAt: orphanPayment.created_at,
+          amount: orphanPayment.amount,
+          currency: orphanPayment.currency,
+        },
+        { status: 409 },
+      )
+    }
+
     const razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID!.trim(),
       key_secret: process.env.RAZORPAY_KEY_SECRET!.trim(),

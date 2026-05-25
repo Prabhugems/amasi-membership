@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server"
-import * as Sentry from "@sentry/nextjs"
 import crypto from "crypto"
 import { createAdminClient } from "@/lib/supabase"
 import { autoApproveApplication } from "@/lib/auto-approval"
@@ -58,22 +57,6 @@ export async function POST(request: NextRequest) {
       const paymentId = payment.id
       const amount = payment.amount / 100 // paise to rupees
       const referenceNumber = payment.notes?.reference_number
-
-      // Temporary observability — settle whether the webhook's snake_case
-      // read of payment.notes.reference_number actually works at runtime
-      // (the question raised by the duplicate-check audit 2026-05-25).
-      // Compares snake vs camel presence on the actual webhook payload.
-      // Strip this once we've seen enough captures to decide on Issue 1.
-      Sentry.captureMessage("webhook payment.notes keys", {
-        level: "info",
-        tags: { component: "webhooks/razorpay", reason: "notes_keys_probe" },
-        extra: {
-          keys: Object.keys(payment.notes || {}),
-          has_snake: !!payment.notes?.reference_number,
-          has_camel: !!payment.notes?.referenceNumber,
-          payment_id: paymentId,
-        },
-      })
 
       // Check if payment already recorded (idempotency)
       const { data: existing } = await supabase

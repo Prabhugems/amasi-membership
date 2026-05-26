@@ -262,22 +262,21 @@ export async function GET(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — Single reminder at 18h-from-updated_at
-    //   Replaces the prior 1h-after-stuck logic.
-    //   Cohort restriction (option β, 2026-04-26 review): only email drafts
-    //   that actually started filling the form (have step_data.formData).
-    //   OTP-only drafts (verified email, never selected membership type)
-    //   get silent cleanup in Step 3a — no reminder, no expiry email.
-    //   NOTE 2026-05-26: With Step 1b above, this branch is effectively
-    //   dormant for new drafts — Phase 2 re-spaces the window.
+    // Step 2 — Second reminder at 18h-from-updated_at
+    //   Phase 2 (2026-05-26): repositioned as a SECOND nudge. Fires for
+    //   18h-idle engaged drafts (formData present) whose 5h reminder is now
+    //   ≥13h old, OR which escaped the 5h branch entirely (excluded-email
+    //   bypass, pre-Phase-1 backlog). Cohort restriction stays — OTP-only
+    //   drafts get exactly one nudge at 5h, then silent cleanup in Step 3a.
     // -----------------------------------------------------------------------
     const eighteenHoursAgo = new Date(Date.now() - 18 * 3600000).toISOString()
+    const thirteenHoursAgo = new Date(Date.now() - 13 * 3600000).toISOString()
     const { data: reminderDrafts } = await supabase
       .from("draft_applications")
       .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
       .in("status", ["in_progress", "stuck"])
       .lt("updated_at", eighteenHoursAgo)
-      .is("reminder_sent_at", null)
+      .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${thirteenHoursAgo}`)
       .is("deleted_at", null)
       .not("step_data->formData", "is", null)
 
@@ -285,7 +284,7 @@ export async function GET(request: Request) {
       if (dryRun) {
         const why = isExcludedEmail(draft.email)
           ? `excluded address; would mark reminder_sent_at without emailing`
-          : `${hoursIdle(draft.updated_at)}h idle, no prior reminder`
+          : `${hoursIdle(draft.updated_at)}h idle, 18h second-nudge branch`
         planAction(draft, "send_reminder_18h", why)
         continue
       }
@@ -318,7 +317,7 @@ export async function GET(request: Request) {
           <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
         </div>
         <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-          If you no longer wish to apply, your application will be removed after 24 hours of further inactivity.
+          If you no longer wish to apply, your application will be removed soon.
         </p>
         `,
       )
@@ -350,7 +349,7 @@ export async function GET(request: Request) {
     // -----------------------------------------------------------------------
     // Cutoffs used by Step 3a, Step 3, Step 4 below.
     // -----------------------------------------------------------------------
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600000).toISOString()
     const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
 
     // -----------------------------------------------------------------------
@@ -368,7 +367,7 @@ export async function GET(request: Request) {
       .from("draft_applications")
       .select("id, email, phone, current_step, status, updated_at, created_at, step_data, payment_order_id, payment_id, has_verified_payment")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", twentyFourHoursAgo)
+      .lt("updated_at", fortyEightHoursAgo)
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
@@ -411,10 +410,10 @@ export async function GET(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Step 3 — Soft-delete unpaid drafts (24h idle, no payment)
+    // Step 3 — Soft-delete unpaid drafts (48h idle, no payment)
     // Issue 2 guarantee: only expire drafts that have already been reminded
     // and given a 6h grace window. This prevents reminder + expiry firing in
-    // the same cron invocation for backlog drafts that are >24h on first
+    // the same cron invocation for backlog drafts that are >48h on first
     // sight. They get the reminder this run; expire on the next-day's run.
     // Files in storage are KEPT for the 90-day audit window.
     // -----------------------------------------------------------------------
@@ -422,7 +421,7 @@ export async function GET(request: Request) {
       .from("draft_applications")
       .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", twentyFourHoursAgo)
+      .lt("updated_at", fortyEightHoursAgo)
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
@@ -477,7 +476,7 @@ export async function GET(request: Request) {
           newData: {
             email: draft.email,
             step: draft.current_step,
-            reason: "Soft-deleted after 24h inactivity (files retained)",
+            reason: "Soft-deleted after 48h inactivity (files retained)",
             email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
           },
           performedBy: "system",
@@ -489,7 +488,7 @@ export async function GET(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Step 4 — Paid-but-stuck drafts (24h idle, payment present)
+    // Step 4 — Paid-but-stuck drafts (48h idle, payment present)
     //   - Razorpay paid/captured → status=payment_on_hold + admin alert (manual refund)
     //   - Razorpay attempted → skip (may complete)
     //   - Else → soft-delete (treat as unpaid)
@@ -498,7 +497,7 @@ export async function GET(request: Request) {
       .from("draft_applications")
       .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, reminder_sent_at")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", twentyFourHoursAgo)
+      .lt("updated_at", fortyEightHoursAgo)
       .or("payment_order_id.not.is.null,has_verified_payment.eq.true")
       .is("deleted_at", null)
 
@@ -610,7 +609,7 @@ export async function GET(request: Request) {
                 newData: {
                   email: draft.email,
                   step: draft.current_step,
-                  reason: "Soft-deleted after 24h inactivity — payment not captured (files retained)",
+                  reason: "Soft-deleted after 48h inactivity — payment not captured (files retained)",
                   email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
                 },
                 performedBy: "system",

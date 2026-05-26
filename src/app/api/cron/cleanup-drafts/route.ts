@@ -115,6 +115,7 @@ export async function GET(request: Request) {
     dry_run: dryRun,
     marked_stale: 0,
     reminders_sent: 0,
+    reminders_sent_5h: 0,
     expired: 0,
     payment_holds: 0,
     refunds_completed: 0,
@@ -184,12 +185,91 @@ export async function GET(request: Request) {
     }
 
     // -----------------------------------------------------------------------
+    // Step 1b — 5h-from-updated_at reminder (early-stall, all incomplete drafts)
+    //   2026-05-26: complement to the 18h reminder (Step 2). Targets drafts
+    //   idle 5h+ that haven't been reminded yet. Unlike Step 2 it does NOT
+    //   require step_data.formData — deliberately includes OTP-only drafts
+    //   (verified email, never selected type / filled form). Per design
+    //   reversal of the prior "no cold-call spam" policy.
+    // -----------------------------------------------------------------------
+    const fiveHoursAgo = new Date(Date.now() - 5 * 3600000).toISOString()
+    const { data: earlyReminderDrafts } = await supabase
+      .from("draft_applications")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
+      .in("status", ["in_progress", "stuck"])
+      .lt("updated_at", fiveHoursAgo)
+      .is("reminder_sent_at", null)
+      .is("deleted_at", null)
+
+    for (const draft of earlyReminderDrafts || []) {
+      if (dryRun) {
+        const why = isExcludedEmail(draft.email)
+          ? `excluded address; would mark reminder_sent_at without emailing`
+          : `${hoursIdle(draft.updated_at)}h idle, no prior reminder (5h branch)`
+        planAction(draft, "send_reminder_5h", why)
+        continue
+      }
+      if (isExcludedEmail(draft.email)) {
+        await supabase
+          .from("draft_applications")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", draft.id)
+        await logMembershipAuditEvent({
+          action: "draft_reminder_skipped_excluded",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, branch: "5h", reason: "excluded test/internal address" },
+          performedBy: "system",
+        }, supabase)
+        continue
+      }
+      const html = emailWrapper(
+        "Complete Your Application",
+        `
+        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
+        </p>
+        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
+          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
+        </p>
+        <div style="margin:20px 0;text-align:center;">
+          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
+          If you no longer wish to apply, your application will be removed after further inactivity.
+        </p>
+        `,
+      )
+      try {
+        await resend!.emails.send({
+          from: fromEmail,
+          to: draft.email,
+          subject: "Complete your AMASI membership application",
+          html,
+        })
+        await supabase
+          .from("draft_applications")
+          .update({ reminder_sent_at: new Date().toISOString() })
+          .eq("id", draft.id)
+        summary.reminders_sent_5h++
+      } catch (err: unknown) {
+        console.error(`[cleanup-drafts] reminder-5h email ${draft.email}:`, errMessage(err))
+        Sentry.captureException(err, {
+          tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email-5h" },
+          extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
+        })
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Step 2 — Single reminder at 18h-from-updated_at
     //   Replaces the prior 1h-after-stuck logic.
     //   Cohort restriction (option β, 2026-04-26 review): only email drafts
     //   that actually started filling the form (have step_data.formData).
     //   OTP-only drafts (verified email, never selected membership type)
     //   get silent cleanup in Step 3a — no reminder, no expiry email.
+    //   NOTE 2026-05-26: With Step 1b above, this branch is effectively
+    //   dormant for new drafts — Phase 2 re-spaces the window.
     // -----------------------------------------------------------------------
     const eighteenHoursAgo = new Date(Date.now() - 18 * 3600000).toISOString()
     const { data: reminderDrafts } = await supabase

@@ -10,7 +10,7 @@
 //   - status='in_progress'  : the resumable target (cron Step 1 will re-flag
 //                              to 'stuck' after 2h idle, normal lifecycle)
 //   - deleted_at=NULL       : the load-bearing soft-delete signal
-//   - updated_at=now()      : resets the 24h cron expiry clock for at least
+//   - updated_at=now()      : resets the 48h cron expiry clock for at least
 //                              one full normal cycle
 //   - reminder_sent_at=NULL : prevents the cron's ≥6h-reminder fast-lane
 //                              from re-expiring on the first inactivity

@@ -169,7 +169,7 @@ export async function GET(request: Request) {
         .update({
           status: "stuck",
           stale_since: new Date().toISOString(),
-          failure_reason: `Application inactive — user did not proceed past step ${escapeHtml(stepLabel(draft.current_step))}`,
+          failure_reason: `applicant_idle_step_${draft.current_step}`,
         })
         .eq("id", draft.id)
       if (!error) {
@@ -381,7 +381,7 @@ export async function GET(request: Request) {
       try {
         const { data: marked } = await supabase
           .from("draft_applications")
-          .update({ status: "expired", deleted_at: new Date().toISOString() })
+          .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_otp_only_no_formdata" })
           .eq("id", draft.id)
           .is("payment_order_id", null)
           .eq("has_verified_payment", false)
@@ -439,7 +439,7 @@ export async function GET(request: Request) {
       try {
         const { data: marked } = await supabase
           .from("draft_applications")
-          .update({ status: "expired", deleted_at: new Date().toISOString() })
+          .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_unpaid_expired" })
           .eq("id", draft.id)
           .is("payment_order_id", null)
           .eq("has_verified_payment", false)
@@ -518,7 +518,7 @@ export async function GET(request: Request) {
               if (dryRun) { planAction(draft, "flag_payment_on_hold", `Razorpay order ${status} (admin manual refund)`); continue }
               await supabase
                 .from("draft_applications")
-                .update({ status: "payment_on_hold", has_verified_payment: true, updated_at: new Date().toISOString() })
+                .update({ status: "payment_on_hold", has_verified_payment: true, updated_at: new Date().toISOString(), failure_reason: "applicant_paid_no_submission" })
                 .eq("id", draft.id)
               const { data: admins } = await supabase
                 .from("admin_users")
@@ -596,7 +596,7 @@ export async function GET(request: Request) {
               }
               const { data: marked } = await supabase
                 .from("draft_applications")
-                .update({ status: "expired", deleted_at: new Date().toISOString() })
+                .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_unpaid_expired" })
                 .eq("id", draft.id)
                 .eq("has_verified_payment", false)
                 .select("id")
@@ -621,7 +621,7 @@ export async function GET(request: Request) {
             if (dryRun) { planAction(draft, "flag_payment_on_hold", "has_verified_payment=true but no order_id"); continue }
             await supabase
               .from("draft_applications")
-              .update({ status: "payment_on_hold", updated_at: new Date().toISOString() })
+              .update({ status: "payment_on_hold", updated_at: new Date().toISOString(), failure_reason: "applicant_paid_no_submission" })
               .eq("id", draft.id)
             await logMembershipAuditEvent({
               action: "draft_payment_on_hold",

@@ -390,6 +390,30 @@ function ApplyForm() {
     }
   }, [phase])
 
+  const [emailVerified, setEmailVerified] = useState(false)
+  // Shadow of emailVerified for use inside saveDraftToServer's closure.
+  //
+  // The original guard read emailVerified from the useCallback closure;
+  // on slow connections a save fired on the same tick as
+  // setEmailVerified(true) saw the stale `false` and silently skipped,
+  // stranding the applicant ("upload spins, can't go to next step" —
+  // Sentry AMASI-MEMBERSHIP-16 across 6+ real users).
+  //
+  // The ref is updated TWO ways:
+  //   1. synchronously at each setEmailVerified(...) call site below
+  //      (search this file for `emailVerifiedRef.current =`) — closes the
+  //      one-render-cycle window where a useEffect-only sync wouldn't
+  //      have run yet
+  //   2. via useEffect on the next line as a safety net for any future
+  //      setEmailVerified caller that forgets the synchronous update
+  //
+  // saveDraftToServer reads `emailVerifiedRef.current`, never the captured
+  // closure value — see src/lib/should-skip-draft-save.ts.
+  const emailVerifiedRef = useRef(false)
+  useEffect(() => {
+    emailVerifiedRef.current = emailVerified
+  }, [emailVerified])
+
   // Restore from localStorage in an effect (not lazy useState init) so the
   // server-render and client-first-render agree. Lazy initializers that read
   // localStorage produced replay_hydration_error in Sentry (AMASI-MEMBERSHIP-9)
@@ -406,6 +430,17 @@ function ApplyForm() {
       if (savedPhase && ["check", "landing", "upload", "review"].includes(savedPhase)) {
         // "review" requires File objects in memory; cap at "upload" so the user re-uploads.
         setPhase(savedPhase === "review" ? "upload" : (savedPhase as Phase))
+        // Phases past "verify" only land in localStorage via the auto-save
+        // effect AFTER the user completed OTP, so a saved upload/review
+        // phase implies email was verified earlier. Restore the flag so the
+        // first post-restore saveDraftToServer doesn't silent-skip on
+        // emailVerifiedRef=false (residual AMASI-MEMBERSHIP-16 tail —
+        // f7fb405 closed the stale-closure race, this closes the
+        // missing-restore variant). The cookie remains the real auth; if
+        // it has expired the auto-refresh-token effect prompts re-verify.
+        if (savedPhase === "upload" || savedPhase === "review") {
+          setEmailVerified(true)
+        }
       }
       const savedForm = localStorage.getItem("amasi_apply_form")
       if (savedForm) setFormData({ ...INITIAL_FORM_DATA, ...JSON.parse(savedForm) })
@@ -431,29 +466,6 @@ function ApplyForm() {
     if (!restoredRef.current) return
     if (selectedType) localStorage.setItem("amasi_apply_type", selectedType.id)
   }, [selectedType])
-  const [emailVerified, setEmailVerified] = useState(false)
-  // Shadow of emailVerified for use inside saveDraftToServer's closure.
-  //
-  // The original guard read emailVerified from the useCallback closure;
-  // on slow connections a save fired on the same tick as
-  // setEmailVerified(true) saw the stale `false` and silently skipped,
-  // stranding the applicant ("upload spins, can't go to next step" —
-  // Sentry AMASI-MEMBERSHIP-16 across 6+ real users).
-  //
-  // The ref is updated TWO ways:
-  //   1. synchronously at each setEmailVerified(...) call site below
-  //      (search this file for `emailVerifiedRef.current =`) — closes the
-  //      one-render-cycle window where a useEffect-only sync wouldn't
-  //      have run yet
-  //   2. via useEffect on the next line as a safety net for any future
-  //      setEmailVerified caller that forgets the synchronous update
-  //
-  // saveDraftToServer reads `emailVerifiedRef.current`, never the captured
-  // closure value — see src/lib/should-skip-draft-save.ts.
-  const emailVerifiedRef = useRef(false)
-  useEffect(() => {
-    emailVerifiedRef.current = emailVerified
-  }, [emailVerified])
   const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "done">("input")
   const [otpCode, setOtpCode] = useState("")
   const [otpCooldown, setOtpCooldown] = useState(0)

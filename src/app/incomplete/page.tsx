@@ -24,6 +24,7 @@ import {
 
 type TabFilter = "all" | "in_progress" | "stuck" | "payment_on_hold" | "refund_initiated" | "expired"
 type StageFilter = "all" | 1 | 2 | 3 | 4 | 5 | 6
+type FaultFilter = "all" | "applicant" | "system"
 
 interface IncompleteDraft {
   id: string
@@ -67,6 +68,32 @@ const MEMBERSHIP_TYPE_LABELS: Record<string, string> = {
   ALM: "Associate Life Member",
   ACM: "Associate Candidate Member",
   ILM: "International Life Member",
+}
+
+// Applicant vs system fault categorisation. Prefix-based; legacy free-text
+// values (pre-2026-05-26) don't match either prefix and return null.
+function getFaultCategory(failureReason: string | null): "applicant" | "system" | null {
+  if (!failureReason) return null
+  if (failureReason.startsWith("applicant_")) return "applicant"
+  if (failureReason.startsWith("system_")) return "system"
+  return null
+}
+
+function getFailureReasonLabel(failureReason: string | null): string | null {
+  if (!failureReason) return null
+  const idleMatch = failureReason.match(/^applicant_idle_step_(\d+)$/)
+  if (idleMatch) {
+    const step = parseInt(idleMatch[1], 10)
+    return `Idle at: ${STEP_LABELS[step] || `Step ${step}`}`
+  }
+  switch (failureReason) {
+    case "applicant_unpaid_expired": return "Expired unpaid"
+    case "applicant_paid_no_submission": return "Paid but never submitted"
+    case "applicant_otp_only_no_formdata": return "Verified email but never started form"
+    case "system_payment_verification_failed": return "Payment verified, docs failed validation"
+    case "system_upload_failed_no_fileurl": return "Upload to storage failed"
+    default: return failureReason
+  }
 }
 
 const TAB_STYLES: Record<TabFilter, { icon: typeof Clock; activeClass: string; dotColor: string }> = {
@@ -191,6 +218,7 @@ function StageBreadcrumb({ currentStep }: { currentStep: number }) {
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 const VALID_TABS: TabFilter[] = ["all", "in_progress", "stuck", "payment_on_hold", "refund_initiated", "expired"]
+const VALID_FAULTS: FaultFilter[] = ["all", "applicant", "system"]
 
 // Pull a display name from the draft's step_data.formData when available.
 // Falls back to the email so we always show something the admin can identify
@@ -214,6 +242,11 @@ function IncompletePageInner() {
     return fromUrl && VALID_TABS.includes(fromUrl) ? fromUrl : "all"
   })()
   const [tab, setTab] = useState<TabFilter>(initialTab)
+  const initialFault = (() => {
+    const fromUrl = searchParams.get("fault") as FaultFilter | null
+    return fromUrl && VALID_FAULTS.includes(fromUrl) ? fromUrl : "all"
+  })()
+  const [fault, setFault] = useState<FaultFilter>(initialFault)
   const [stage, setStage] = useState<StageFilter>("all")
   const [search, setSearch] = useState("")
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
@@ -231,6 +264,14 @@ function IncompletePageInner() {
     const fromUrl = searchParams.get("status") as TabFilter | null
     if (fromUrl && VALID_TABS.includes(fromUrl) && fromUrl !== tab) {
       setTab(fromUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("fault") as FaultFilter | null
+    if (fromUrl && VALID_FAULTS.includes(fromUrl) && fromUrl !== fault) {
+      setFault(fromUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
@@ -409,6 +450,10 @@ function IncompletePageInner() {
   // ─── Filter by search + stage ──────────────────────────────────────────
   const drafts = (draftsData?.drafts || []).filter((draft: IncompleteDraft) => {
     if (stage !== "all" && draft.current_step !== stage) return false
+    if (fault !== "all") {
+      const cat = getFaultCategory(draft.failure_reason)
+      if (cat !== fault) return false
+    }
     if (!search) return true
     const q = search.toLowerCase()
     return draft.email?.toLowerCase().includes(q)
@@ -445,6 +490,20 @@ function IncompletePageInner() {
     return map
   })()
   const stageTotalCount = STAGE_ORDER.reduce((sum, s) => sum + (stageCountMap[s] || 0), 0)
+
+  // Fault category counts — computed from the currently-loaded draft list.
+  // The API hasn't been extended for fault counts; this reflects what's
+  // visible in the active status tab.
+  const faultCountMap: Record<FaultFilter, number> = (() => {
+    const map: Record<FaultFilter, number> = { all: 0, applicant: 0, system: 0 }
+    for (const d of draftsData?.drafts || []) {
+      map.all++
+      const cat = getFaultCategory(d.failure_reason)
+      if (cat === "applicant") map.applicant++
+      else if (cat === "system") map.system++
+    }
+    return map
+  })()
 
   // ─── Render action buttons based on status ─────────────────────────────
   const renderActions = useCallback((draft: IncompleteDraft) => {
@@ -714,6 +773,38 @@ function IncompletePageInner() {
         })}
       </div>
 
+      {/* ─── Fault Chips (applicant vs system fault) ───────────────── */}
+      <div className="flex flex-wrap gap-2">
+        {(["all", "applicant", "system"] as const).map((f) => {
+          const isActive = fault === f
+          const label = f === "all" ? "All faults" : f === "applicant" ? "Applicant fault" : "System fault"
+          const activeClass = f === "system"
+            ? "bg-red-600 border-red-600 text-white shadow-sm"
+            : f === "applicant"
+              ? "bg-amber-600 border-amber-600 text-white shadow-sm"
+              : "bg-teal-600 border-teal-600 text-white shadow-sm"
+          return (
+            <button
+              key={`fault-${f}`}
+              onClick={() => setFault(f)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                isActive
+                  ? activeClass
+                  : "bg-card border-border hover:bg-accent text-muted-foreground hover:text-foreground"
+              }`}
+              aria-pressed={isActive}
+            >
+              <span className="whitespace-nowrap">{label}</span>
+              <span className={`inline-flex items-center justify-center h-4 min-w-4 px-1 text-[10px] font-bold rounded-full ${
+                isActive ? "bg-white/20 text-inherit" : "bg-muted text-muted-foreground"
+              }`}>
+                {faultCountMap[f]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* ─── Stage Chips (filter by current_step) ───────────────────── */}
       <div className="flex flex-wrap gap-2">
         <button
@@ -856,13 +947,22 @@ function IncompletePageInner() {
                         </span>
                       </div>
 
-                      {/* Failure reason */}
-                      {draft.failure_reason && (
-                        <p className="text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5">
-                          <XCircle className="h-3 w-3 shrink-0 mt-0.5" />
-                          {draft.failure_reason}
-                        </p>
-                      )}
+                      {/* Failure reason — categorised */}
+                      {draft.failure_reason && (() => {
+                        const cat = getFaultCategory(draft.failure_reason)
+                        const label = getFailureReasonLabel(draft.failure_reason)
+                        const colorClass = cat === "system"
+                          ? "text-red-600 dark:text-red-400"
+                          : cat === "applicant"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-muted-foreground"
+                        return (
+                          <p className={`text-xs flex items-start gap-1.5 ${colorClass}`}>
+                            <XCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                            {label}
+                          </p>
+                        )
+                      })()}
                     </div>
 
                     {/* Right: Contact + Actions */}

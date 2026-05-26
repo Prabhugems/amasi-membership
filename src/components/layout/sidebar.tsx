@@ -32,6 +32,7 @@ import {
   Award,
   Calendar,
   CreditCard,
+  AlertCircle,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -60,6 +61,7 @@ const sections: NavSection[] = [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Pending Actions", href: "/pending", icon: ClipboardCheck, badgeKey: "pending" },
       { name: "Incomplete Applications", href: "/incomplete", icon: Clock, badgeKey: "incomplete" },
+      { name: "Stuck — System Fault", href: "/incomplete?fault=system", icon: AlertCircle },
       { name: "Orphan Payments", href: "/admin/orphan-payments", icon: CreditCard, badgeKey: "orphanPayments" },
       { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },

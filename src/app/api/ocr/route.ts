@@ -140,6 +140,31 @@ export async function POST(request: NextRequest) {
         Sentry.captureException(new Error(`OCR storage upload failed: ${uploadError.message}`), {
           tags: { flow: "ocr_upload", stage: "storage" },
         })
+        // Best-effort: tag the applicant's draft with a system_* failure_reason
+        // so the admin /incomplete view can surface storage-fault drafts.
+        // Lookup by email (verified session); errors swallowed — the 500
+        // below is what the client sees regardless.
+        try {
+          const sessionEmail = (session.email as string) || ""
+          if (sessionEmail) {
+            const { data: draftRow } = await supabase
+              .from("draft_applications")
+              .select("id")
+              .eq("email", sessionEmail)
+              .is("deleted_at", null)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            if (draftRow?.id) {
+              await supabase
+                .from("draft_applications")
+                .update({ failure_reason: "system_upload_failed_no_fileurl" })
+                .eq("id", draftRow.id)
+            }
+          }
+        } catch (e) {
+          console.error("[ocr] failure_reason tag write threw:", e)
+        }
         return Response.json({
           outcome: "rejected",
           reason: "ocr_service_error",

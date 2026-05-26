@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
           await supabase
             .from("draft_applications")
             .update({
-              failure_reason: "paid_but_broken",
+              failure_reason: "system_payment_verification_failed",
               failure_step: 5,
               status: "stuck",
               updated_at: new Date().toISOString(),

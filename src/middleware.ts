@@ -137,6 +137,44 @@ const PUBLIC_API_ROUTES = [
   // without this, every scheduled invocation 401s at middleware before
   // reaching the route's own auth gate.
   "/api/cron/",
+  // Legacy mobile shim (2026-05-27 cutover). The Flutter v1.0.4+2 binary on
+  // the stores calls these Laravel-style paths against membership.amasi.org/api/
+  // since application.amasi.org went dark. Each route lives at
+  // src/app/api/<name>/route.ts; some are P0 implementations, others are
+  // stubs returning a "feature updating" envelope. See migration/SHIM_README.md.
+  "/api/settings",
+  "/api/device_token_update",
+  "/api/check_user_data",
+  "/api/check_common_login",
+  "/api/common_member_send_otp",
+  "/api/common_member_resend_otp",
+  "/api/common_member_otp_verify",
+  "/api/memberforgotpassword",
+  "/api/mobile_notification_list",
+  "/api/mobile_notification_all_read",
+  "/api/mobile_notification_status_update",
+  "/api/enquiry_form",
+  "/api/know_membership",
+  "/api/send_details_toMail",
+  "/api/member_info",
+  "/api/track_application",
+  "/api/get_member_activity",
+  "/api/get_country",
+  "/api/get_state",
+  "/api/get_application",
+  "/api/send_otp",
+  "/api/otp_verify",
+  "/api/resend_otp",
+  "/api/check_application_status",
+  "/api/delete_clinic",
+  "/api/delete_work_exp",
+  "/api/delete_old_member_application",
+  "/api/member_two",
+  "/api/member_three",
+  "/api/create_order",
+  "/api/final_step",
+  "/api/application_data",
+  "/api/member_conversion",
 ]
 
 export async function middleware(request: NextRequest) {
@@ -263,19 +301,40 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       // Pre-2026-05-05 we logged both cases and AMASI-MEMBERSHIP-7
       // accumulated 58 false positives in a week.
       if (!token) {
-        Sentry.captureMessage("Middleware rejected /api/* request", {
-          level: "warning",
-          tags: { component: "middleware", reason: "no_admin_cookie" },
-          extra: {
-            path: pathname,
-            method: request.method,
-            ip:
-              request.headers.get("x-forwarded-for") ??
-              request.headers.get("x-real-ip") ??
-              "unknown",
-            user_agent: request.headers.get("user-agent") ?? "unknown",
-          },
-        })
+        // Mobile-app traffic (Flutter v1.0.4+2 sets X-Source: mobile-app on
+        // every request) gets its own Sentry fingerprint + tag so we can
+        // separate legacy-shim regressions from admin/cron auth misses. The
+        // observability gap surfaced during the 2026-05-27 cutover when a
+        // Sentry query for `http.status_code:401 mobile-app` returned zero
+        // events even though the legacy backend was already dark — the
+        // existing capture didn't carry the X-Source tag.
+        const xSource = request.headers.get("x-source")
+        const isMobileApp = xSource === "mobile-app"
+        Sentry.captureMessage(
+          isMobileApp
+            ? "Mobile-app request rejected at middleware"
+            : "Middleware rejected /api/* request",
+          {
+            level: "warning",
+            fingerprint: isMobileApp
+              ? ["mobile-app-middleware-reject", pathname]
+              : ["middleware-reject"],
+            tags: {
+              component: "middleware",
+              reason: isMobileApp ? "mobile_app_not_allowlisted" : "no_admin_cookie",
+              ...(xSource ? { x_source: xSource } : {}),
+            },
+            extra: {
+              path: pathname,
+              method: request.method,
+              ip:
+                request.headers.get("x-forwarded-for") ??
+                request.headers.get("x-real-ip") ??
+                "unknown",
+              user_agent: request.headers.get("user-agent") ?? "unknown",
+            },
+          }
+        )
       }
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

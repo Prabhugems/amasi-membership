@@ -138,3 +138,43 @@ Existing components that follow this pattern correctly (reference for new code):
 - `src/components/ui/admin-back-link.tsx` — same shape, inline auth fetch (predates the shared hook; functionally equivalent)
 - `src/app/member/page.tsx` footer — `{adminRole && <a href="/">...</a>}`
 <!-- END:admin-ui-gating -->
+
+<!-- BEGIN:mobile-shim-known-gaps -->
+# Mobile shim — known gaps (must close in future Flutter release)
+
+The legacy mobile shim under `src/app/api/<legacy_name>/` answers the in-stores Flutter v1.0.4+2 binary's calls against both `application.amasi.org` (legacy hostname, restored via DNS 2026-05-27) and `membership.amasi.org`. It ships with one structural gap that cannot be closed by backend changes alone:
+
+## `/api/final_step` cannot do Razorpay HMAC signature verification
+
+**Why:** the binary's `_handlePaymentSuccess` callback (`lib/view/application/member_application.dart:52`, `:81`; `application_track_details.dart:170`, `:191`) does NOT forward `razorpay_signature` or `razorpay_order_id` as named form fields. The signature IS inside `payment_json` (the raw Razorpay event map), but Dio's `FormData.fromMap()` does not JSON-encode nested maps — it calls `.toString()` on them, producing a non-parseable Dart-Map-literal string. See `migration/MIGRATION_FINDINGS.md` §3 for the wire-shape proof.
+
+**Current substitute:** `src/app/api/final_step/route.ts` calls `razorpay.orders.fetch(order_id)` + `razorpay.payments.fetch(payment_id)` server-side and verifies `order_id` / `amount` / `currency` / `status === "captured"` match the draft's expected values. The client-supplied `payment_status` field is IGNORED. This catches the legacy fraud surface (client claims "Success" when no payment captured), but it does NOT catch the replay attack where an attacker pays a different order on their own account and replays the resulting `payment_id` against someone else's draft — that requires the HMAC signature to bind payment ID to order ID cryptographically.
+
+**Must-close-in:** the next Flutter release that touches the payment screen. Required Dart-side change:
+
+```dart
+// member_application.dart, application_track_details.dart — both call sites
+void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+  bool success = await applicationController.getPaymentDetailsSend("final_step", {
+    "id": applicationController.userId,
+    "amount": applicationController.createOrderData.value.amount,
+    "currency": applicationController.createOrderData.value.currency,
+    "payment_status": "Success",
+    "payment_id": response.paymentId,
+    "payment_json": response.data,
+    // ADD THESE TWO NAMED FIELDS:
+    "razorpay_order_id": response.orderId,
+    "razorpay_signature": response.signature,
+    "application_id": applicationController.arguments,
+  });
+}
+```
+
+When that ships, update `src/app/api/final_step/route.ts` to read the two new fields and do the canonical HMAC verify (`crypto.createHmac("sha256", RAZORPAY_KEY_SECRET).update(`${order_id}|${payment_id}`).digest("hex") === razorpay_signature`) — the existing server-side order-fetch logic can stay as defense in depth.
+
+**Do not silently remove the substitute verify** when the HMAC path lands. Old binaries (v1.0.4+2 and earlier) will keep calling `/final_step` without the named fields until users update — keep both code paths and fall back to server-side fetch when `razorpay_signature` is absent.
+
+**Out of scope for the mobile shim** but worth flagging to the same Flutter release:
+- `lib/main.dart:31` hardcodes `certificateBaseUrl = "https://application.amasi.org/application/"`. The 4 PDF download URLs (`user-member-application-{certificate-mobile,fmas-certificate-mobile,receipt,invoice}/{id}`) are not implemented in this backend yet. Either implement the 4 paths against `membership_applications` / `membership_payments`, or — after the Flutter release replaces `certificateBaseUrl` — drop the legacy hostname entirely.
+- `lib/view/login_ext/login.dart:18` defaults the login screen to the "Login Password" tab. The new portal is OTP-only; `/api/check_common_login` is stubbed with a feature-updating response. Switch the default to the OTP tab in the next release.
+<!-- END:mobile-shim-known-gaps -->

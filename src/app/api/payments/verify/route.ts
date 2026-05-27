@@ -146,62 +146,20 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Dedup check — prevent double-recording the same payment.
-    //
-    // A race exists between this client-side verify call and the Razorpay
-    // webhook (`/api/webhooks/razorpay`). The webhook can land FIRST and
-    // insert a `membership_payments` row before this route runs (especially
-    // on payment-link captures or slow client networks). In that case the
-    // webhook-written row has no `application_id` (the webhook doesn't have
-    // it — only the client does), so if we early-return here, the
-    // application's `payment_status` is never flipped to 'paid' and the
-    // applicant looks unpaid in admin.
-    //
-    // Fix: if the existing row is already linked to *this* application AND
-    // the application is already marked paid, the early return is correct
-    // (true idempotency). Otherwise, fall through to backfill the link.
+    // Dedup check — prevent double-recording the same payment. The upsert
+    // below is idempotent via the unique index on gateway_payment_id, but
+    // checking first lets us skip the redundant write entirely on retries
+    // and on webhook-first races. The application row doesn't exist yet at
+    // this point in the /apply flow; /api/applications/submit creates it
+    // after verify and backfills application_id on the payment row.
     const { data: existingPayment } = await supabase
       .from("membership_payments")
-      .select("id, application_id")
+      .select("id")
       .eq("gateway_payment_id", razorpay_payment_id)
       .limit(1)
       .maybeSingle()
 
-    let skipPaymentInsert = false
-    if (existingPayment) {
-      // Check whether this is a genuine idempotent retry (both sides linked)
-      // vs. a webhook-first race that needs backfill.
-      let applicationPaid = false
-      if (applicationId) {
-        const { data: appRow } = await supabase
-          .from("membership_applications")
-          .select("payment_status")
-          .eq("id", applicationId)
-          .maybeSingle()
-        applicationPaid = appRow?.payment_status === "paid"
-      }
-      if (existingPayment.application_id && applicationPaid) {
-        return Response.json({ status: true, message: "Payment already recorded", paymentId: razorpay_payment_id })
-      }
-      // Webhook-first race: keep going so the application gets linked, but
-      // skip the duplicate `membership_payments` insert.
-      skipPaymentInsert = true
-      Sentry.captureMessage(
-        `[payments/verify] webhook-first race detected for ${razorpay_payment_id} — backfilling application_id on existing payment row`,
-        {
-          level: "info",
-          tags: { flow: "payment_verify", reason: "webhook_first_race" },
-          extra: {
-            razorpay_payment_id,
-            razorpay_order_id,
-            referenceNumber,
-            applicationId: applicationId || null,
-            existing_payment_id: existingPayment.id,
-            existing_application_id: existingPayment.application_id,
-          },
-        },
-      )
-    }
+    const skipPaymentInsert = !!existingPayment
 
     // --- Defense-in-depth: re-check that documents are still valid at verify time ---
     // create-order already gates this; this branch should only fire on a contract
@@ -259,7 +217,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Record payment (or backfill application_id on a webhook-first race).
+    // Record payment. Skipped when an existing row was found above — the
+    // webhook (or a prior verify retry) already wrote it.
     if (!skipPaymentInsert) {
       // Upsert (not insert) so a concurrent webhook landing first is
       // absorbed by the DB unique index on gateway_payment_id rather
@@ -297,30 +256,14 @@ export async function POST(request: NextRequest) {
         })
         return Response.json({ status: false, message: "Failed to record payment" }, { status: 500 })
       }
-    } else if (existingPayment) {
-      // Backfill the application_id (and member_email) on the webhook-written
-      // row. Guard with `.is("application_id", null)` so we don't clobber a
-      // legitimate prior link from a different applicant (defense in depth —
-      // gateway_payment_id is already globally unique).
-      const { error: backfillError } = await supabase
-        .from("membership_payments")
-        .update({
-          application_id: applicationId || null,
-          member_email: email || referenceNumber,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingPayment.id)
-        .is("application_id", null)
-      if (backfillError) {
-        console.error("Payment backfill error:", backfillError)
-        Sentry.captureException(backfillError, {
-          tags: { flow: "payment_verify", op: "webhook_race_backfill" },
-          extra: { existing_payment_id: existingPayment.id, applicationId },
-        })
-      }
     }
 
-    // Update application payment status
+    // Update application payment status. In the /apply flow this is a no-op
+    // because the application row doesn't exist yet — /api/applications/submit
+    // creates it after verify and links the payment via gateway_payment_id.
+    // The branch is preserved for callers that may pass applicationId in the
+    // future; orphaned payment detection is handled by the reconciliation cron
+    // (/api/cron/reconcile-payments), not here.
     if (applicationId) {
       const { error: updateError } = await supabase
         .from("membership_applications")
@@ -344,20 +287,6 @@ export async function POST(request: NextRequest) {
           extra: { razorpay_payment_id, applicationId, referenceNumber },
         })
       }
-    } else {
-      // No applicationId on a verify call means the client never created an
-      // application row (or lost track of it) before paying. Payment is
-      // recorded but unlinked — the row sits orphan in membership_payments
-      // until the reconciliation cron or a manual recovery picks it up.
-      // This is the dropped-verify-callback pattern from kilroy 2026-05-21.
-      Sentry.captureMessage(
-        "[payments/verify] called without applicationId — payment recorded but unlinked",
-        {
-          level: "warning",
-          tags: { flow: "payment_verify", reason: "missing_application_id" },
-          extra: { razorpay_payment_id, razorpay_order_id, referenceNumber, email },
-        }
-      )
     }
 
     void recordStepEvent({

@@ -61,6 +61,15 @@ const PUBLIC_ROUTES = [
   // the POST followed into a 405, silently dropping every client-side Sentry
   // event.
   "/monitoring",
+  // Mobile-shim redirect targets — the Flutter v1.0.4+2 binary launches these
+  // legacy URLs in a system browser (unauthenticated). Each one 307s to its
+  // native equivalent under /member/* or /api/payments/receipt. See
+  // src/app/application/user-member-application-*/[id]/route.ts and
+  // migration/SHIM_README.md.
+  "/application/user-member-application-certificate-mobile",
+  "/application/user-member-application-fmas-certificate-mobile",
+  "/application/user-member-application-receipt",
+  "/application/user-member-application-invoice",
 ]
 
 const PUBLIC_API_ROUTES = [

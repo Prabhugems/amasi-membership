@@ -212,11 +212,42 @@ Vercel nameservers (would break every other amasi.org subdomain).
 
 The 4 PDF download paths the Flutter binary hardcodes against
 `application.amasi.org/application/user-member-application-{certificate-mobile,fmas-certificate-mobile,receipt,invoice}/{id}`
-are NOT covered by this shim yet — Vercel will return 404 until those
-specific paths get implementations or a redirect. P1 follow-up: either
-implement the 4 paths against `membership_applications` /
-`membership_payments`, or add Vercel rewrites pointing them at existing
-amasi-membership equivalents.
+are now covered by lightweight 307 redirect routes at
+`src/app/application/user-member-application-*/[id]/route.ts`. Each delegates
+to the native equivalent:
+
+| Legacy path | Redirects to |
+|---|---|
+| `/application/user-member-application-certificate-mobile/{id}` | `/member/certificate?id={id}` |
+| `/application/user-member-application-fmas-certificate-mobile/{id}` | `/member/fmas-certificate?id={id}` |
+| `/application/user-member-application-receipt/{id}` | `/api/payments/receipt?id={id}` |
+| `/application/user-member-application-invoice/{id}` | `/api/payments/receipt?id={id}` (same HTML doc as receipt; split out only if a distinct invoice template is needed) |
+
+All four are allowlisted in `PUBLIC_ROUTES` (`src/middleware.ts`) so the
+Flutter app's unauthenticated browser launch reaches the redirect.
+
+**ID resolution in the cert + FMAS-cert redirects:** Flutter's
+`hiveMethod.userid` actually holds the member's Supabase UUID (set in
+`Login_controller.dart:255` from `otpVerifyData["data"][0]["id"]`), NOT the
+AMASI number. The two cert routes (`*-certificate-mobile`,
+`*-fmas-certificate-mobile`) therefore branch on shape:
+
+- Numeric id → already an AMASI number, pass through to `/member/certificate?id=<n>`.
+- UUID → lookup `members.id = <uuid>` to get `amasi_number`, then redirect.
+  Returns plain-text 404 if the member doesn't exist or `amasi_number` is null
+  (application still pending) — "crash loudly" rather than redirect to a
+  broken viewer.
+
+Both shim routes are rate-limited per-IP (30 / 15min) as defense in depth
+against UUID enumeration, layered on top of `/api/certificate`'s own
+20/15min limit.
+
+**Residual gap:** `view/application/application_track_details.dart:425`
+passes `appData["id"]` which is an **application id**, not member UUID or
+AMASI number. This call site is not yet resolved by the redirect —
+implementing it requires joining `membership_applications` →
+`members` to get the AMASI number. Same story for receipt/invoice
+redirects which take application id today.
 
 ## Testing
 

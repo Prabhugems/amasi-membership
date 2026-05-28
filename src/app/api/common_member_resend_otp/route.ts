@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
     // Slightly tighter than send (which also covers first-time resolution)
     // — resend should never be more than a few clicks per session.
-    const rl = await checkRateLimit(`shim-login-resend:${ip}`, 5, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`shim-login-resend:${ip}`, 10, 15 * 60 * 1000)
     if (!rl.allowed) {
       return legacyErr("Too many attempts. Please try again later.")
     }

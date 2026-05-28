@@ -15,7 +15,7 @@ import { legacyOk, legacyErr, parseLegacyForm, field } from "@/lib/mobile-shim"
 export async function POST(request: NextRequest) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
-    const rl = await checkRateLimit(`shim-login-otp-verify:${ip}`, 10, 15 * 60 * 1000)
+    const rl = await checkRateLimit(`shim-login-otp-verify:${ip}`, 30, 15 * 60 * 1000)
     if (!rl.allowed) {
       return legacyErr("Too many attempts. Please try again later.")
     }

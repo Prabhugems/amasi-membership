@@ -52,18 +52,22 @@ is restored (separately) and/or a Flutter release replaces the hardcoded
 | `POST /api/common_member_resend_otp` | `src/app/api/common_member_resend_otp/route.ts` | Resend login OTP given `id` (memberId) + `email`. Re-mints a 6-digit code via the same Resend pipeline as `/common_member_send_otp`. Tight rate limit (5/15min per IP). |
 | `POST /api/enquiry_form` | `src/app/api/enquiry_form/route.ts` | Mobile contact-us form — inserts into `support_tickets` with `category: "general_enquiry"`, so submissions land in the same admin queue as web tickets and route via existing rules. |
 | `POST /api/send_details_toMail` | `src/app/api/send_details_toMail/route.ts` | Emails the member their AMASI number / status / app-number via Resend. Accepts `id` as either `membership_applications.id` (legacy shape from know_membership) or `members.id` (defensive). |
+| `POST /api/device_token_update` | `src/app/api/device_token_update/route.ts` | Accepts FCM token from app boot; does not persist (the existing `device_tokens` table is Expo-only). Sentry breadcrumb logged for registration-volume visibility. Add an `fcm_token` column or `fcm_device_tokens` table to start delivering pushes. |
+| `POST /api/delete_old_member_application` | `src/app/api/delete_old_member_application/route.ts` | Deletes a draft application by id — only when status is in {pending_review, need_clarification, resubmit_requested}. Approved/rejected rows are protected. Idempotent when id doesn't exist. |
+| `POST /api/member_conversion` | `src/app/api/member_conversion/route.ts` | ACM→LM intake. The legacy inline conversion can't be replayed because the new upgrade flow requires a file upload + OCR. Bridge: creates a `support_tickets` row with `category: "membership_upgrade"` so admin can process the conversion manually via the web. Tight 3/hour rate limit. |
 
-**Stubs (7 — return `{status: false, message: "feature updating"}`):**
+**Friendly-error redirects (4 — clear actionable message instead of stub toast):**
 
-| Path | File |
+| Path | Returns |
 |---|---|
-| `/api/device_token_update` | `src/app/api/device_token_update/route.ts` |
-| `/api/check_common_login` | `src/app/api/check_common_login/route.ts` |
-| `/api/memberforgotpassword` | `src/app/api/memberforgotpassword/route.ts` |
-| `/api/delete_clinic` | `src/app/api/delete_clinic/route.ts` |
-| `/api/delete_work_exp` | `src/app/api/delete_work_exp/route.ts` |
-| `/api/delete_old_member_application` | `src/app/api/delete_old_member_application/route.ts` |
-| `/api/member_conversion` | `src/app/api/member_conversion/route.ts` |
+| `/api/check_common_login` | "Password login is no longer supported. Please switch to the 'Login with OTP' tab." |
+| `/api/memberforgotpassword` | "Password reset isn't needed — sign in with the 'Login with OTP' tab." |
+| `/api/delete_clinic` | "To remove a clinic address, please visit membership.amasi.org and sign in." |
+| `/api/delete_work_exp` | "To update your work experience, please visit membership.amasi.org and sign in." |
+
+(All four return the legacy `{status:false, message}` envelope so the Flutter client surfaces the message in its existing toast/snackbar.)
+
+**No remaining stubs.** All 33 mobile-binary routes either serve real data, surface a clear redirect message, or capture-and-acknowledge.
 
 ## Architecture
 

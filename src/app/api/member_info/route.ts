@@ -27,16 +27,25 @@ const str = (v: unknown): string => {
   return String(v)
 }
 
-// Compute age in completed years from a date-of-birth ISO string.
-function ageFromDob(dob: string | null | undefined): string {
-  if (!dob) return ""
+// Coerce a year-like value to int|null. Flutter's MemberInfo year fields
+// are typed `int?`; sending an empty string would crash the fromJson parse.
+function yearOrNull(v: unknown): number | null {
+  if (v == null) return null
+  const n = typeof v === "number" ? v : parseInt(String(v), 10)
+  return Number.isFinite(n) ? n : null
+}
+
+// Compute age in completed years from a date-of-birth ISO string. Returns
+// int (or null) to match Flutter's `int? age` model field.
+function ageFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null
   const d = new Date(dob)
-  if (isNaN(d.getTime())) return ""
+  if (isNaN(d.getTime())) return null
   const now = new Date()
   let age = now.getFullYear() - d.getFullYear()
   const m = now.getMonth() - d.getMonth()
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--
-  return age >= 0 ? String(age) : ""
+  return age >= 0 ? age : null
 }
 
 export async function POST(request: NextRequest) {
@@ -81,10 +90,19 @@ export async function POST(request: NextRequest) {
       // Don't fail the whole request on clinics error — return empty list.
     }
 
-    // Legacy MemberInfo.data[0] — map new schema columns to legacy snake_case keys.
+    // Legacy MemberInfo.data[0] — map new schema columns to legacy keys.
+    // CRITICAL: Flutter's `MemberInfo.Data` model has strict int? / String?
+    // types on fields. Sending a string where int? is expected throws a
+    // TypeError inside fromJson, the catch block swallows it into a
+    // "something went wrong" toast, and the Profile screen never loads.
+    // Specifically int-typed in the model: id, applicationId, membershipNo,
+    // age, mailingAddress, eduUndergradYear, eduPostgradYear,
+    // eduSuperspecialtyYear, applicationStatus, otp, otpVerify, status.
     const memberRow = {
-      id: member.id,
-      application_id: str(member.application_no),
+      // id is int? in the model — use amasi_number (the legacy-int identity
+      // we already surface to Flutter via send_otp's userid).
+      id: member.amasi_number ?? null,
+      application_id: null,
       application_no: str(member.application_no),
       membership_no: member.amasi_number ?? null,
       salutation: str(member.salutation),
@@ -108,19 +126,19 @@ export async function POST(request: NextRequest) {
       pin: str(member.postal_code),
       landline: str(member.landline),
       stdcode: str(member.std_code),
-      mailing_address: "",
+      mailing_address: null,
       edu_undergrad_degree: str(member.edu_undergrad_degree),
       edu_undergrad_college: str(member.ug_college),
       edu_undergrad_university: str(member.ug_university),
-      edu_undergrad_year: str(member.ug_year),
+      edu_undergrad_year: yearOrNull(member.ug_year),
       edu_postgrad_degree: str(member.pg_degree),
       edu_postgrad_college: str(member.pg_college),
       edu_postgrad_university: str(member.pg_university),
-      edu_postgrad_year: str(member.pg_year),
+      edu_postgrad_year: yearOrNull(member.pg_year),
       edu_superspecialty_degree: str(member.edu_superspecialty_degree),
       edu_superspecialty_college: str(member.edu_superspecialty_college),
       edu_superspecialty_university: str(member.edu_superspecialty_university),
-      edu_superspecialty_year: str(member.edu_superspecialty_year),
+      edu_superspecialty_year: yearOrNull(member.edu_superspecialty_year),
       mci_council_number: str(member.mci_council_number),
       mci_council_state: str(member.mci_council_state),
       imr_reg_no: str(member.imr_registration_no),
@@ -143,28 +161,20 @@ export async function POST(request: NextRequest) {
       // the login response agree, regardless of what the DB row's
       // application_status column happens to hold.
       application_status: member.status === "active" ? 12 : (member.application_status ?? 0),
-      otp: "",
-      otp_verify: "",
+      otp: null,
+      otp_verify: null,
       otp_time: "",
+      status: null,
     }
 
-    // Legacy clinic[] — map member_clinics columns to legacy tbl_clinic_address
-    // field names. address → clinic_address_one, phone → clinic_landline.
-    // Columns the legacy app expected but don't exist in the new schema
-    // (clinic_address_two, clinic_stdcode, clinic_mailing_address) return "".
-    const clinic = (clinics ?? []).map((c) => ({
-      id: c.id,
-      clinic_name: str(c.clinic_name),
-      clinic_address_one: str(c.address),
-      clinic_address_two: "",
-      clinic_country: str(c.country),
-      clinic_state: str(c.state),
-      clinic_city: str(c.city),
-      clinic_pin_code: str(c.pin_code),
-      clinic_stdcode: "",
-      clinic_landline: str(c.phone),
-      clinic_mailing_address: "",
-    }))
+    // Clinic[] in the legacy model has `int? id, int? memberId, int?
+    // clinicMailingAddress, int? status, int? countryId, int? stateId`.
+    // member_clinics holds these as UUIDs (id, member_id) and text/bool
+    // (status, country/state are names not ids) — no clean int mapping.
+    // Returning an empty list keeps the Profile screen renderable; clinic
+    // CRUD has moved to the web portal anyway (see delete_clinic shim).
+    void clinics // referenced earlier; intentionally not surfaced here
+    const clinic: unknown[] = []
 
     return legacyOk("Member info fetched", {
       data: [memberRow],

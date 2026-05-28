@@ -49,17 +49,17 @@ is restored (separately) and/or a Flutter release replaces the hardcoded
 | `POST /api/mobile_notification_list` | `src/app/api/mobile_notification_list/route.ts` | Returns `{data: []}` (empty list). amasi-membership has no per-member notification inbox table yet; this clears the "feature updating" toast and lets the bell render as 0 unread. Wire to a `member_notifications` table when one exists. |
 | `POST /api/mobile_notification_all_read` | `src/app/api/mobile_notification_all_read/route.ts` | No-op success — paired with the empty list above. |
 | `POST /api/mobile_notification_status_update` | `src/app/api/mobile_notification_status_update/route.ts` | No-op success — paired with the empty list above. |
+| `POST /api/common_member_resend_otp` | `src/app/api/common_member_resend_otp/route.ts` | Resend login OTP given `id` (memberId) + `email`. Re-mints a 6-digit code via the same Resend pipeline as `/common_member_send_otp`. Tight rate limit (5/15min per IP). |
+| `POST /api/enquiry_form` | `src/app/api/enquiry_form/route.ts` | Mobile contact-us form — inserts into `support_tickets` with `category: "general_enquiry"`, so submissions land in the same admin queue as web tickets and route via existing rules. |
+| `POST /api/send_details_toMail` | `src/app/api/send_details_toMail/route.ts` | Emails the member their AMASI number / status / app-number via Resend. Accepts `id` as either `membership_applications.id` (legacy shape from know_membership) or `members.id` (defensive). |
 
-**Stubs (10 — return `{status: false, message: "feature updating"}`):**
+**Stubs (7 — return `{status: false, message: "feature updating"}`):**
 
 | Path | File |
 |---|---|
 | `/api/device_token_update` | `src/app/api/device_token_update/route.ts` |
 | `/api/check_common_login` | `src/app/api/check_common_login/route.ts` |
-| `/api/common_member_resend_otp` | `src/app/api/common_member_resend_otp/route.ts` |
 | `/api/memberforgotpassword` | `src/app/api/memberforgotpassword/route.ts` |
-| `/api/enquiry_form` | `src/app/api/enquiry_form/route.ts` |
-| `/api/send_details_toMail` | `src/app/api/send_details_toMail/route.ts` |
 | `/api/delete_clinic` | `src/app/api/delete_clinic/route.ts` |
 | `/api/delete_work_exp` | `src/app/api/delete_work_exp/route.ts` |
 | `/api/delete_old_member_application` | `src/app/api/delete_old_member_application/route.ts` |

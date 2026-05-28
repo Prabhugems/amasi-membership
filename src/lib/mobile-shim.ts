@@ -127,11 +127,17 @@ export async function uploadShimFile(
   return publicUrl
 }
 
-// 6-digit numeric OTP, matching the existing /api/otp/send convention.
+// 4-digit numeric OTP. The published Flutter binary's Pinput widget on
+// the login screen is hardcoded `length: 4` (see
+// AMASI-Mobile-blazingcoders/lib/view/login_ext/login.dart). Emitting a
+// 6-digit OTP (the modern web-app convention) silently breaks every
+// mobile login because Pinput truncates input to 4 chars, the verify
+// call sends the first 4 of a 6-digit stored code, and string comparison
+// mismatches. Pad with leading zeros so codes like 0457 stay 4 chars.
 export function generateShimOtp(): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { randomInt } = require("node:crypto") as typeof import("node:crypto")
-  return String(randomInt(100000, 999999))
+  return String(randomInt(0, 10000)).padStart(4, "0")
 }
 
 // Resend wrapper colocated here so the 5 OTP shim routes share one template

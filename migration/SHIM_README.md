@@ -41,13 +41,14 @@ is restored (separately) and/or a Flutter release replaces the hardcoded
 | `POST /api/create_order` | `src/app/api/create_order/route.ts` | Razorpay order from server-side `APPLICATION_TYPES` fee table (client amount ignored) |
 | `POST /api/final_step` | `src/app/api/final_step/route.ts` | **Razorpay Orders/Payments API server-side verify** — client `payment_status` is IGNORED. See "Razorpay signature limitation" |
 | `POST /api/application_data` | `src/app/api/application_data/route.ts` | Receipt-screen render with hardcoded `webaddress`/`webphone`/`webemail`/`webgst` per legacy spec §32 |
+| `POST /api/check_user_data` | `src/app/api/check_user_data/route.ts` | Member-status flag check by email — used by Flutter events webview WillPop. Returns `member: 1` for active members, else 0; `event: 0` always (events not wired). |
+| `POST /api/member_info` | `src/app/api/member_info/route.ts` | Full member profile by id (member UUID). Returns legacy MemberInfo shape with `data[0]` (60+ fields mapped from new schema), `clinic[]` (from `member_clinics`); `work_exp` / `payment_status` / `fmas_data` return `[]` (no equivalent new-schema data yet). |
 
-**Stubs (18 — return `{status: false, message: "feature updating"}`):**
+**Stubs (16 — return `{status: false, message: "feature updating"}`):**
 
 | Path | File |
 |---|---|
 | `/api/device_token_update` | `src/app/api/device_token_update/route.ts` |
-| `/api/check_user_data` | `src/app/api/check_user_data/route.ts` |
 | `/api/check_common_login` | `src/app/api/check_common_login/route.ts` |
 | `/api/common_member_resend_otp` | `src/app/api/common_member_resend_otp/route.ts` |
 | `/api/memberforgotpassword` | `src/app/api/memberforgotpassword/route.ts` |
@@ -57,7 +58,6 @@ is restored (separately) and/or a Flutter release replaces the hardcoded
 | `/api/enquiry_form` | `src/app/api/enquiry_form/route.ts` |
 | `/api/know_membership` | `src/app/api/know_membership/route.ts` |
 | `/api/send_details_toMail` | `src/app/api/send_details_toMail/route.ts` |
-| `/api/member_info` | `src/app/api/member_info/route.ts` |
 | `/api/track_application` | `src/app/api/track_application/route.ts` |
 | `/api/get_member_activity` | `src/app/api/get_member_activity/route.ts` |
 | `/api/delete_clinic` | `src/app/api/delete_clinic/route.ts` |
@@ -129,15 +129,24 @@ applicants from other countries see an empty state dropdown. Expand the list
 or back it with a database table before international member onboarding
 resumes at scale.
 
-### `member_info` is a stub → no mid-flow draft resume
+### `member_info` covers approved-member profile, NOT mid-flow draft resume
 
-The Flutter `member_info` call is the wizard-resume mechanism (7 call sites
-in the Flutter source, per `flutter-usage.md`). Stubbing it means a user who
-quits the app mid-application has to restart from scratch when they reopen.
-Acceptable for the emergency cutover (most affected drafts are in the dead
-legacy MySQL anyway and cannot be resumed regardless), but the wizard-resume
-experience is degraded for fresh sessions until a P1 follow-up implements
-`member_info` against `draft_applications`.
+`member_info` is now LIVE for the approved-member case — Setting.dart:41
+passes `hiveMethod.userid` (member UUID set after OTP login) and gets the
+full profile back, including clinics. This unblocks the in-app profile
+screen.
+
+The other 6 Flutter call sites are inside the apply wizard (resume after
+quit, edit, view details, ACM→LM conversion, Know flow). Those expect a
+**draft application id** in `id`, not a member UUID, and they expect the
+returned record to include in-flight draft fields the legacy `tbl_member`
+held. The current implementation looks up only the `members` table, so the
+wizard-resume case will return "Member not found" for any user who didn't
+complete their application before the cutover. That's an acceptable gap
+because (a) draft applications now live in `membership_applications` /
+`drafts` not in `members`, and (b) the new apply flow handles its own
+draft resume independently of this shim. Implement a draft fallback only
+if the in-stores binary's wizard-resume path proves to be load-bearing.
 
 ### PDF downloads remain broken
 

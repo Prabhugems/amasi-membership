@@ -175,6 +175,11 @@ const PUBLIC_API_ROUTES = [
   "/api/final_step",
   "/api/application_data",
   "/api/member_conversion",
+  // Legacy cron target. An external HTTP cron provider still fires
+  // GET /incomplete_application daily (Frankfurt + Mumbai AWS IPs, curl UA);
+  // the route returns the legacy "nothing to do" envelope. Our own reminder
+  // job runs at /api/cron/bulk-draft-reminders.
+  "/api/incomplete_application",
 ]
 
 export async function middleware(request: NextRequest) {

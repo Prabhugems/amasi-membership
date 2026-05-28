@@ -2,13 +2,14 @@
 // certificateBaseUrl + "user-member-application-certificate-mobile/<id>"
 // to the native /member/certificate viewer.
 //
-// Two call sites in the Flutter binary supply different ID shapes:
-//   - view/home_main/Setting.dart:78 — hiveMethod.userid = members.id (UUID)
-//   - view/application/application_track_details.dart:425 — appData["id"]
-//     (application id, currently UNRESOLVED — see SHIM_README.md residual gap)
+// Three call sites in the Flutter binary supply different ID shapes:
+//   - Setting.dart:78 — hiveMethod.userid = members.id (UUID)
+//   - application_track_details.dart:425 — appData["id"] (application id, UUID)
+//   - numeric AMASI number (e.g. from a server-driven URL we construct)
 //
-// /api/certificate takes an integer amasi_number, so we resolve UUID → AMASI
-// number server-side before redirecting. Numeric ids pass through as-is.
+// /api/certificate takes an integer amasi_number, so we resolve any
+// non-numeric id (member UUID OR application UUID) server-side before
+// redirecting.
 // See migration/SHIM_README.md.
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
@@ -35,30 +36,44 @@ export async function GET(
     )
   }
 
-  // UUID → resolve to AMASI number via members table.
   const supabase = createAdminClient()
-  const { data: member, error } = await supabase
+
+  // UUID could be either members.id (Setting screen) or
+  // membership_applications.id (Track screen). Try member first, then app.
+  const { data: member } = await supabase
     .from("members")
     .select("amasi_number")
     .eq("id", id)
     .maybeSingle()
 
-  if (error || !member) {
-    return new Response(
-      "Member not found. Your account may not exist or has not been approved yet.",
-      { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }
-    )
+  let amasiNumber = member?.amasi_number ?? null
+
+  if (amasiNumber == null) {
+    const { data: app } = await supabase
+      .from("membership_applications")
+      .select("assigned_amasi_number, status")
+      .eq("id", id)
+      .maybeSingle()
+    if (app) {
+      amasiNumber = app.assigned_amasi_number ?? null
+      if (amasiNumber == null && app.status !== "approved") {
+        return new Response(
+          "Your application is still under review. Your membership certificate will be available once approved.",
+          { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }
+        )
+      }
+    }
   }
 
-  if (member.amasi_number == null) {
+  if (amasiNumber == null) {
     return new Response(
-      "Your application is still under review. Your membership certificate will be available once approved.",
+      "Membership certificate not available — no approved record found for this id.",
       { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }
     )
   }
 
   return NextResponse.redirect(
-    new URL(`/member/certificate?id=${member.amasi_number}`, request.url),
+    new URL(`/member/certificate?id=${amasiNumber}`, request.url),
     307
   )
 }

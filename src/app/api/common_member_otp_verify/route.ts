@@ -31,15 +31,23 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    const { data: member, error: memberErr } = await supabase
+    // Flutter's MemberSendOtpModel.userid is int?, so send_otp returns
+    // amasi_number (int) and the binary echoes it back here as `id`. New
+    // callers (curl, tests) still pass a member UUID. Branch on shape so
+    // both work.
+    const isAmasiNumber = /^\d+$/.test(memberId)
+    const memberQuery = supabase
       .from("members")
       .select(
         "id, email, first_name, middle_name, last_name, salutation, phone, amasi_number, profile_photo"
       )
-      .eq("id", memberId)
       .ilike("email", email)
       .limit(1)
-      .maybeSingle()
+
+    const { data: member, error: memberErr } = await (isAmasiNumber
+      ? memberQuery.eq("amasi_number", parseInt(memberId, 10))
+      : memberQuery.eq("id", memberId)
+    ).maybeSingle()
 
     if (memberErr) {
       // Don't swallow the error — schema drift / missing column would otherwise

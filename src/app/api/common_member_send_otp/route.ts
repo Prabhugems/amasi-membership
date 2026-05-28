@@ -34,15 +34,35 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    const { data: member } = await supabase
+    const { data: member, error: memberErr } = await supabase
       .from("members")
-      .select("id, email")
+      .select("id, email, amasi_number")
       .ilike("email", email)
       .limit(1)
       .maybeSingle()
 
+    if (memberErr) {
+      Sentry.captureException(memberErr, {
+        tags: { route: "shim/common_member_send_otp", phase: "member-lookup" },
+      })
+      return legacyErr("Something went wrong")
+    }
+
     if (!member) {
       return legacyErr("Account not found")
+    }
+
+    // Flutter binary's `MemberSendOtpModel.userid` is typed `int?` — sending
+    // a UUID string here throws a TypeError in Dart, the catch shows a
+    // "something went wrong" toast, and `loginController.memberId` stays
+    // null, breaking the subsequent verify call. Return amasi_number (int)
+    // so the parse succeeds. Approved members all have one; for the rare
+    // pending-applicant edge case we return null and the upstream verify
+    // route rejects on missing id.
+    if (member.amasi_number == null) {
+      return legacyErr(
+        "Your membership number isn't assigned yet — please wait for approval."
+      )
     }
 
     const code = generateShimOtp()
@@ -69,10 +89,13 @@ export async function POST(request: NextRequest) {
       return legacyErr("Failed to send email. Please try again.")
     }
 
-    // Legacy envelope: { status, message, data: <req.body>, userid }
+    // Legacy envelope: { status, message, data: <req.body>, userid }.
+    // userid MUST be an int (Flutter's MemberSendOtpModel.userid is int?);
+    // we return amasi_number which the verify route accepts as the
+    // legacy-shape id.
     return legacyOk("OTP send your mail", {
       data: { email },
-      userid: member.id,
+      userid: member.amasi_number,
     })
   } catch (err) {
     Sentry.captureException(err, { tags: { route: "shim/common_member_send_otp" } })

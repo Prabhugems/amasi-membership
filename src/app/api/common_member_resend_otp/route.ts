@@ -38,13 +38,19 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    const { data: member, error: memberErr } = await supabase
+    // Same id-shape branch as common_member_otp_verify — Flutter passes
+    // amasi_number (int) because of its MemberSendOtpModel.userid int? type.
+    const isAmasiNumber = /^\d+$/.test(memberId)
+    const baseQuery = supabase
       .from("members")
       .select("id, email")
-      .eq("id", memberId)
       .ilike("email", email)
       .limit(1)
-      .maybeSingle()
+
+    const { data: member, error: memberErr } = await (isAmasiNumber
+      ? baseQuery.eq("amasi_number", parseInt(memberId, 10))
+      : baseQuery.eq("id", memberId)
+    ).maybeSingle()
 
     if (memberErr) {
       Sentry.captureException(memberErr, {

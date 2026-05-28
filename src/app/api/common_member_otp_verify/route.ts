@@ -31,15 +31,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    const { data: member } = await supabase
+    const { data: member, error: memberErr } = await supabase
       .from("members")
       .select(
-        "id, email, first_name, middle_name, last_name, salutation, mobile, amasi_number, profile_photo_url"
+        "id, email, first_name, middle_name, last_name, salutation, phone, amasi_number, profile_photo"
       )
       .eq("id", memberId)
       .ilike("email", email)
       .limit(1)
       .maybeSingle()
+
+    if (memberErr) {
+      // Don't swallow the error — schema drift / missing column would otherwise
+      // surface as the same "Member not found" message a true miss returns,
+      // hiding the real bug. See CONTEXT.md "Schema drift via swallowed selects".
+      Sentry.captureException(memberErr, {
+        tags: { route: "shim/common_member_otp_verify", phase: "member-lookup" },
+      })
+      return legacyErr("Something went wrong")
+    }
 
     if (!member) {
       return legacyErr("Member not found")
@@ -102,8 +112,9 @@ export async function POST(request: NextRequest) {
       last_name: member.last_name ?? "",
       salutation: member.salutation ?? "",
       email: member.email,
-      mobile: member.mobile ?? "",
-      profile: member.profile_photo_url ?? "",
+      // members.phone is bigint — coerce at boundary; legacy Flutter expects string.
+      mobile: member.phone != null ? String(member.phone) : "",
+      profile: member.profile_photo ?? "",
       application_status: 12, // legacy: approved-final
     }
 

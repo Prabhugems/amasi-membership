@@ -59,6 +59,19 @@ export async function POST(request: NextRequest) {
     const { getMemberSession } = await import("@/lib/auth")
     const session = await getMemberSession()
     if (!session) {
+      Sentry.captureMessage("ocr_auth_rejected", {
+        level: "warning",
+        tags: {
+          route: "/api/ocr",
+          reason: "auth",
+        },
+        extra: {
+          hasCookie: !!request.cookies.get("amasi_member_token"),
+          hasBearer: !!request.headers.get("authorization"),
+          userAgent: request.headers.get("user-agent"),
+          referer: request.headers.get("referer"),
+        },
+      })
       return Response.json({
         outcome: "rejected",
         reason: "auth",

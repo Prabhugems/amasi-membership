@@ -61,10 +61,13 @@ export async function POST(request: NextRequest) {
       .limit(MAX_ROWS)
 
     if (error) {
+      // Degrade to empty list (not an error toast) — covers the brief
+      // pre-migration window where member_notifications doesn't exist yet,
+      // and any future schema drift. Bell shows 0 instead of breaking.
       Sentry.captureException(error, {
         tags: { route: "shim/mobile_notification_list", phase: "list-query" },
       })
-      return legacyErr("Something went wrong")
+      return legacyOk("OK", { data: [] })
     }
 
     // Legacy shape: rows use snake_case + integer read_status (1=unread, 2=read).

@@ -122,6 +122,43 @@ export async function POST(request: NextRequest) {
           tags: { route: "shim/common_member_otp_verify", op: "fcm-upsert" },
         })
       }
+    } else {
+      // Reconciliation fallback: Flutter's `FirebaseMessaging.instance.getToken()`
+      // is async at app boot. If the user logs in faster than the token
+      // resolves, `loginController.deviceId` is empty and `device_id` is
+      // missing from the verify body — but `/api/device_token_update` would
+      // have already persisted the token anonymously moments earlier from
+      // the same app.
+      //
+      // If we see EXACTLY ONE anonymous fcm_tokens row created in the last
+      // 60s, bind it to this member. Bail on 0 or >1 matches (the latter
+      // would be a race-condition risk — two members logging in within the
+      // same 60s window — and a wrong bind would leak push notifications).
+      const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString()
+      const { data: candidates } = await supabase
+        .from("fcm_tokens")
+        .select("id")
+        .is("member_id", null)
+        .gte("created_at", sixtySecondsAgo)
+        .order("created_at", { ascending: false })
+        .limit(2)
+      if (candidates && candidates.length === 1) {
+        const { error: bindErr } = await supabase
+          .from("fcm_tokens")
+          .update({
+            member_id: member.id,
+            updated_at: new Date().toISOString(),
+            last_seen_at: new Date().toISOString(),
+          })
+          .eq("id", candidates[0].id)
+          .is("member_id", null) // CAS guard — don't clobber a binding that
+                                  // landed concurrently
+        if (bindErr) {
+          Sentry.captureException(bindErr, {
+            tags: { route: "shim/common_member_otp_verify", op: "fcm-reconcile" },
+          })
+        }
+      }
     }
 
     const accessToken = await signToken(

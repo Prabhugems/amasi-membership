@@ -66,7 +66,11 @@ export async function POST(request: NextRequest) {
           reason: "auth",
         },
         extra: {
-          hasCookie: !!request.cookies.get("amasi_member_token"),
+          // optional chain: NextRequest always defines `cookies` in prod, but
+          // the route's regression tests (__tests__/ocr-route-stage-c.test.ts)
+          // mock `request` without it. The hasCookie tag is observability —
+          // not worth turning the 401 into a 500 when the mock is bare.
+          hasCookie: !!request.cookies?.get("amasi_member_token"),
           hasBearer: !!request.headers.get("authorization"),
           userAgent: request.headers.get("user-agent"),
           referer: request.headers.get("referer"),

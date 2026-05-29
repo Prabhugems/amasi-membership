@@ -195,6 +195,13 @@ type UploadEntry = {
   // src/lib/document-keys.ts MANUAL_REVIEW_REASON_CODES.
   bypass?: boolean
   bypassReason?: ManualReviewReasonCode
+  // PR: carries the /api/ocr `reason` code on the rejected branch so the
+  // card heading + CTA can distinguish "auth" (re-verify email) and
+  // "rate_limit" (wait) from a generic OCR rejection ("clearer photo").
+  // Without this the heading is "Document Not Recognized" for every cause,
+  // including session expiry, which sent users iterating on the file when
+  // they actually needed to re-OTP.
+  rejectReason?: string
 }
 
 // =====================================================================
@@ -904,7 +911,7 @@ function ApplyForm() {
       })()
       setUploads((prev) => ({
         ...prev,
-        [docType]: { file, preview, status: "rejected", extracted: {}, message },
+        [docType]: { file, preview, status: "rejected", extracted: {}, message, rejectReason: responseReason || undefined },
       }))
       toast.error(message)
       return
@@ -2462,35 +2469,88 @@ function ApplyForm() {
                             )}
                           </div>
                         )}
-                        {upload.status === "rejected" && (
-                          <div className="mt-2">
-                            <div className="flex items-center gap-2 font-bold text-red-700 text-base">
-                              <AlertCircle className="h-5 w-5" /> Document Not Recognized
+                        {upload.status === "rejected" && (() => {
+                          // Reason-branched heading + CTA. The card was shipping a
+                          // generic "Document Not Recognized" heading for every
+                          // /api/ocr rejection — including session expiry, which
+                          // sent users iterating on the file instead of re-OTPing.
+                          const isAuth = upload.rejectReason === "auth"
+                          const isRateLimit = upload.rejectReason === "rate_limit"
+                          const heading = isAuth
+                            ? "Session Expired"
+                            : isRateLimit
+                            ? "Too Many Attempts"
+                            : "Document Not Recognized"
+                          const helper = isAuth
+                            ? "Please refresh the page and verify your email again to continue."
+                            : isRateLimit
+                            ? "Please wait a few minutes before trying again."
+                            : "Please upload a clearer photo or scan of the original document."
+                          return (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 font-bold text-red-700 text-base">
+                                <AlertCircle className="h-5 w-5" /> {heading}
+                              </div>
+                              <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
+                              <p className="text-xs text-muted-foreground mt-2">{helper}</p>
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                {isAuth ? (
+                                  <Button
+                                    size="sm"
+                                    className="text-xs"
+                                    onClick={() => {
+                                      // Drop the phase/type restore keys before reload — otherwise
+                                      // the mount effect at L434-461 restores phase="upload" AND
+                                      // emailVerified=true from localStorage, and the user lands
+                                      // back on this same rejected card in a loop (the cookie's
+                                      // gone but the in-memory "verified" flag is restored, and
+                                      // the auto-refresh effect doesn't run until +45min).
+                                      // Form data is preserved so typed fields survive.
+                                      localStorage.removeItem("amasi_apply_phase")
+                                      localStorage.removeItem("amasi_apply_type")
+                                      window.location.reload()
+                                    }}
+                                  >
+                                    Re-verify email
+                                  </Button>
+                                ) : isRateLimit ? (
+                                  <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
+                                    <Upload className="h-3 w-3 mr-1.5" /> Wait and retry
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) handleFileUpload(docType, file)
+                                        e.target.value = ""
+                                      }}
+                                    />
+                                  </label>
+                                ) : (
+                                  <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
+                                    <Upload className="h-3 w-3 mr-1.5" /> Retry with a clearer photo
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) handleFileUpload(docType, file)
+                                        e.target.value = ""
+                                      }}
+                                    />
+                                  </label>
+                                )}
+                                <Button asChild variant="outline" size="sm" className="text-xs">
+                                  <a href={`mailto:membership@amasi.org?subject=${encodeURIComponent(`Document upload issue — ${label} (${formData.email || "AMASI applicant"})`)}`}>
+                                    <Mail className="h-3 w-3 mr-1" /> Contact Support
+                                  </a>
+                                </Button>
+                              </div>
                             </div>
-                            <p className="text-sm text-red-700 mt-1.5 leading-relaxed">{upload.message}</p>
-                            <p className="text-xs text-muted-foreground mt-2">Please upload a clearer photo or scan of the original document.</p>
-                            <div className="flex flex-wrap gap-2 mt-3">
-                              <label className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer transition-colors">
-                                <Upload className="h-3 w-3 mr-1.5" /> Retry with a clearer photo
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0]
-                                    if (file) handleFileUpload(docType, file)
-                                    e.target.value = ""
-                                  }}
-                                />
-                              </label>
-                              <Button asChild variant="outline" size="sm" className="text-xs">
-                                <a href={`mailto:membership@amasi.org?subject=${encodeURIComponent(`Document upload issue — ${label} (${formData.email || "AMASI applicant"})`)}`}>
-                                  <Mail className="h-3 w-3 mr-1" /> Contact Support
-                                </a>
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                         {upload.status === "blocked" && (
                           <div className="mt-2">
                             <div className="flex items-center gap-2 font-bold text-red-700 text-base">
@@ -2631,7 +2691,9 @@ function ApplyForm() {
                           // status:"uploaded" with no fileUrl (the c6aa4c9 bug class).
                           URL.revokeObjectURL(preview)
                           setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
-                          toast.error("Could not save your photo. Please try again in a moment.")
+                          toast.error(uploadResult?.reason === "auth"
+                            ? "Session expired — please verify your email again."
+                            : "Could not save your photo. Please try again in a moment.")
                           return
                         }
                         setUploads((prev) => ({
@@ -2727,7 +2789,9 @@ function ApplyForm() {
                                 if (!fileUrl) {
                                   URL.revokeObjectURL(preview)
                                   setUploads((prev) => { const c = { ...prev }; delete c.profile; return c })
-                                  toast.error("Could not save your photo. Please try again in a moment.")
+                                  toast.error(rj?.reason === "auth"
+                                    ? "Session expired — please verify your email again."
+                                    : "Could not save your photo. Please try again in a moment.")
                                   return
                                 }
                                 setUploads((prev) => ({ ...prev, profile: { file, preview, status: "uploaded", extracted: {}, fileUrl } }))
@@ -2765,7 +2829,9 @@ function ApplyForm() {
                           const rj = await r.json()
                           const fileUrl = typeof rj.fileUrl === "string" ? rj.fileUrl : null
                           if (!fileUrl) {
-                            toast.error("Could not save your photo. Please try again in a moment.")
+                            toast.error(rj?.reason === "auth"
+                              ? "Session expired — please verify your email again."
+                              : "Could not save your photo. Please try again in a moment.")
                             return
                           }
                           setUploads((prev) => ({

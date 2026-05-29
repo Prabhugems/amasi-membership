@@ -90,7 +90,13 @@ function parsePublicApiRoutes(): string[] {
         "the literal shape may have changed. Update parsePublicApiRoutes()."
     )
   }
-  return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+  // Strip line + block comments first — middleware.ts has quoted strings
+  // inside comments (e.g. mentioning the "feature updating" envelope) that
+  // would otherwise be parsed as orphan allowlist entries.
+  const stripped = match[1]
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "")
+  return [...stripped.matchAll(/"([^"]+)"/g)].map((m) => m[1])
 }
 
 function walkRoutes(dir: string, out: string[] = []): string[] {
@@ -240,7 +246,7 @@ function verdictFor(
       // Loud surface in test output without breaking the build. Removing the
       // route from KNOWN_AUTH_GAPS once it's fixed in middleware is part of
       // the follow-up PR.
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `[middleware-allowlist-coverage] known gap: ${routePath} (member ` +
           `code path unreachable; awaiting middleware allowlist fix)`

@@ -118,7 +118,9 @@ describe("Mobile shim — envelope contract", () => {
 
   describe("Stub routes — feature updating envelope", () => {
     const stubs = [
-      "device_token_update",
+      // device_token_update was promoted from stub to real FCM token
+      // registry on 2026-05-29 (see e2659ec / sql/035_fcm_tokens.sql) —
+      // returns legacyOk status:true now, no longer a stub envelope.
       "check_user_data",
       "check_common_login",
       "common_member_resend_otp",
@@ -158,11 +160,16 @@ describe("Mobile shim — envelope contract", () => {
       expect(path).toBeDefined()
       const mod = await stubModules[path!]()
       const res = await mod.POST()
-      const json = (await res.json()) as { status: boolean; message: string; feature: string }
+      const json = (await res.json()) as { status: boolean; message: string }
+      // Stub envelope is { status:false, message:<non-empty> }. Routes have
+      // been upgraded from a generic "temporarily unavailable" toast to
+      // action-specific copy (e.g. delete_clinic now says "To remove a
+      // clinic address, please visit membership.amasi.org and sign in...");
+      // we only assert the legacy shape that the Flutter binary depends on.
+      // The `feature` field was likewise dropped from legacyErr.
       expect(json.status).toBe(false)
       expect(typeof json.message).toBe("string")
-      expect(json.message).toContain("temporarily unavailable")
-      expect(json.feature).toBe(name)
+      expect(json.message.length).toBeGreaterThan(0)
     })
   })
 

@@ -91,6 +91,12 @@ vi.mock("@/lib/supabase", () => ({
         // existingApp guard
         return makeChainable(() => null)
       }
+      if (table === "membership_payments") {
+        // Orphan-payment guard added 2026-05-25 (Choudhary recovery): the
+        // route now checks for a paid-but-unlinked payment row before
+        // minting a new order. Tests assume no orphan → return null.
+        return makeChainable(() => null)
+      }
       throw new Error(`Unmocked table: ${table}`)
     },
   })),

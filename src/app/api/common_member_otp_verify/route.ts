@@ -99,6 +99,31 @@ export async function POST(request: NextRequest) {
       .update({ verified: true })
       .eq("id", otpRecord.id)
 
+    // Best-effort FCM token persistence — Flutter forwards `device_id`
+    // (its misnomer for the FCM token) in the verify body. Upsert into
+    // fcm_tokens with member_id so future admin pushes can reach this
+    // member. Failure here must NOT block login.
+    const fcmToken = field(form, "device_id").trim()
+    if (fcmToken && fcmToken.length >= 20) {
+      const { error: tokenErr } = await supabase
+        .from("fcm_tokens")
+        .upsert(
+          {
+            token: fcmToken,
+            member_id: member.id,
+            platform: "fcm",
+            last_seen_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "token" }
+        )
+      if (tokenErr) {
+        Sentry.captureException(tokenErr, {
+          tags: { route: "shim/common_member_otp_verify", op: "fcm-upsert" },
+        })
+      }
+    }
+
     const accessToken = await signToken(
       {
         sub: member.id,

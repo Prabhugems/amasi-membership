@@ -1,11 +1,41 @@
-// @auth: public — legacy mobile shim. Single-notification read-state toggle.
-// No-op success — paired with mobile_notification_list which returns an
-// empty inbox today; there is nothing to toggle. Flutter captures the
-// response into an observable but never reads it.
-import { legacyOk } from "@/lib/mobile-shim"
+// @auth: public — legacy mobile shim. Tap-to-read on a single notification.
+// Flutter posts `id` (the row id of the notification — uuid in our new
+// schema). We set `read_at = now()` if it's null; idempotent if already read.
+//
+// See sql/036_member_notifications.sql.
 
-export async function POST() {
-  return legacyOk("OK")
+import type { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
+import { createAdminClient } from "@/lib/supabase"
+import { legacyOk, legacyErr, parseLegacyForm, field } from "@/lib/mobile-shim"
+
+export async function POST(request: NextRequest) {
+  try {
+    const form = await parseLegacyForm(request)
+    const id = field(form, "id").trim()
+    if (!id) return legacyErr("id is required")
+
+    const supabase = createAdminClient()
+    const { error } = await supabase
+      .from("member_notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", id)
+      .is("read_at", null)
+
+    if (error) {
+      Sentry.captureException(error, {
+        tags: { route: "shim/mobile_notification_status_update" },
+      })
+      return legacyErr("Something went wrong")
+    }
+
+    return legacyOk("OK")
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { route: "shim/mobile_notification_status_update" },
+    })
+    return legacyErr("Something went wrong")
+  }
 }
 
 export const GET = POST

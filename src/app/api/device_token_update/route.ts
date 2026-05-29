@@ -1,20 +1,16 @@
 // @auth: public — legacy mobile shim. Flutter posts `{device_id: <FCM token>}`
 // on every app boot (lib/main.dart:678) and fire-and-forgets the response.
 //
-// We don't persist the token. The existing `device_tokens` table is for
-// the Expo app and uses `expo_push_token`; cross-loading FCM tokens into
-// that column would cause future Expo push sends to try delivering to FCM
-// endpoints (which 400s and noisifies Sentry).
+// At boot there's no auth context, so we upsert the token with member_id
+// = null. The same token gets bound to a member when it arrives in a
+// /common_member_otp_verify call later (which knows the member). Stale
+// anonymous rows can be reaped by a cleanup job on `last_seen_at`.
 //
-// When FCM send infrastructure lands on the server side, add an `fcm_token`
-// column (or a separate `fcm_device_tokens` table) and start persisting
-// here. Until then we log a Sentry breadcrumb so we can see registration
-// volume.
-//
-// See migration/SHIM_README.md and migration/flutter-usage.md row 2.
+// See migration/SHIM_README.md, sql/035_fcm_tokens.sql.
 
 import type { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
+import { createAdminClient } from "@/lib/supabase"
 import { legacyOk, parseLegacyForm, field } from "@/lib/mobile-shim"
 
 export async function POST(request: NextRequest) {
@@ -22,15 +18,28 @@ export async function POST(request: NextRequest) {
     const form = await parseLegacyForm(request)
     const token = field(form, "device_id").trim()
 
-    Sentry.addBreadcrumb({
-      category: "mobile-shim",
-      level: "info",
-      message: "device_token_update received",
-      data: { tokenPresent: token.length > 0, tokenLen: token.length },
-    })
+    if (token && token.length >= 20) {
+      const supabase = createAdminClient()
+      const { error } = await supabase
+        .from("fcm_tokens")
+        .upsert(
+          {
+            token,
+            platform: "fcm",
+            last_seen_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "token", ignoreDuplicates: false }
+        )
+      if (error) {
+        Sentry.captureException(error, {
+          tags: { route: "shim/device_token_update", op: "fcm-upsert" },
+        })
+      }
+    }
 
     // Legacy contract — return success even when no token; the Flutter
-    // client doesn't read this response anyway.
+    // client doesn't read this response.
     return legacyOk("OK")
   } catch (err) {
     Sentry.captureException(err, { tags: { route: "shim/device_token_update" } })

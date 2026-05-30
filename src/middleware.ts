@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server"
 import { jwtVerify } from "jose"
 import * as Sentry from "@sentry/nextjs"
 import { isAllowedCorsOrigin } from "@/lib/cors"
+import { isScannerProbe } from "@/lib/scanner-probes"
 
 // Inline token verification — cannot import from @/lib/auth because it uses next/headers
 const ADMIN_COOKIE = "amasi_admin_token"
@@ -308,7 +309,7 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       // immediately instead of needing a user report. Path goes in `extra`,
       // not `tags`, to keep tag cardinality bounded.
       //
-      // Two carve-outs keep this signal high:
+      // Three carve-outs keep this signal high:
       //   1. Only fire when the cookie is truly absent. A present-but-invalid
       //      cookie means a routine session expiry (admin tab still polling
       //      /api/dashboard, /api/badges, etc. after JWT TTL elapsed) and is
@@ -321,7 +322,17 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      from "no cookie" at this layer) or an external probe. Neither
       //      is actionable. AMASI-MEMBERSHIP-2V was the noise channel for
       //      this case (39 events / 3 days from sidebar polling).
-      if (!token && !pathname.startsWith("/api/admin/")) {
+      //   3. Skip obvious vulnerability-scanner probes (/api/.env,
+      //      /api/wp-login.php, /api/phpmyadmin/, etc.). Bots scan every
+      //      public site for these; the path shapes are forbidden by Next's
+      //      app-router conventions (dotfile segments) or target tech stacks
+      //      we don't run (PHP, WordPress), so they cannot represent a
+      //      legitimate-endpoint allowlist regression. See
+      //      src/lib/scanner-probes.ts for the heuristic and the negative-
+      //      test allowlist of every real /api/* route. AMASI-MEMBERSHIP-2V
+      //      regressed at 2026-05-30T12:07Z on the first such probe after
+      //      the admin-path carve-out shipped (GET /api/.env from a CIS VPS).
+      if (!token && !pathname.startsWith("/api/admin/") && !isScannerProbe(pathname)) {
         // Mobile-app traffic (Flutter v1.0.4+2 sets X-Source: mobile-app on
         // every request) gets its own Sentry fingerprint + tag so we can
         // separate legacy-shim regressions from admin/cron auth misses. The

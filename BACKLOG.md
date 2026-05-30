@@ -98,6 +98,7 @@ Out of the 2026-04-30 OTP-cohort diagnostic. Confirmed that the "26 of 27 stuck 
 - **Manual reminder path exempt from 3-cap by design.** `/api/applications/incomplete` action=`send_reminder` is intentionally NOT subject to the bulk-cron 3-cap — admins can manually resend any time. If at some point we want admins to see lifetime reminder count across all paths, consider adding a separate `manual_reminder_count` column or per-draft audit events so the manual path is visible without affecting the cap. Decision logged 2026-04-30.
 - **Idle re-validation gap in bulk-draft-reminders atomic claim.** Adding `.lte('updated_at', cutoff)` to the UPDATE WHERE clause would close the user-actively-returning race (user saves draft between cron's SELECT and UPDATE → still gets reminder). One-line change, semantically tighter, out of scope for today's PR. Identified 2026-04-30.
 - **Backfill scripts bump `updated_at` and extend reminder window.** Backfill scripts (e.g. `scripts/backfill-email-verified-2026-04-30.ts`) explicitly bump `updated_at` when modifying `step_data`, which causes the bulk-draft-reminders cron to see those rows as freshly active and extend their reminder window by 24h. Side effect is benign and identified 2026-04-30 (Step F simulation). Future backfill scripts that aren't user-facing "activity" may want to preserve `updated_at` to keep cron semantics intact. Not a bug, design choice flag.
+- [2026-05-30] Snapshot table backfill_email_verified_2026_04_30_snapshot dropped — no rollback in 30 days, safe to remove.
 
 ## Tooling: lint-staged scope
 

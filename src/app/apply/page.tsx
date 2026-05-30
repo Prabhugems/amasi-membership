@@ -33,6 +33,7 @@ import { Autocomplete } from "@/components/ui/autocomplete"
 import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
 import { generateRefNumber, FIELD_HELP } from "@/lib/application-utils"
 import { FieldHelp } from "@/components/ui/field-help"
+import { DraftSaveQueue } from "@/lib/draft-save-queue"
 
 // Unload-safe diagnostic relay. The in-process Sentry SDK queues events
 // but does not reliably flush before page unload, so saveDraftToServer
@@ -781,6 +782,35 @@ function ApplyForm() {
     // when emailVerified changes. See the AMASI-MEMBERSHIP-16 note above.
   }, [formData, selectedType, uploads, draftUpdatedAt])
 
+  // Single-in-flight save queue (AMASI-MEMBERSHIP-D). saveDraftToServer
+  // captures the latest formData/uploads/draftUpdatedAt via useCallback, but
+  // the queue holds a long-lived executor that must read the *current*
+  // saveDraftToServer on every drain. The ref bridge keeps the queue
+  // instance stable while still always invoking the freshest closure.
+  //
+  // The queue itself is created once via useState's lazy initializer (not a
+  // lazy-ref `if (ref.current === null)` pattern, which the React lint rules
+  // forbid as "ref access during render"). The closure passed to the
+  // constructor captures the ref *object*, not its `.current`, so the
+  // ESLint rule is satisfied — the .current dereference happens later, at
+  // queue-drain time.
+  const saveDraftToServerRef = useRef(saveDraftToServer)
+  useEffect(() => { saveDraftToServerRef.current = saveDraftToServer }, [saveDraftToServer])
+
+  // The closure passed to DraftSaveQueue is stored on the instance and only
+  // invoked at drain time (event-handler-adjacent), never during render.
+  // saveDraftToServerRef is dereferenced at that later moment, not at
+  // construction — the lint rule below is a false positive here.
+  // eslint-disable-next-line react-hooks/refs
+  const [draftSaveQueue] = useState(() => new DraftSaveQueue(
+    (job) => saveDraftToServerRef.current(job.step, job.extraData),
+  ))
+  const enqueueDraftSave = useCallback(
+    (step: number, extraData?: Record<string, unknown>) =>
+      draftSaveQueue.enqueue(step, extraData),
+    [draftSaveQueue],
+  )
+
   // Auto-save draft every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
@@ -943,7 +973,12 @@ function ApplyForm() {
         },
       }))
       toast.success("Document received — our team will review it")
-      saveDraftToServer(3)
+      // No client save here: /api/ocr's persistOcrUploadToDraft has already
+      // written this manual-review entry into draft.step_data.uploads
+      // server-side, and the manual-review branch updates only the upload
+      // entry (no formData change). The pre-AMASI-MEMBERSHIP-D fire-and-
+      // forget call was redundant and a primary contributor to the 3-doc
+      // burst's lock-saturation storm. See draft-save-queue.ts header.
       return
     }
 
@@ -1132,8 +1167,14 @@ function ApplyForm() {
         },
       }))
 
-      // Save draft after each successful document upload
-      saveDraftToServer(3)
+      // Save draft after each successful document upload. The upload-entry
+      // portion is already on the server via persistOcrUploadToDraft, but
+      // OCR auto-fill at line ~1098 has just mutated formData (firstName,
+      // dob, mciCouncilNumber, etc.) and those changes still need to be
+      // persisted client-side. Routed through the single-in-flight queue
+      // so a 3-doc burst collapses to at most two writes total
+      // (AMASI-MEMBERSHIP-D).
+      enqueueDraftSave(3)
 
       // Show what was extracted in a detailed toast
       const extractedLabels: string[] = []
@@ -1170,8 +1211,9 @@ function ApplyForm() {
     // with the docType set to `null` — the server's mergeDraftUploads
     // recognises that as the explicit removal sentinel. Fire-and-forget
     // matches the rest of the apply page; observability lives inside
-    // saveDraftToServer.
-    void saveDraftToServer(3, { uploads: { [docType]: null } })
+    // saveDraftToServer. Queue-routed so a remove that lands during an
+    // in-flight OCR save coalesces instead of racing.
+    void enqueueDraftSave(3, { uploads: { [docType]: null } })
   }
 
   const handleProcessAll = async () => {
@@ -1193,7 +1235,7 @@ function ApplyForm() {
     setProcessing(false)
     setPhase("review")
     // Save draft at step 4 (review)
-    saveDraftToServer(4)
+    enqueueDraftSave(4)
   }
 
   const [termsAccepted, setTermsAccepted] = useState(false)
@@ -1320,7 +1362,7 @@ function ApplyForm() {
     // --- BLOCKING: ensure server has all form data before payment ---
     let savedBeforePayment = false
     for (let i = 0; i < 2; i++) {
-      const result = await saveDraftToServer(4, { pre_payment_checkpoint: true })
+      const result = await enqueueDraftSave(4, { pre_payment_checkpoint: true })
       if (result.ok) { savedBeforePayment = true; break }
       if (i < 1) await new Promise(r => setTimeout(r, 2000))
     }
@@ -1407,7 +1449,7 @@ function ApplyForm() {
       }
       orderId = orderData.orderId
       // Save draft with payment order ID (step 5)
-      saveDraftToServer(5, { payment_order_id: orderId })
+      enqueueDraftSave(5, { payment_order_id: orderId })
     } catch {
       toast.error("Payment service unavailable. Please try again.")
       setSubmitting(false)
@@ -1493,7 +1535,7 @@ function ApplyForm() {
           // Blocking save with payment info — recovery safety net (8s cap)
           try {
             await Promise.race([
-              saveDraftToServer(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true }),
+              enqueueDraftSave(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true }),
               new Promise(r => setTimeout(r, 8000)),
             ])
           } catch {}
@@ -2076,7 +2118,7 @@ function ApplyForm() {
                 // with the server-side fallback in /api/otp/verify that
                 // also writes step_data.email_verified, this closes the
                 // 27-of-51-drafts gap from last 30d.
-                await saveDraftToServer(2, { email_verified: true })
+                await enqueueDraftSave(2, { email_verified: true })
                 setTimeout(() => setPhase("upload"), 500)
               }
             }

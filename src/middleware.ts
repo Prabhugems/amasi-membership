@@ -308,13 +308,20 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       // immediately instead of needing a user report. Path goes in `extra`,
       // not `tags`, to keep tag cardinality bounded.
       //
-      // Only fire when the cookie is truly absent — that's the
-      // missing-allowlist signal. A present-but-invalid cookie means a
-      // routine session expiry (admin tab still polling /api/dashboard,
-      // /api/badges, etc. after JWT TTL elapsed) and is not a regression.
-      // Pre-2026-05-05 we logged both cases and AMASI-MEMBERSHIP-7
-      // accumulated 58 false positives in a week.
-      if (!token) {
+      // Two carve-outs keep this signal high:
+      //   1. Only fire when the cookie is truly absent. A present-but-invalid
+      //      cookie means a routine session expiry (admin tab still polling
+      //      /api/dashboard, /api/badges, etc. after JWT TTL elapsed) and is
+      //      not a regression. Pre-2026-05-05 we logged both cases and
+      //      AMASI-MEMBERSHIP-7 accumulated 58 false positives in a week.
+      //   2. Skip /api/admin/* paths. These are admin-only by design and will
+      //      never be allowlisted, so a 401 here cannot represent a missing-
+      //      allowlist regression — it's either a logged-out admin tab whose
+      //      session cookie expired (browser dropped it; indistinguishable
+      //      from "no cookie" at this layer) or an external probe. Neither
+      //      is actionable. AMASI-MEMBERSHIP-2V was the noise channel for
+      //      this case (39 events / 3 days from sidebar polling).
+      if (!token && !pathname.startsWith("/api/admin/")) {
         // Mobile-app traffic (Flutter v1.0.4+2 sets X-Source: mobile-app on
         // every request) gets its own Sentry fingerprint + tag so we can
         // separate legacy-shim regressions from admin/cron auth misses. The

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server"
 import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { isValidEmailShape } from "@/lib/email-typo"
 import { randomInt } from "node:crypto"
 
 function getResend() {
@@ -24,7 +25,13 @@ export async function POST(request: NextRequest) {
 
     const { email, phone, membershipType } = await request.json()
 
-    if (!email || !email.includes("@")) {
+    // Stricter than the pre-existing includes("@") — catches missing TLD,
+    // whitespace, double-@, etc. before we send a code to a dead address.
+    // Client uses the same helper (src/lib/email-typo.ts) and surfaces a
+    // typo suggestion BEFORE submit, so by the time we reach this server
+    // gate the address has already been shape-validated once; this is
+    // defense-in-depth against direct API hits.
+    if (!email || typeof email !== "string" || !isValidEmailShape(email)) {
       return Response.json({ status: false, message: "Valid email is required" }, { status: 400 })
     }
 

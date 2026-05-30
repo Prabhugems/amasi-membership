@@ -34,6 +34,7 @@ import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
 import { generateRefNumber, FIELD_HELP } from "@/lib/application-utils"
 import { FieldHelp } from "@/components/ui/field-help"
 import { DraftSaveQueue } from "@/lib/draft-save-queue"
+import { isValidEmailShape, suggestEmailCorrection } from "@/lib/email-typo"
 
 // Unload-safe diagnostic relay. The in-process Sentry SDK queues events
 // but does not reliably flush before page unload, so saveDraftToServer
@@ -476,7 +477,16 @@ function ApplyForm() {
   }, [selectedType])
   const [verifyStep, setVerifyStep] = useState<"input" | "email_otp" | "done">("input")
   const [otpCode, setOtpCode] = useState("")
-  const [otpCooldown, setOtpCooldown] = useState(0)
+  // O-3: Replaced the previous 60s client-side cooldown with an in-flight
+  // guard. `sendingOtp` blocks rapid double-clicks; server-side rate limits
+  // (3/email/10min, 5/IP/15min in /api/otp/send) remain the only durable
+  // throttle.
+  const [sendingOtp, setSendingOtp] = useState(false)
+  // O-1: client-computed suggestion when the entered email looks like a
+  // typo of a common domain (gmail.con → gmail.com, gmial → gmail, …).
+  // The user must tap to accept — never auto-applied. See
+  // src/lib/email-typo.ts for the matching rules.
+  const [emailTypoSuggestion, setEmailTypoSuggestion] = useState<string | null>(null)
   const [verifying, setVerifying] = useState(false)
 
   // Resume draft dialog state
@@ -2053,22 +2063,51 @@ function ApplyForm() {
 
   // ===== VERIFY PHASE (Email OTP only) =====
   if (phase === "verify") {
-    const startCooldown = () => {
-      setOtpCooldown(60)
-      const timer = setInterval(() => {
-        setOtpCooldown((c) => { if (c <= 1) { clearInterval(timer); return 0 } return c - 1 })
-      }, 1000)
-    }
-
     const sendEmailOtp = async () => {
-      if (!formData.email || !formData.email.includes("@")) { toast.error("Please enter a valid email"); return }
-      if (!formData.mobile || formData.mobile.length !== 10) { toast.error("Please enter a valid 10-digit mobile number"); return }
+      // Defensive: re-validate email shape against the same helper the
+      // input field uses. The Verify-Email button's disabled gate normally
+      // prevents reaching here with a bad shape, but a user pressing
+      // Enter from the OTP screen's Resend can bypass the gate.
+      if (!formData.email || !isValidEmailShape(formData.email)) {
+        toast.error("Please enter a valid email address")
+        return
+      }
+      if (!formData.mobile || formData.mobile.length !== 10) {
+        toast.error("Please enter a valid 10-digit mobile number")
+        return
+      }
+      if (sendingOtp) return // O-3: swallow double-clicks without UI flash
+      setSendingOtp(true)
       try {
-        const res = await fetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: formData.email, phone: formData.mobile, membershipType: selectedType?.id || formData.membershipType }) })
+        const res = await fetch("/api/otp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: formData.email,
+            phone: formData.mobile,
+            membershipType: selectedType?.id || formData.membershipType,
+          }),
+        })
+        // O-3: server-side rate limit shows a soft toast rather than locking
+        // the UI. The user can immediately try again once the window passes,
+        // matching the message ("a moment", not a fixed seconds count).
+        if (res.status === 429) {
+          toast.error("Please wait a moment before requesting another code.")
+          return
+        }
         const data = await res.json()
-        if (data.status) { setVerifyStep("email_otp"); setOtpCode(""); startCooldown(); toast.success("OTP sent to your email") }
-        else toast.error(data.message || "Failed to send OTP")
-      } catch { toast.error("Failed to send OTP") }
+        if (data.status) {
+          setVerifyStep("email_otp")
+          setOtpCode("")
+          toast.success("OTP sent to your email")
+        } else {
+          toast.error(data.message || "Failed to send OTP")
+        }
+      } catch {
+        toast.error("Failed to send OTP")
+      } finally {
+        setSendingOtp(false)
+      }
     }
 
     const handleOtpVerify = async (code: string) => {
@@ -2158,7 +2197,38 @@ function ApplyForm() {
                 <>
                   <div>
                     <Label className="text-sm font-medium">Email <span className="text-destructive">*</span></Label>
-                    <Input type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} placeholder="doctor@example.com" className="h-11 mt-1" />
+                    <Input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setFormData((p) => ({ ...p, email: v }))
+                        // O-1: compute typo suggestion synchronously on every
+                        // keystroke. suggestEmailCorrection returns null when
+                        // the shape is invalid or the domain is already a
+                        // known-good one, so the hint disappears as soon as
+                        // the user fixes the typo.
+                        setEmailTypoSuggestion(suggestEmailCorrection(v))
+                      }}
+                      placeholder="doctor@example.com"
+                      className="h-11 mt-1"
+                    />
+                    {emailTypoSuggestion && (
+                      <div className="mt-1.5 text-xs text-muted-foreground">
+                        Did you mean{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData((p) => ({ ...p, email: emailTypoSuggestion }))
+                            setEmailTypoSuggestion(null)
+                          }}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {emailTypoSuggestion}
+                        </button>
+                        ?
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label className="text-sm font-medium">Mobile Number <span className="text-destructive">*</span></Label>
@@ -2167,8 +2237,12 @@ function ApplyForm() {
                       <Input className="flex-1 h-11" value={formData.mobile} onChange={(e) => setFormData((p) => ({ ...p, mobile: e.target.value.replace(/\D/g, "").slice(0, 10) }))} placeholder="10-digit mobile" />
                     </div>
                   </div>
-                  <Button onClick={sendEmailOtp} className="w-full h-11 font-semibold" disabled={!formData.email || formData.mobile.length !== 10}>
-                    Verify Email
+                  <Button
+                    onClick={sendEmailOtp}
+                    className="w-full h-11 font-semibold"
+                    disabled={!formData.email || formData.mobile.length !== 10 || sendingOtp}
+                  >
+                    {sendingOtp ? "Sending..." : "Verify Email"}
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">We&apos;ll send a 6-digit code to your email</p>
                 </>
@@ -2190,12 +2264,33 @@ function ApplyForm() {
                     autoFocus
                   />
                   <div className="flex items-center justify-between">
-                    <Button variant="ghost" size="sm" onClick={sendEmailOtp} disabled={otpCooldown > 0}>
-                      {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend"}
+                    <Button variant="ghost" size="sm" onClick={sendEmailOtp} disabled={sendingOtp}>
+                      {sendingOtp ? "Resending..." : "Resend"}
                     </Button>
                     <Button onClick={() => handleOtpVerify(otpCode)} disabled={otpCode.length !== 6 || verifying} size="sm">
                       {verifying ? "Verifying..." : "Verify Email"}
                     </Button>
+                  </div>
+                  {/* O-2: "didn't get the code?" guidance. Surfaces the spam-
+                      folder check up-front, and an explicit way back to the
+                      email-entry step (preserves formData; only resets OTP
+                      input). Closes the silent-abandon path where the user
+                      either typed the wrong email or doesn't realise codes
+                      can take 30-60s. */}
+                  <div className="text-xs text-muted-foreground pt-3 border-t border-border space-y-1">
+                    <p className="font-medium text-foreground/80">Didn&apos;t get the code?</p>
+                    <p>Check your spam or promotions folder.</p>
+                    <p>Codes usually arrive within a minute.</p>
+                    <p>
+                      Wrong email?{" "}
+                      <button
+                        type="button"
+                        onClick={() => { setVerifyStep("input"); setOtpCode("") }}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        Edit email
+                      </button>
+                    </p>
                   </div>
                 </div>
               )}

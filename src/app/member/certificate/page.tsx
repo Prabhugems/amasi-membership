@@ -318,7 +318,7 @@ function CertificateContent() {
 
       {/* Download buttons */}
       <div className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Button onClick={handleDownloadPNG} size="lg" className="gap-2" disabled={downloading === "png"}>
             {downloading === "png" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileImage className="h-4 w-4" />}
             PNG
@@ -333,7 +333,7 @@ function CertificateContent() {
         </div>
 
         {/* Share options */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Button variant="ghost" size="sm" onClick={handleShareLink} className="gap-1.5 text-xs">
             <Share2 className="h-3.5 w-3.5" /> Share
           </Button>

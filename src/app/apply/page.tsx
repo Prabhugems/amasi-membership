@@ -1899,7 +1899,7 @@ function ApplyForm() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center py-8 border-t"
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 text-center py-8 border-t"
         >
           {[
             { icon: Users, value: "18,000+", label: "Members" },
@@ -2271,7 +2271,7 @@ function ApplyForm() {
                       </button>
                       {expandedTips[docType] && (
                         <div className="rounded-lg border bg-muted/30 p-3 mb-1 text-xs space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                               <p className="font-semibold text-green-700 mb-1">Do</p>
                               <ul className="space-y-0.5 text-muted-foreground">
@@ -2724,7 +2724,7 @@ function ApplyForm() {
                   </button>
                   {expandedTips.profile && (
                     <div className="rounded-lg border bg-muted/30 p-3 mb-1 text-xs space-y-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <p className="font-semibold text-green-700 mb-1">Do</p>
                           <ul className="space-y-0.5 text-muted-foreground">
@@ -3641,7 +3641,7 @@ function ApplyForm() {
             <Button className="w-full h-12 min-h-[44px] font-semibold gap-2" onClick={() => window.location.href = `/apply/status?ref=${refNumber}`}>
               <FileText className="h-4 w-4" /> Track Application Status
             </Button>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Button variant="outline" className="h-11 min-h-[44px] text-sm gap-1.5" onClick={() => {
                 // Generate a simple receipt URL / open print dialog
                 window.print()

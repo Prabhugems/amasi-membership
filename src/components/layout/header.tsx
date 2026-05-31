@@ -35,7 +35,7 @@ export function Header() {
   if (adminRole === null) {
     return (
       <header className="sticky top-0 z-20 border-b bg-card">
-        <div className="flex h-16 items-center gap-4 px-6">
+        <div className="flex h-14 sm:h-16 items-center gap-4 px-6">
           <Link href="/apply" className="flex items-center gap-2 shrink-0" aria-label="AMASI home">
             <span className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">A</span>
@@ -114,7 +114,7 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b bg-card px-6">
+    <header className="sticky top-0 z-20 flex h-14 sm:h-16 items-center gap-4 border-b bg-card px-6">
       <div className="flex-1">
         {showSearch && (
           <form onSubmit={handleSearch} className="relative max-w-md">

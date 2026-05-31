@@ -1,6 +1,7 @@
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Fraunces, Inter_Tight, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
+import { ServiceWorkerRegistrar } from "@/components/pwa/sw-registrar"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { QueryProvider } from "@/components/providers/query-provider"
@@ -46,8 +47,15 @@ export const metadata: Metadata = {
   },
   description:
     "Association of Minimal Access Surgeons of India — Apply for membership, track applications, verify members, download certificates, and manage your profile.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AMASI",
+  },
   icons: {
     icon: "/icon.svg",
+    apple: "/icons/apple-touch-icon.png",
   },
   openGraph: {
     title: "AMASI — Membership Management System",
@@ -61,6 +69,10 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+}
+
+export const viewport: Viewport = {
+  themeColor: "#0f766e",
 }
 
 export default function RootLayout({
@@ -101,6 +113,7 @@ export default function RootLayout({
         />
         <SpeedInsights />
         <Analytics />
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   )

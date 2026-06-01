@@ -61,9 +61,11 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: false, message: "Link does not match this draft" }, { status: 403 })
   }
 
-  // Issue the standard member session cookie (1h) so save-draft accepts writes.
-  // verifyMemberSession() in save-draft only checks role=member + email match.
-  const sessionToken = await signToken({ role: "member", email }, "1h")
+  // Issue the standard member session cookie (24h, matches the OTP-verify
+  // path) so save-draft and /api/ocr accept writes for the duration of the
+  // applicant's session. verifyMemberSession() in save-draft only checks
+  // role=member + email match. See AMASI-MEMBERSHIP-31.
+  const sessionToken = await signToken({ role: "member", email }, "24h")
   await setMemberCookie(sessionToken)
 
   // If draft was parked (stuck/payment_on_hold), flip back to in_progress so

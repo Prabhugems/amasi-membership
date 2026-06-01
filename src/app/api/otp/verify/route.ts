@@ -76,12 +76,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Create member JWT session cookie
+    // Create member JWT session cookie. 24h matches setMemberCookie's maxAge;
+    // the two MUST stay in sync. See AMASI-MEMBERSHIP-31 for the prior 1h
+    // OCR-rejection incident on the /apply flow.
     const token = await signToken({
       sub: otpRecord.id,
       email: otpRecord.email,
       role: "member",
-    }, "1h")
+    }, "24h")
     await setMemberCookie(token)
 
     // Check for existing draft application

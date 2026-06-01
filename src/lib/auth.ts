@@ -63,7 +63,11 @@ export async function setMemberCookie(token: string) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60, // 1 hour
+    // 24h — matches the JWT exp set in /api/otp/verify. 1h was too short for
+    // the /apply flow: applicants on slow mobile uploading 4–5 docs through
+    // OCR (60s timeout per retry) commonly exceeded the window and got 401s
+    // from /api/ocr (AMASI-MEMBERSHIP-31). The two values must stay in sync.
+    maxAge: 60 * 60 * 24,
   })
 }
 

@@ -7,7 +7,9 @@ export async function POST(_request: NextRequest) {
     return Response.json({ status: false, message: "Session expired" }, { status: 401 })
   }
 
-  // Hard cap: refuse to extend sessions older than 4 hours from original issue.
+  // Hard cap: refuse to extend sessions older than 24 hours from original issue.
+  // Was 4h when base sessions were 1h; bumped alongside the base TTL change for
+  // AMASI-MEMBERSHIP-31 (slow /apply OCR uploads exceeding the 1h window).
   //
   // Note: signToken() calls jose's .setIssuedAt() with no args, which overwrites
   // any iat in the payload to "now" — so we cannot rely on iat to survive across
@@ -19,13 +21,13 @@ export async function POST(_request: NextRequest) {
     typeof session.original_iat === "number" ? session.original_iat : null
   const sessionIat = typeof session.iat === "number" ? session.iat : Math.floor(Date.now() / 1000)
   const originalIat = sessionOriginalIat ?? sessionIat
-  if (Date.now() / 1000 - originalIat > 4 * 3600) {
+  if (Date.now() / 1000 - originalIat > 24 * 3600) {
     return Response.json({ status: false, message: "Session too old. Please re-verify." }, { status: 401 })
   }
 
   const token = await signToken(
     { sub: session.sub, email: session.email, role: "member", original_iat: originalIat },
-    "1h"
+    "24h"
   )
   await setMemberCookie(token)
   // Token in body for non-cookie clients (RN mobile). Web app ignores it.

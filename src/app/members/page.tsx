@@ -251,9 +251,9 @@ function TableSkeleton() {
           <td className="px-4 py-3.5 hidden md:table-cell"><div className="h-4 w-20 bg-muted rounded" /></td>
           <td className="px-4 py-3.5 hidden lg:table-cell"><div className="h-4 w-24 bg-muted rounded" /></td>
           <td className="px-4 py-3.5 hidden lg:table-cell"><div className="h-4 w-14 bg-muted rounded" /></td>
-          <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-6 w-16 bg-muted rounded-full" /></td>
-          <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-4 w-12 bg-muted rounded" /></td>
-          <td className="px-4 py-3.5 hidden xl:table-cell"><div className="h-5 w-20 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5 hidden 2xl:table-cell"><div className="h-6 w-16 bg-muted rounded-full" /></td>
+          <td className="px-4 py-3.5 hidden 2xl:table-cell"><div className="h-4 w-12 bg-muted rounded" /></td>
+          <td className="px-4 py-3.5 hidden 2xl:table-cell"><div className="h-5 w-20 bg-muted rounded" /></td>
           <td className="px-4 py-3.5"><div className="h-7 w-16 bg-muted rounded ml-auto" /></td>
         </tr>
       ))}
@@ -679,9 +679,9 @@ export default function MembersPage() {
                   <SortableHeader col="membership_type" label="Type" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
                   <SortableHeader col="state" label="State" className="hidden lg:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
                   <SortableHeader col="zone" label="Zone" className="hidden lg:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
-                  <SortableHeader col="status" label="Status" className="hidden xl:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
+                  <SortableHeader col="status" label="Status" className="hidden 2xl:table-cell" sortCol={sortCol} sortDir={sortDir} handleSort={handleSort} />
                   <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">PG Degree</th>
-                  <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden xl:table-cell">Credentials</th>
+                  <th scope="col" className="text-left px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden 2xl:table-cell">Credentials</th>
                   <th scope="col" className="text-right px-4 py-3.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -725,9 +725,9 @@ export default function MembersPage() {
                             {getInitials(m.name || "?")}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0">
+                        <div className="min-w-0 max-w-[280px]">
                           <p className="font-semibold text-sm group-hover:text-primary transition-colors truncate">Dr. {m.name}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5 truncate">
                             <span className="font-mono">#{m.amasi_number}</span>
                             {m.email && (
                               <>
@@ -746,7 +746,7 @@ export default function MembersPage() {
                     </td>
                     <td className="px-4 py-3.5 hidden lg:table-cell text-muted-foreground text-xs">{m.state || "\u2014"}</td>
                     <td className="px-4 py-3.5 hidden lg:table-cell text-muted-foreground text-xs">{m.zone || "\u2014"}</td>
-                    <td className="px-4 py-3.5 hidden xl:table-cell">
+                    <td className="px-4 py-3.5 hidden 2xl:table-cell">
                       {m.status ? (
                         <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_BADGE_STYLES[m.status] || "bg-muted text-muted-foreground"}`}>
                           {m.status}
@@ -754,7 +754,7 @@ export default function MembersPage() {
                       ) : "\u2014"}
                     </td>
                     <td className="px-4 py-3.5 hidden md:table-cell text-muted-foreground text-xs truncate max-w-[160px]">{m.pg_degree || "\u2014"}</td>
-                    <td className="px-4 py-3.5 hidden xl:table-cell">
+                    <td className="px-4 py-3.5 hidden 2xl:table-cell">
                       {m.credentials?.length ? (
                         m.credentials.map((c: { type: string; year: number }) => (
                           <span

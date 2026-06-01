@@ -121,10 +121,22 @@ function FilterSelect({
 /* --- Hover preview popup --- */
 function MemberPreview({ hover }: { hover: HoverState }) {
   const m = hover.member
+  // hover.x/y are client coords near the row's right edge. The card is a
+  // fixed 288px (w-72) block — clamp it to the viewport so it never spills
+  // off the right edge on narrower (laptop) widths, flipping left when needed.
+  const PREVIEW_W = 288
+  const EST_H = 220
+  const MARGIN = 12
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1280
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800
+  let left = hover.x + 16
+  if (left + PREVIEW_W > vw - MARGIN) left = hover.x - 16 - PREVIEW_W
+  left = Math.max(MARGIN, Math.min(left, vw - PREVIEW_W - MARGIN))
+  const top = Math.max(MARGIN, Math.min(hover.y - 10, vh - EST_H - MARGIN))
   return (
     <div
       className="fixed z-50 pointer-events-none"
-      style={{ left: hover.x + 16, top: hover.y - 10 }}
+      style={{ left, top }}
     >
       <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-start gap-3">

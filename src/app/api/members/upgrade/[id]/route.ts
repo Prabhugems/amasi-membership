@@ -55,17 +55,39 @@ export async function PATCH(
       return Response.json({ status: false, message: "This upgrade has already been rejected" }, { status: 400 })
     }
 
+    const labelFor = (t: string) => {
+      switch ((t || "").toUpperCase()) {
+        case "ACM": return "Associate Candidate Member"
+        case "ALM": return "Associate Life Member"
+        case "LM": return "Life Member"
+        case "ILM": return "International Life Member"
+        default: return t || ""
+      }
+    }
+    const toType = (upgrade.to_type || "LM").toUpperCase()
+    const fromLabel = labelFor(upgrade.from_type)
+    const toLabel = labelFor(toType)
+
     if (action === "approve") {
-      // Update member to LM
+      // Build the member update by target tier. LM grants voting rights and
+      // carries the ASI details; ALM (the ACM->ALM step) does not — only Life
+      // Members vote — and carries the PG degree certificate if captured.
+      const memberUpdate: Record<string, unknown> = {
+        membership_type: toType,
+        updated_at: new Date().toISOString(),
+      }
+      if (toType === "LM") {
+        memberUpdate.asi_membership_no = upgrade.asi_membership_no
+        memberUpdate.asi_state = upgrade.asi_state || null
+        memberUpdate.voting_eligible = true
+      } else if (toType === "ALM") {
+        const pgUrl = (upgrade.documents as { pg_degree_url?: string } | null)?.pg_degree_url
+        if (pgUrl) memberUpdate.pg_degree_certificate = pgUrl
+      }
+
       const { error: memberUpdateError } = await supabase
         .from("members")
-        .update({
-          membership_type: "LM",
-          asi_membership_no: upgrade.asi_membership_no,
-          asi_state: upgrade.asi_state || null,
-          voting_eligible: true,
-          updated_at: new Date().toISOString(),
-        })
+        .update(memberUpdate)
         .eq("id", upgrade.member_id)
 
       if (memberUpdateError) {
@@ -94,7 +116,7 @@ export async function PATCH(
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
           to: upgrade.member_email,
-          subject: `AMASI Membership Upgraded to Life Member`,
+          subject: `AMASI Membership Upgraded to ${toLabel}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
               <div style="text-align: center; margin-bottom: 24px;">
@@ -103,14 +125,14 @@ export async function PATCH(
               </div>
               <h2 style="color: #1a1a1a;">Membership Upgraded!</h2>
               <p style="color: #555;">Dear ${escapeHtml(upgrade.member_name)},</p>
-              <p style="color: #555;">Your AMASI membership has been upgraded from <strong>Associate Life Member (ALM)</strong> to <strong>Life Member (LM)</strong>.</p>
+              <p style="color: #555;">Your AMASI membership has been upgraded from <strong>${escapeHtml(fromLabel)}</strong> to <strong>${escapeHtml(toLabel)}</strong>.</p>
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
                 <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Membership Status</p>
-                <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">Life Member (LM)</p>
+                <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">${escapeHtml(toLabel)} (${escapeHtml(toType)})</p>
                 <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${escapeHtml(String(upgrade.amasi_number))}</p>
               </div>
               ${notes ? `<p style="color: #555; font-size: 14px;"><strong>Note:</strong> ${escapeHtml(notes)}</p>` : ""}
-              <p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>
+              ${toType === "LM" ? `<p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>` : ""}
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
               <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
             </div>
@@ -126,7 +148,7 @@ export async function PATCH(
         if (memberData?.phone) {
           const phone = String(memberData.phone).replace(/\D/g, "")
           if (phone.length >= 10) {
-            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, "Life Member", String(memberData.amasi_number))
+            await sendMemberApprovedWhatsApp(phone, upgrade.member_name, toLabel, String(memberData.amasi_number))
           }
         }
       } catch (whatsappErr) {
@@ -141,12 +163,12 @@ export async function PATCH(
         entityType: "upgrade",
         entityId: id,
         entityName: upgrade.member_name,
-        details: { fromType: "ALM", toType: "LM", amasiNumber: upgrade.amasi_number },
+        details: { fromType: upgrade.from_type, toType, amasiNumber: upgrade.amasi_number },
       })
 
       return Response.json({
         status: true,
-        message: `Upgrade approved. ${upgrade.member_name} is now a Life Member.`,
+        message: `Upgrade approved. ${upgrade.member_name} is now a ${toLabel}.`,
       })
     }
 
@@ -181,7 +203,7 @@ export async function PATCH(
               </div>
               <h2 style="color: #1a1a1a;">Upgrade Request Update</h2>
               <p style="color: #555;">Dear ${escapeHtml(upgrade.member_name)},</p>
-              <p style="color: #555;">Your request to upgrade from Associate Life Member (ALM) to Life Member (LM) could not be approved at this time.</p>
+              <p style="color: #555;">Your request to upgrade from ${escapeHtml(fromLabel)} to ${escapeHtml(toLabel)} could not be approved at this time.</p>
               ${notes ? `
               <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 20px; margin: 24px 0;">
                 <p style="color: #991b1b; font-weight: bold; margin: 0 0 8px;">Reason</p>

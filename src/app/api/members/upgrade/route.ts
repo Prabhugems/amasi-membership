@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const data = JSON.parse(dataStr)
     const { memberId, amasiNumber, memberName, memberEmail, asiMembershipNo, asiState } = data
 
-    if (!memberId || !amasiNumber || !memberEmail || !asiMembershipNo) {
+    if (!memberId || !amasiNumber || !memberEmail) {
       return Response.json({ status: false, message: "Missing required fields" }, { status: 400 })
     }
 
@@ -45,11 +45,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verify member exists and is ALM (try by id first, then by amasi_number)
+    // Resolve the member (try by id first, then by amasi_number)
     let member = null
     let memberError = null
 
-    const { data: m1, error: e1 } = await supabase
+    const { data: m1 } = await supabase
       .from("members")
       .select("id, membership_type, amasi_number, name, email")
       .eq("id", memberId)
@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
     if (m1) {
       member = m1
     } else {
-      // Fallback: try by amasi_number
       const { data: m2, error: e2 } = await supabase
         .from("members")
         .select("id, membership_type, amasi_number, name, email")
@@ -72,32 +71,59 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })
     }
 
-    const memberType = (member.membership_type || "").toUpperCase()
-    if (!memberType.includes("ALM") && !memberType.includes("ASSOCIATE")) {
-      return Response.json({ status: false, message: "Only ALM members can upgrade to LM" }, { status: 400 })
+    // Determine the upgrade ladder from the member's CURRENT type — never
+    // trust the client. ACM (candidate, pursuing PG) -> ALM by submitting a
+    // completed PG degree (no ASI number). ALM -> LM by submitting an ASI
+    // membership certificate. LM/ILM are already life members and cannot
+    // upgrade here.
+    const rawType = (member.membership_type || "").toUpperCase()
+    let kind: "ACM_TO_ALM" | "ALM_TO_LM"
+    if (rawType.includes("ACM") || rawType.includes("CANDIDATE")) {
+      kind = "ACM_TO_ALM"
+    } else if (rawType.includes("ALM") || (rawType.includes("ASSOCIATE") && rawType.includes("LIFE"))) {
+      kind = "ALM_TO_LM"
+    } else {
+      return Response.json({ status: false, message: "Only ACM and ALM members can upgrade" }, { status: 400 })
+    }
+    const fromType = kind === "ACM_TO_ALM" ? "ACM" : "ALM"
+    const toType = kind === "ACM_TO_ALM" ? "ALM" : "LM"
+
+    const asiNumTrimmed = (asiMembershipNo || "").trim()
+    const pgDegreeFile = formData.get("pg_degree") as File | null
+    const asiCertFile = formData.get("asi_certificate") as File | null
+
+    // Per-kind required inputs
+    if (kind === "ALM_TO_LM") {
+      if (!asiNumTrimmed) {
+        return Response.json({ status: false, message: "ASI Membership Number is required" }, { status: 400 })
+      }
+      if (!(asiCertFile && asiCertFile.size > 0)) {
+        return Response.json({ status: false, message: "ASI certificate is required" }, { status: 400 })
+      }
+    } else {
+      if (!(pgDegreeFile && pgDegreeFile.size > 0)) {
+        return Response.json({ status: false, message: "PG degree certificate is required" }, { status: 400 })
+      }
     }
 
     // Check for existing pending/approved upgrade
     const { data: existing } = await supabase
       .from("membership_upgrades")
       .select("id, status")
-      .eq("member_id", memberId)
+      .eq("member_id", member.id)
       .in("status", ["pending", "pending_review", "approved"])
       .limit(1)
 
     if (existing && existing.length > 0) {
       const s = existing[0].status
       if (s === "approved") {
-        return Response.json({ status: false, message: "Your upgrade has already been approved" }, { status: 400 })
+        return Response.json({ status: false, message: "This member's upgrade has already been approved" }, { status: 400 })
       }
-      return Response.json({ status: false, message: "You already have a pending upgrade request" }, { status: 400 })
+      return Response.json({ status: false, message: "There is already a pending upgrade request for this member" }, { status: 400 })
     }
 
-    // Upload files to Supabase Storage
-    let asiCertificateUrl: string | null = null
-    let asiEmailProofUrl: string | null = null
-
-    // Helper: validate file (5 MB max, magic bytes for JPG/PNG/PDF)
+    // ---- file validation + upload helpers ----
+    // Validate file (5 MB max, magic bytes for JPG/PNG/PDF)
     const validateFile = async (file: File, label: string) => {
       if (file.size > 5 * 1024 * 1024) {
         return `${label} exceeds 5 MB limit`
@@ -108,123 +134,130 @@ export async function POST(request: NextRequest) {
         (hdr[0] === 0x25 && hdr[1] === 0x50 && hdr[2] === 0x44 && hdr[3] === 0x46) // PDF
       return ok ? null : `${label}: only JPG, PNG, and PDF files are accepted`
     }
-
-    const asiCertFile = formData.get("asi_certificate") as File | null
-    if (asiCertFile && asiCertFile.size > 0) {
-      const err = await validateFile(asiCertFile, "ASI certificate")
-      if (err) return Response.json({ status: false, message: err }, { status: 400 })
-      const ext = asiCertFile.name.split(".").pop() || "pdf"
-      const path = `upgrades/${memberId}/asi_certificate_${Date.now()}.${ext}`
+    const uploadFile = async (file: File, name: string) => {
+      const ext = file.name.split(".").pop() || "pdf"
+      const path = `upgrades/${member.id}/${name}_${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from("uploads")
-        .upload(path, asiCertFile, { upsert: true })
-      if (!uploadError) {
-        const { data: urlData } = await supabase.storage.from("uploads").createSignedUrl(path, 60 * 60 * 24 * 365)
-        asiCertificateUrl = urlData?.signedUrl || null
+        .upload(path, file, { upsert: true })
+      if (uploadError) return null
+      const { data: urlData } = await supabase.storage.from("uploads").createSignedUrl(path, 60 * 60 * 24 * 365)
+      return urlData?.signedUrl || null
+    }
+
+    let asiCertificateUrl: string | null = null
+    let asiEmailProofUrl: string | null = null
+    let pgDegreeUrl: string | null = null
+
+    if (kind === "ALM_TO_LM") {
+      if (asiCertFile && asiCertFile.size > 0) {
+        const err = await validateFile(asiCertFile, "ASI certificate")
+        if (err) return Response.json({ status: false, message: err }, { status: 400 })
+        asiCertificateUrl = await uploadFile(asiCertFile, "asi_certificate")
+      }
+      const asiEmailFile = formData.get("asi_email_proof") as File | null
+      if (asiEmailFile && asiEmailFile.size > 0) {
+        const err = await validateFile(asiEmailFile, "ASI email proof")
+        if (err) return Response.json({ status: false, message: err }, { status: 400 })
+        asiEmailProofUrl = await uploadFile(asiEmailFile, "asi_email_proof")
+      }
+    } else {
+      if (pgDegreeFile && pgDegreeFile.size > 0) {
+        const err = await validateFile(pgDegreeFile, "PG degree certificate")
+        if (err) return Response.json({ status: false, message: err }, { status: 400 })
+        pgDegreeUrl = await uploadFile(pgDegreeFile, "pg_degree")
       }
     }
 
-    const asiEmailFile = formData.get("asi_email_proof") as File | null
-    if (asiEmailFile && asiEmailFile.size > 0) {
-      const err = await validateFile(asiEmailFile, "ASI email proof")
-      if (err) return Response.json({ status: false, message: err }, { status: 400 })
-      const ext = asiEmailFile.name.split(".").pop() || "pdf"
-      const path = `upgrades/${memberId}/asi_email_proof_${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from("uploads")
-        .upload(path, asiEmailFile, { upsert: true })
-      if (!uploadError) {
-        const { data: urlData } = await supabase.storage.from("uploads").createSignedUrl(path, 60 * 60 * 24 * 365)
-        asiEmailProofUrl = urlData?.signedUrl || null
-      }
-    }
-
-    // AI verification with OCR
+    // ---- AI / OCR assist ----
     let aiVerified = false
     let aiConfidence: "high" | "medium" | "low" = "low"
-    let aiNotes: string[] = []
+    const aiNotes: string[] = []
+    // Auto-approval is enabled ONLY for ALM->LM, where the ASI number can be
+    // cross-checked against the certificate text. ACM->ALM always routes to
+    // admin review — PG degree layouts vary too much to auto-trust.
+    let allowAutoApprove = false
 
-    const asiNumTrimmed = asiMembershipNo.trim()
-    const asiFormatValid = asiNumTrimmed.length >= 2 && asiNumTrimmed.length <= 20
-    const hasCertificate = !!asiCertificateUrl
+    if (kind === "ALM_TO_LM") {
+      allowAutoApprove = true
+      const asiFormatValid = asiNumTrimmed.length >= 2 && asiNumTrimmed.length <= 20
+      const hasCertificate = !!asiCertificateUrl
 
-    // Run OCR on the ASI certificate if uploaded
-    let ocrText = ""
-    if (asiCertFile && asiCertFile.size > 0) {
-      try {
-        const buffer = Buffer.from(await asiCertFile.arrayBuffer())
-        const ocrResult = await extractTextFromImage(buffer, asiCertFile.name)
-        if (ocrResult.success) {
-          ocrText = ocrResult.text.toLowerCase()
+      let ocrText = ""
+      if (asiCertFile && asiCertFile.size > 0) {
+        try {
+          const buffer = Buffer.from(await asiCertFile.arrayBuffer())
+          const ocrResult = await extractTextFromImage(buffer, asiCertFile.name)
+          if (ocrResult.success) ocrText = ocrResult.text.toLowerCase()
+        } catch (e) {
+          console.error("OCR error:", e)
         }
-      } catch (e) {
-        console.error("OCR error:", e)
       }
-    }
 
-    // Scoring: 4 checks
-    let score = 0
-    const maxScore = 4
+      let score = 0
+      if (asiFormatValid) { score++; aiNotes.push("ASI number format valid") } else { aiNotes.push("ASI number format invalid") }
+      if (hasCertificate) { score++; aiNotes.push("Certificate uploaded") } else { aiNotes.push("No certificate uploaded") }
+      if (ocrText) {
+        const asiNumClean = asiNumTrimmed.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()
+        const asiNumDigits = asiNumTrimmed.replace(/\D/g, "")
+        if (ocrText.includes(asiNumClean) || (asiNumDigits.length >= 3 && ocrText.includes(asiNumDigits))) {
+          score++; aiNotes.push("ASI number found in certificate")
+        } else {
+          aiNotes.push("ASI number NOT found in certificate text")
+        }
+        const memberNameLower = (memberName || member.name || "").toLowerCase()
+        const nameParts = memberNameLower.split(/\s+/).filter((p: string) => p.length > 2)
+        const nameMatches = nameParts.filter((p: string) => ocrText.includes(p)).length
+        if (nameMatches >= 2 || (nameParts.length === 1 && nameMatches === 1)) {
+          score++; aiNotes.push("Member name found in certificate")
+        } else {
+          aiNotes.push("Member name NOT found in certificate text")
+        }
+        const asiKeywords = ["association of surgeons", "asi", "surgeon", "membership"]
+        if (!asiKeywords.some(k => ocrText.includes(k))) {
+          score = Math.max(0, score - 1)
+          aiNotes.push("Document may not be an ASI certificate")
+        }
+      } else if (hasCertificate) {
+        aiNotes.push("OCR could not read certificate — manual review needed")
+      }
 
-    // Check 1: ASI number format valid
-    if (asiFormatValid) {
-      score++
-      aiNotes.push("ASI number format valid")
+      if (score >= 3) { aiVerified = true; aiConfidence = "high" }
+      else if (score >= 2) { aiConfidence = "medium" }
+      else { aiConfidence = "low" }
     } else {
-      aiNotes.push("ASI number format invalid")
-    }
-
-    // Check 2: Certificate uploaded
-    if (hasCertificate) {
-      score++
-      aiNotes.push("Certificate uploaded")
-    } else {
-      aiNotes.push("No certificate uploaded")
-    }
-
-    // Check 3: ASI number found in certificate OCR text
-    if (ocrText) {
-      const asiNumClean = asiNumTrimmed.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()
-      const asiNumDigits = asiNumTrimmed.replace(/\D/g, "")
-      if (ocrText.includes(asiNumClean) || (asiNumDigits.length >= 3 && ocrText.includes(asiNumDigits))) {
-        score++
-        aiNotes.push("ASI number found in certificate")
+      // ACM -> ALM: surface helpful notes from the PG degree for the admin,
+      // but never auto-approve.
+      aiNotes.push("PG degree certificate uploaded")
+      let ocrText = ""
+      if (pgDegreeFile && pgDegreeFile.size > 0) {
+        try {
+          const buffer = Buffer.from(await pgDegreeFile.arrayBuffer())
+          const ocrResult = await extractTextFromImage(buffer, pgDegreeFile.name)
+          if (ocrResult.success) ocrText = ocrResult.text.toLowerCase()
+        } catch (e) {
+          console.error("OCR error:", e)
+        }
+      }
+      if (ocrText) {
+        const memberNameLower = (memberName || member.name || "").toLowerCase()
+        const nameParts = memberNameLower.split(/\s+/).filter((p: string) => p.length > 2)
+        const nameMatches = nameParts.filter((p: string) => ocrText.includes(p)).length
+        if (nameMatches >= 2 || (nameParts.length === 1 && nameMatches === 1)) {
+          aiNotes.push("Member name found on degree")
+        } else {
+          aiNotes.push("Member name NOT found on degree — verify manually")
+        }
+        const degreeKeywords = ["master of surgery", "m.s", "m.ch", "mch", "m.d", "dnb", "diplomate", "doctor of medicine", "fellowship", "post graduate", "postgraduate"]
+        if (degreeKeywords.some(k => ocrText.includes(k))) {
+          aiNotes.push("Postgraduate degree keywords found")
+        } else {
+          aiNotes.push("No clear PG degree keywords found — verify manually")
+        }
       } else {
-        aiNotes.push("ASI number NOT found in certificate text")
+        aiNotes.push("OCR could not read the degree — manual review needed")
       }
-
-      // Check 4: Member name found in certificate
-      const memberNameLower = (memberName || member.name || "").toLowerCase()
-      const nameParts = memberNameLower.split(/\s+/).filter((p: string) => p.length > 2)
-      const nameMatches = nameParts.filter((p: string) => ocrText.includes(p)).length
-      if (nameMatches >= 2 || (nameParts.length === 1 && nameMatches === 1)) {
-        score++
-        aiNotes.push("Member name found in certificate")
-      } else {
-        aiNotes.push("Member name NOT found in certificate text")
-      }
-
-      // Check if it's actually an ASI document
-      const asiKeywords = ["association of surgeons", "asi", "surgeon", "membership"]
-      const hasAsiKeyword = asiKeywords.some(k => ocrText.includes(k))
-      if (!hasAsiKeyword) {
-        score = Math.max(0, score - 1)
-        aiNotes.push("Document may not be an ASI certificate")
-      }
-    } else if (hasCertificate) {
-      aiNotes.push("OCR could not read certificate — manual review needed")
-    }
-
-    // Determine confidence
-    if (score >= 3) {
-      aiVerified = true
-      aiConfidence = "high"
-    } else if (score >= 2) {
-      aiVerified = false
       aiConfidence = "medium"
-    } else {
-      aiVerified = false
-      aiConfidence = "low"
     }
 
     // Generate upgrade number
@@ -235,16 +268,17 @@ export async function POST(request: NextRequest) {
     // Insert upgrade record
     const upgradeRecord = {
       upgrade_number: upgradeNumber,
-      member_id: memberId,
+      member_id: member.id,
       amasi_number: amasiNumber,
       member_name: memberName || member.name,
       member_email: memberEmail || member.email,
-      from_type: "ALM",
-      to_type: "LM",
-      asi_membership_no: asiNumTrimmed,
-      asi_state: asiState || null,
+      from_type: fromType,
+      to_type: toType,
+      asi_membership_no: kind === "ALM_TO_LM" ? asiNumTrimmed : null,
+      asi_state: kind === "ALM_TO_LM" ? (asiState || null) : null,
       asi_certificate_url: asiCertificateUrl,
       asi_email_proof_url: asiEmailProofUrl,
+      documents: pgDegreeUrl ? { pg_degree_url: pgDegreeUrl } : null,
       ai_verified: aiVerified,
       ai_confidence: aiConfidence,
       review_notes: aiNotes.join("; "),
@@ -264,9 +298,8 @@ export async function POST(request: NextRequest) {
 
     let autoApproved = false
 
-    // Auto-approve if AI verified with high confidence
-    if (aiVerified && aiConfidence === "high") {
-      // Update member to LM
+    // Auto-approve only ALM->LM with high AI confidence
+    if (allowAutoApprove && aiVerified && aiConfidence === "high") {
       const { error: memberUpdateError } = await supabase
         .from("members")
         .update({
@@ -276,10 +309,9 @@ export async function POST(request: NextRequest) {
           voting_eligible: true,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", memberId)
+        .eq("id", member.id)
 
       if (!memberUpdateError) {
-        // Update upgrade record to approved
         const { error: autoApproveError } = await supabase
           .from("membership_upgrades")
           .update({
@@ -365,8 +397,8 @@ export async function POST(request: NextRequest) {
       upgrade: { ...upgrade, status: autoApproved ? "approved" : "pending_review" },
       auto_approved: autoApproved,
       message: autoApproved
-        ? "Your membership has been upgraded to Life Member!"
-        : "Your upgrade request has been submitted and is pending admin review.",
+        ? "Membership has been upgraded to Life Member!"
+        : "The upgrade request has been submitted and is pending admin review.",
     })
   } catch (error: any) {
     console.error("Upgrade error:", error)

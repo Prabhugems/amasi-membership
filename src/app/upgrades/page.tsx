@@ -10,7 +10,10 @@ import {
   XCircle,
   ExternalLink,
   FileText,
+  GraduationCap,
   Mail,
+  Plus,
+  Search,
   ShieldCheck,
   ShieldAlert,
   ShieldQuestion,
@@ -21,6 +24,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { INDIAN_STATES } from "@/lib/membership-types"
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -35,10 +47,11 @@ interface UpgradeRecord {
   member_email: string
   from_type: string
   to_type: string
-  asi_membership_no: string
+  asi_membership_no: string | null
   asi_state: string | null
   asi_certificate_url: string | null
   asi_email_proof_url: string | null
+  documents: { pg_degree_url?: string } | null
   ai_verified: boolean
   ai_confidence: "high" | "medium" | "low"
   review_notes: string | null
@@ -104,6 +117,219 @@ function StatCard({ label, count, color }: { label: string; count: number; color
   )
 }
 
+/* ---------- admin "upload on behalf" dialog ---------- */
+
+interface SearchMember {
+  _id?: string
+  id?: string
+  name?: string
+  amasi_number?: number
+  email?: string
+  membership_type?: string
+  application_name?: string
+}
+
+// Mirror of the server-side ladder logic so the dialog can preview the target
+// tier before submitting. The server re-derives this and is the source of truth.
+function upgradeKindFor(type: string): { kind: "ACM_TO_ALM" | "ALM_TO_LM" | null; fromLabel: string; toLabel: string } {
+  const t = (type || "").toUpperCase()
+  if (t.includes("ACM") || t.includes("CANDIDATE")) return { kind: "ACM_TO_ALM", fromLabel: "Associate Candidate Member", toLabel: "Associate Life Member" }
+  if (t.includes("ALM") || (t.includes("ASSOCIATE") && t.includes("LIFE"))) return { kind: "ALM_TO_LM", fromLabel: "Associate Life Member", toLabel: "Life Member" }
+  return { kind: null, fromLabel: "", toLabel: "" }
+}
+
+function NewUpgradeDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void }) {
+  const [query, setQuery] = useState("")
+  const [searching, setSearching] = useState(false)
+  const [results, setResults] = useState<SearchMember[]>([])
+  const [selected, setSelected] = useState<SearchMember | null>(null)
+  const [asiNumber, setAsiNumber] = useState("")
+  const [asiState, setAsiState] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const reset = () => { setQuery(""); setResults([]); setSelected(null); setAsiNumber(""); setAsiState(""); setFile(null) }
+
+  const doSearch = async () => {
+    if (!query.trim()) return
+    setSearching(true)
+    try {
+      const res = await fetch(`/api/members/search?q=${encodeURIComponent(query.trim())}`)
+      const json = await res.json()
+      setResults(json.status ? (Array.isArray(json.data) ? json.data : [json.data]) : [])
+    } catch {
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const info = selected ? upgradeKindFor(selected.membership_type || selected.application_name || "") : null
+  const isACM = info?.kind === "ACM_TO_ALM"
+  const canSubmit = !!selected && !!info?.kind && (isACM ? !!file : (!!asiNumber.trim() && !!file))
+
+  const submit = async () => {
+    if (!selected || !info?.kind) return
+    setSubmitting(true)
+    try {
+      const formData = new FormData()
+      formData.append("data", JSON.stringify({
+        memberId: selected._id || selected.id,
+        amasiNumber: selected.amasi_number,
+        memberName: selected.name,
+        memberEmail: selected.email,
+        asiMembershipNo: isACM ? undefined : asiNumber.trim(),
+        asiState: isACM ? undefined : (asiState || null),
+      }))
+      if (isACM) formData.append("pg_degree", file as File)
+      else formData.append("asi_certificate", file as File)
+
+      const res = await fetch("/api/members/upgrade", { method: "POST", body: formData })
+      const json = await res.json()
+      if (json.status) {
+        toast.success(json.auto_approved ? "Upgrade auto-approved" : "Upgrade request created — review and approve it below")
+        onCreated()
+        reset()
+        onOpenChange(false)
+      } else {
+        toast.error(json.message || "Failed to create upgrade")
+      }
+    } catch {
+      toast.error("Failed to create upgrade")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New upgrade on behalf of a member</DialogTitle>
+          <DialogDescription>
+            Search for the member, attach the document they sent you, and submit. It appears below for you to approve.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {!selected && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") doSearch() }}
+                  placeholder="Name, AMASI #, email or phone"
+                />
+                <Button onClick={doSearch} disabled={searching || !query.trim()} className="gap-1.5 shrink-0">
+                  {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  Search
+                </Button>
+              </div>
+              {results.length > 0 && (
+                <div className="max-h-56 overflow-y-auto rounded-md border divide-y">
+                  {results.map((m) => {
+                    const k = upgradeKindFor(m.membership_type || m.application_name || "")
+                    return (
+                      <button
+                        key={m._id || m.id}
+                        onClick={() => setSelected(m)}
+                        className="w-full text-left p-3 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{m.name}</p>
+                            <p className="text-xs text-muted-foreground">AMASI #{m.amasi_number} · {m.membership_type}</p>
+                          </div>
+                          {k.kind ? (
+                            <span className="text-[10px] text-primary shrink-0">→ {k.toLabel}</span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground shrink-0">not upgradeable</span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {selected && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate">{selected.name}</p>
+                  <p className="text-xs text-muted-foreground">AMASI #{selected.amasi_number} · {selected.email}</p>
+                </div>
+                <button onClick={() => setSelected(null)} className="text-xs text-primary hover:underline shrink-0">Change</button>
+              </div>
+
+              {!info?.kind ? (
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  This member ({selected.membership_type}) is already a life member and cannot be upgraded.
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs text-muted-foreground">
+                    Upgrade: <span className="font-medium text-foreground">{info.fromLabel}</span> → <span className="font-medium text-foreground">{info.toLabel}</span>
+                  </div>
+
+                  {isACM ? (
+                    <div>
+                      <label className="text-sm font-medium">PG Degree Certificate <span className="text-destructive">*</span></label>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">ASI Membership Number <span className="text-destructive">*</span></label>
+                        <Input value={asiNumber} onChange={(e) => setAsiNumber(e.target.value)} placeholder="e.g., ASI/12345" className="mt-1.5" />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">ASI State Chapter</label>
+                        <select
+                          value={asiState}
+                          onChange={(e) => setAsiState(e.target.value)}
+                          className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Select state...</option>
+                          {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">ASI Certificate <span className="text-destructive">*</span></label>
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp"
+                          onChange={(e) => setFile(e.target.files?.[0] || null)}
+                          className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {file && <p className="text-xs text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {file.name}</p>}
+
+                  <Button onClick={submit} disabled={submitting || !canSubmit} className="w-full gap-1.5">
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpCircle className="h-4 w-4" />}
+                    Submit upgrade request
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ---------- main content ---------- */
 
 function UpgradesContent() {
@@ -112,6 +338,7 @@ function UpgradesContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [rejectNotes, setRejectNotes] = useState("")
+  const [newOpen, setNewOpen] = useState(false)
 
   /* --- data fetching --- */
   const { data: upgrades = [], isLoading, isError } = useQuery<UpgradeRecord[]>({
@@ -194,15 +421,27 @@ function UpgradesContent() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <ArrowUpCircle className="h-7 w-7 text-primary" />
-          Membership Upgrades
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Review membership upgrade requests (ACM → LM / ALM)
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <ArrowUpCircle className="h-7 w-7 text-primary" />
+            Membership Upgrades
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Review upgrade requests — ACM → ALM (PG degree) and ALM → LM (ASI membership)
+          </p>
+        </div>
+        <Button onClick={() => setNewOpen(true)} className="gap-1.5 shrink-0">
+          <Plus className="h-4 w-4" />
+          New upgrade
+        </Button>
       </div>
+
+      <NewUpgradeDialog
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={() => queryClient.invalidateQueries({ queryKey: ["upgrades"] })}
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -297,19 +536,29 @@ function UpgradesContent() {
                         AMASI #{upgrade.amasi_number}
                       </span>
                       <span className="text-xs text-muted-foreground">{upgrade.member_email}</span>
+                      <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        {upgrade.from_type} → {upgrade.to_type}
+                      </span>
                     </div>
 
-                    {/* ASI details */}
-                    <div className="flex items-center gap-3 flex-wrap text-xs">
-                      <span className="text-muted-foreground">
-                        ASI No: <span className="font-semibold text-foreground">{upgrade.asi_membership_no}</span>
-                      </span>
-                      {upgrade.asi_state && (
+                    {/* ASI / degree details */}
+                    {upgrade.asi_membership_no ? (
+                      <div className="flex items-center gap-3 flex-wrap text-xs">
                         <span className="text-muted-foreground">
-                          State: <span className="font-medium text-foreground">{upgrade.asi_state}</span>
+                          ASI No: <span className="font-semibold text-foreground">{upgrade.asi_membership_no}</span>
                         </span>
-                      )}
-                    </div>
+                        {upgrade.asi_state && (
+                          <span className="text-muted-foreground">
+                            State: <span className="font-medium text-foreground">{upgrade.asi_state}</span>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <GraduationCap className="h-3.5 w-3.5" />
+                        Postgraduate degree submitted
+                      </div>
+                    )}
 
                     {/* AI info row */}
                     <div className="flex items-center gap-3 flex-wrap">
@@ -343,6 +592,19 @@ function UpgradesContent() {
                       {formatDate(upgrade.created_at)}
                     </span>
                     <div className="flex items-center gap-2">
+                      {upgrade.documents?.pg_degree_url && (
+                        <a
+                          href={upgrade.documents.pg_degree_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <GraduationCap className="h-3 w-3" />
+                          PG Degree
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      )}
                       {upgrade.asi_certificate_url && (
                         <a
                           href={upgrade.asi_certificate_url}

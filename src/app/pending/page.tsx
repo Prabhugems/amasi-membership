@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -191,19 +191,23 @@ function PendingPageInner() {
   const [tab, setTab] = useState<TabFilter>("pending")
   const reduced = useReducedMotion()
   const [search, setSearch] = useState("")
-  // Selected (open in detail pane) is URL-backed via ?id= so it's
-  // deep-linkable and back/forward-aware. URL is the source of truth;
-  // setExpandedId writes the URL and React re-renders with the new value.
+  // Selected app (open in detail pane). Local state is the source of truth so a
+  // card click opens the pane synchronously; the ?id= URL param is a mirror for
+  // deep-linking + back/forward, written via window.history. This is the
+  // Next-documented way to sync client URL state with useSearchParams
+  // (see node_modules/next/dist/docs/.../single-page-applications.md). The old
+  // router.replace() forced a server round-trip per click and could leave the
+  // detail pane unrendered (clicking a card did nothing).
   const searchParams = useSearchParams()
-  const router = useRouter()
-  const expandedId = searchParams.get("id")
+  const [expandedId, setExpandedIdState] = useState<string | null>(() => searchParams.get("id"))
   const setExpandedId = useCallback((next: string | null) => {
-    const params = new URLSearchParams(searchParams.toString())
+    setExpandedIdState(next)
+    const params = new URLSearchParams(window.location.search)
     if (next) params.set("id", next)
     else params.delete("id")
     const qs = params.toString()
-    router.replace(`/pending${qs ? `?${qs}` : ""}`, { scroll: false })
-  }, [searchParams, router])
+    window.history.replaceState(null, "", `/pending${qs ? `?${qs}` : ""}`)
+  }, [])
   const [actionMode, setActionMode] = useState<ActionMode>(null)
   const [actionMessage, setActionMessage] = useState("")
   const [rejectReason, setRejectReason] = useState("")
@@ -437,6 +441,18 @@ function PendingPageInner() {
   // search/date/etc.
   const selectedApp = expandedId ? applications.find((a: { id: string }) => a.id === expandedId) : null
 
+  // Reconcile a stale ?id=. If the selected id isn't in the current tab's data
+  // at all — e.g. a deep link / leftover pointing at an app that's since been
+  // rejected or lives in another tab — clear it so the pane never sits blank
+  // with no explanation. Guard on the unfiltered tab list (data.data), NOT
+  // `applications`, so a transient text-search that filters the card out
+  // doesn't drop a still-valid selection.
+  useEffect(() => {
+    if (!expandedId || !data?.data) return
+    const inTab = (data.data as { id: string }[]).some((a) => a.id === expandedId)
+    if (!inTab) setExpandedId(null)
+  }, [expandedId, data, setExpandedId])
+
   // Expand a neighbour of the just-acted app, or show end-of-queue toast.
   // Uses the pre-refetch `applications` list so we can find the neighbour
   // before the acted row disappears from the post-refetch list.
@@ -631,7 +647,7 @@ function PendingPageInner() {
           return (
             <button
               key={t.key}
-              onClick={() => { setTab(t.key); setSelectedIds(new Set()); setFocusIndex(-1) }}
+              onClick={() => { setTab(t.key); setSelectedIds(new Set()); setFocusIndex(-1); setExpandedId(null) }}
               className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
                 isActive
                   ? style.activeClass + " shadow-sm"

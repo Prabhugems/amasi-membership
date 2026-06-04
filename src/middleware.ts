@@ -40,6 +40,25 @@ async function verifyToken(token: string) {
   }
 }
 
+// Replace ID-shaped segments with placeholders so paths survive Sentry's PII
+// scrubber (emails in particular cause the entire `extra.path` field to render
+// as "[Filtered]", losing all diagnostic value — see AMASI-MEMBERSHIP-2V).
+function pathShape(path: string): string {
+  return path
+    .split("/")
+    .map((seg) => {
+      if (!seg) return seg
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return "{uuid}"
+      if (seg.includes("@") && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(seg)) return "{email}"
+      if (/^TKT-[\w-]+$/i.test(seg)) return "{ticket}"
+      if (/^[a-z]+_[A-Za-z0-9]{10,}$/.test(seg)) return "{gw_id}"
+      if (/^\d+$/.test(seg)) return "{n}"
+      if (/^[0-9a-f]{16,}$/i.test(seg)) return "{hex}"
+      return seg
+    })
+    .join("/")
+}
+
 // Routes that don't need any auth
 const PUBLIC_ROUTES = [
   "/login",
@@ -357,7 +376,7 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
               ...(xSource ? { x_source: xSource } : {}),
             },
             extra: {
-              path: pathname,
+              path_shape: pathShape(pathname),
               method: request.method,
               ip:
                 request.headers.get("x-forwarded-for") ??

@@ -19,14 +19,21 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed")
-    if (stored === "true") setCollapsedState(true)
+    try {
+      const stored = localStorage.getItem("sidebar-collapsed")
+      if (stored === "true") setCollapsedState(true)
+    } catch {
+      // localStorage blocked (Android in-app webviews, Safari private, 3p-cookie policy).
+      // Defaults are fine — just skip restore.
+    }
     setMounted(true)
   }, [])
 
   const setCollapsed = (v: boolean) => {
     setCollapsedState(v)
-    localStorage.setItem("sidebar-collapsed", String(v))
+    try {
+      localStorage.setItem("sidebar-collapsed", String(v))
+    } catch {}
   }
 
   const toggle = () => setCollapsed(!collapsed)

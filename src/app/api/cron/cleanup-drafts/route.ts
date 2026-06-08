@@ -150,6 +150,55 @@ export async function GET(request: Request) {
     const fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>"
 
     // -----------------------------------------------------------------------
+    // Authoritative paid-but-no-application lookup.
+    //
+    // The draft's own payment columns (has_verified_payment / payment_order_id
+    // / payment_id) are NOT reliably synced when /api/payments/verify succeeds:
+    // the payment is recorded in `membership_payments` (status='paid') and in
+    // step_data, but the draft row frequently stays has_verified_payment=false
+    // / payment_order_id=null (the step-5 enqueueDraftSave gets clobbered by a
+    // racing step-4 save — see apply/page.tsx). Any cron payment branch that
+    // trusts those columns alone is blind to real payments. That blindness
+    // caused two bugs:
+    //   (a) Step 1 mislabeled paid drafts `applicant_idle_step_N` instead of
+    //       `applicant_paid_no_submission` (looked like an abandoner who never
+    //       paid, when AMASI actually holds ₹4230); and
+    //   (b) Step 3 / Step 3a would soft-delete them as "unpaid expired" at 48h
+    //       and email the applicant "payment not completed".
+    //
+    // We build the set of emails with a captured payment that produced NEITHER
+    // an application NOR a member — i.e. genuinely-paid-but-nothing-created.
+    // (Renewals/upgrades by existing members are excluded via the member
+    // anti-join, so their lingering drafts aren't misclassified.)
+    //
+    // KNOWN RESIDUAL GAP: Step 4's own SELECT still keys on the unsynced draft
+    // columns, so it does not route these to payment_on_hold + admin alert.
+    // Closing that needs Step 4 to consult membership_payments too — tracked as
+    // a follow-up. This change fixes the label and the wrongful-expiry risk.
+    const paidNoAppEmails = new Set<string>()
+    {
+      const { data: paidRows } = await supabase
+        .from("membership_payments")
+        .select("member_email")
+        .eq("status", "paid")
+      const emails = Array.from(
+        new Set((paidRows || []).map((r) => (r.member_email || "").toLowerCase()).filter(Boolean)),
+      )
+      if (emails.length > 0) {
+        const [{ data: apps }, { data: mems }] = await Promise.all([
+          supabase.from("membership_applications").select("email").in("email", emails),
+          supabase.from("members").select("email").in("email", emails),
+        ])
+        const settled = new Set(
+          [...(apps || []), ...(mems || [])].map((r) => (r.email || "").toLowerCase()).filter(Boolean),
+        )
+        for (const e of emails) if (!settled.has(e)) paidNoAppEmails.add(e)
+      }
+    }
+    const isPaidNoApp = (email: string | null | undefined) =>
+      paidNoAppEmails.has((email || "").toLowerCase())
+
+    // -----------------------------------------------------------------------
     // Step 1 — Mark stale (in_progress + 2h idle → stuck)
     // Internal state only, does NOT bump updated_at (preserves user-activity
     // clock for the 18h reminder logic).
@@ -163,13 +212,23 @@ export async function GET(request: Request) {
       .is("deleted_at", null)
 
     for (const draft of staleDrafts || []) {
-      if (dryRun) { planAction(draft, "mark_stale", "in_progress >2h idle"); continue }
+      // Classify by authoritative payment state, NOT the draft's own columns.
+      // A captured-but-unconverted payment is "paid, never submitted" — never
+      // an "idle" abandoner.
+      const paidNoApp = isPaidNoApp(draft.email)
+      const failureReason = paidNoApp
+        ? "applicant_paid_no_submission"
+        : `applicant_idle_step_${draft.current_step}`
+      if (dryRun) {
+        planAction(draft, "mark_stale", paidNoApp ? "paid (membership_payments) but no application — paid_no_submission" : "in_progress >2h idle")
+        continue
+      }
       const { error } = await supabase
         .from("draft_applications")
         .update({
           status: "stuck",
           stale_since: new Date().toISOString(),
-          failure_reason: `applicant_idle_step_${draft.current_step}`,
+          failure_reason: failureReason,
         })
         .eq("id", draft.id)
       if (!error) {
@@ -374,6 +433,13 @@ export async function GET(request: Request) {
       .is("step_data->formData", null)
 
     for (const draft of otpOnlyDrafts || []) {
+      // Safety: never silent-delete a draft that actually paid. The query's
+      // has_verified_payment=false / payment_order_id=null filters can't see
+      // payments recorded only in membership_payments (unsynced draft columns).
+      if (isPaidNoApp(draft.email)) {
+        if (dryRun) planAction(draft, "skip_paid_no_submission", "captured payment in membership_payments — not an unpaid OTP-only draft")
+        continue
+      }
       if (dryRun) {
         planAction(draft, "silent_soft_delete_no_formdata", `OTP-only abandoned, ${hoursIdle(draft.updated_at)}h idle, no formData persisted`)
         continue
@@ -429,6 +495,14 @@ export async function GET(request: Request) {
       .lt("reminder_sent_at", sixHoursAgo)
 
     for (const draft of expiredDrafts || []) {
+      // Safety: never expire-as-unpaid a draft that actually paid. The query
+      // filters on the draft's own (unsynced) payment columns and would
+      // otherwise delete a paid applicant and email them "payment not
+      // completed". membership_payments is the source of truth.
+      if (isPaidNoApp(draft.email)) {
+        if (dryRun) planAction(draft, "skip_paid_no_submission", "captured payment in membership_payments — not unpaid; left as stuck/paid_no_submission for admin")
+        continue
+      }
       if (dryRun) {
         const why = isExcludedEmail(draft.email)
           ? `unpaid, ${hoursIdle(draft.updated_at)}h idle, excluded address (would soft-delete without emailing)`
@@ -634,6 +708,81 @@ export async function GET(request: Request) {
           }
         } catch (err: unknown) {
           console.error(`[cleanup-drafts] paid-stuck check ${draft.id}:`, errMessage(err))
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4b — Paid-but-no-application drafts (authoritative).
+    //   Closes the gap Step 4's column-based SELECT leaves open: the payment is
+    //   recorded in membership_payments (status='paid') but the draft's own
+    //   payment columns never synced, so Step 4 never sees it. We use the
+    //   authoritative paidNoAppEmails set instead. Targets only already-`stuck`
+    //   drafts (past the 2h grace) so a freshly-paid draft whose client-side
+    //   submit retries are still in flight isn't flagged prematurely. Routes to
+    //   payment_on_hold + one admin alert (status change drops the row out of
+    //   the in_progress/stuck selection next run, so no repeat alerts). A human
+    //   then recovers it (promote to application) or refunds.
+    // -----------------------------------------------------------------------
+    if (paidNoAppEmails.size > 0) {
+      const { data: candidatePaidDrafts } = await supabase
+        .from("draft_applications")
+        .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
+        .eq("status", "stuck")
+        .is("deleted_at", null)
+
+      const paidNoAppDrafts = (candidatePaidDrafts || []).filter((d) => isPaidNoApp(d.email))
+
+      if (paidNoAppDrafts.length > 0) {
+        const { data: holdAdmins } = dryRun
+          ? { data: null }
+          : await supabase.from("admin_users").select("email").eq("is_active", true)
+
+        for (const draft of paidNoAppDrafts) {
+          if (dryRun) {
+            planAction(draft, "flag_payment_on_hold_paid_no_app", "captured payment in membership_payments, no application — route to payment_on_hold + admin alert")
+            continue
+          }
+          const { data: marked } = await supabase
+            .from("draft_applications")
+            .update({
+              status: "payment_on_hold",
+              has_verified_payment: true,
+              failure_reason: "applicant_paid_no_submission",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", draft.id)
+            .eq("status", "stuck")
+            .select("id")
+            .maybeSingle()
+          if (!marked) { console.log(`[cleanup-drafts] skipped paid-no-app ${draft.id}: state changed during update`); continue }
+
+          if (holdAdmins && holdAdmins.length > 0) {
+            const alertHtml = emailWrapper(
+              "Paid — No Application Created (Action Required)",
+              `
+              <p style="font-size:14px;color:#374151;margin:0 0 12px;">An applicant paid but no membership application was ever created. Their payment is captured in Razorpay; the draft is stuck. Recover it (promote to an application) or refund.</p>
+              <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;">
+                <tr><td style="padding:8px 0;color:#6b7280;width:140px;">Email</td><td style="padding:8px 0;font-weight:600;">${escapeHtml(draft.email)}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280;">Step</td><td style="padding:8px 0;">${escapeHtml(stepLabel(draft.current_step))}</td></tr>
+              </table>
+              <div style="margin:20px 0;text-align:center;">
+                <a href="${escapeHtml(baseUrl)}/incomplete" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Review in Admin Panel</a>
+              </div>
+              `,
+            )
+            await Promise.allSettled(
+              holdAdmins.map((admin) => resend!.emails.send({ from: fromEmail, to: admin.email, subject: `Paid, no application: ${draft.email}`, html: alertHtml })),
+            )
+          }
+          await logMembershipAuditEvent({
+            action: "draft_payment_on_hold",
+            entityType: "draft_application",
+            entityId: draft.id,
+            newData: { email: draft.email, reason: "paid_no_submission (authoritative: membership_payments paid, no application/member)" },
+            performedBy: "system",
+          }, supabase)
+          summary.payment_holds++
         }
       }
     }

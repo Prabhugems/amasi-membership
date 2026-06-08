@@ -186,11 +186,19 @@ export async function GET(request: Request) {
       )
       if (emails.length > 0) {
         const [{ data: apps }, { data: mems }] = await Promise.all([
-          supabase.from("membership_applications").select("email").in("email", emails),
+          supabase.from("membership_applications").select("email, status").in("email", emails),
           supabase.from("members").select("email").in("email", emails),
         ])
+        // A `pending_payment` application is NOT a settled application — it's the
+        // WS-C early skeleton, created before payment, whose finalizing submit
+        // may never have run. Treat it like "no application" so a paid-but-
+        // unfinalized applicant still gets flagged for recovery from their draft
+        // rather than looking settled. (No-op while WS-C is off — no such rows.)
         const settled = new Set(
-          [...(apps || []), ...(mems || [])].map((r) => (r.email || "").toLowerCase()).filter(Boolean),
+          [
+            ...(apps || []).filter((a) => a.status !== "pending_payment").map((r) => (r.email || "").toLowerCase()),
+            ...(mems || []).map((r) => (r.email || "").toLowerCase()),
+          ].filter(Boolean),
         )
         for (const e of emails) if (!settled.has(e)) paidNoAppEmails.add(e)
       }

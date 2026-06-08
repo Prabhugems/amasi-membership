@@ -318,6 +318,13 @@ export async function GET(request: Request) {
           .from("draft_applications")
           .update({ reminder_sent_at: new Date().toISOString() })
           .eq("id", draft.id)
+        await logMembershipAuditEvent({
+          action: "draft_reminder_sent",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, branch: "5h" },
+          performedBy: "system",
+        }, supabase)
         summary.reminders_sent_5h++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] reminder-5h email ${draft.email}:`, errMessage(err))
@@ -325,6 +332,13 @@ export async function GET(request: Request) {
           tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email-5h" },
           extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
         })
+        await logMembershipAuditEvent({
+          action: "draft_reminder_failed",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, branch: "5h", error: errMessage(err) },
+          performedBy: "system",
+        }, supabase).catch(() => { /* audit-log write failure must not mask the original */ })
       }
     }
 
@@ -403,6 +417,13 @@ export async function GET(request: Request) {
           .from("draft_applications")
           .update({ reminder_sent_at: new Date().toISOString() })
           .eq("id", draft.id)
+        await logMembershipAuditEvent({
+          action: "draft_reminder_sent",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, branch: "18h" },
+          performedBy: "system",
+        }, supabase)
         summary.reminders_sent++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] reminder email ${draft.email}:`, errMessage(err))
@@ -410,6 +431,13 @@ export async function GET(request: Request) {
           tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email" },
           extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
         })
+        await logMembershipAuditEvent({
+          action: "draft_reminder_failed",
+          entityType: "draft_application",
+          entityId: draft.id,
+          newData: { email: draft.email, step: draft.current_step, branch: "18h", error: errMessage(err) },
+          performedBy: "system",
+        }, supabase).catch(() => { /* audit-log write failure must not mask the original */ })
       }
     }
 

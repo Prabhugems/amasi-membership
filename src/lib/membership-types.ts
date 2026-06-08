@@ -150,22 +150,26 @@ export const INDIAN_STATES = [
   "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry",
 ] as const
 
+// Source of truth: AMASI By-Laws 2023, Schedule § Guidelines for Zonal Chapters
+// (Central Zone clause amended 5 Nov 2023, Raipur GBM). Ladakh is not named in the
+// bylaw — carved from J&K post-2019, kept with North Zone alongside J&K.
 export const STATE_TO_ZONE: Record<string, string> = {
-  "Tamil Nadu": "South Zone", "Kerala": "South Zone", "Karnataka": "South Zone",
-  "Andhra Pradesh": "South Zone", "Telangana": "South Zone", "Puducherry": "South Zone",
-  "Lakshadweep": "South Zone",
-  "Delhi": "North Zone", "Uttar Pradesh": "North Zone", "Haryana": "North Zone",
-  "Punjab": "North Zone", "Himachal Pradesh": "North Zone", "Uttarakhand": "North Zone",
-  "Jammu and Kashmir": "North Zone", "Ladakh": "North Zone", "Chandigarh": "North Zone",
-  "Rajasthan": "North Zone",
-  "Maharashtra": "West Zone", "Gujarat": "West Zone", "Goa": "West Zone",
-  "Madhya Pradesh": "West Zone", "Chhattisgarh": "West Zone",
+  "Tamil Nadu": "South Zone", "Karnataka": "South Zone", "Kerala": "South Zone",
+  "Andhra Pradesh": "South Zone", "Telangana": "South Zone",
+  "Andaman and Nicobar Islands": "South Zone", "Lakshadweep": "South Zone",
+  "Puducherry": "South Zone",
+  "Maharashtra": "West Zone", "Goa": "West Zone", "Gujarat": "West Zone",
   "Dadra and Nagar Haveli and Daman and Diu": "West Zone",
-  "West Bengal": "East Zone", "Odisha": "East Zone", "Bihar": "East Zone",
-  "Jharkhand": "East Zone", "Assam": "East Zone", "Meghalaya": "East Zone",
-  "Tripura": "East Zone", "Manipur": "East Zone", "Mizoram": "East Zone",
-  "Nagaland": "East Zone", "Arunachal Pradesh": "East Zone", "Sikkim": "East Zone",
-  "Andaman and Nicobar Islands": "East Zone",
+  "Madhya Pradesh": "Central Zone", "Chhattisgarh": "Central Zone",
+  "Delhi": "Central Zone", "Uttar Pradesh": "Central Zone",
+  "Jammu and Kashmir": "North Zone", "Ladakh": "North Zone",
+  "Himachal Pradesh": "North Zone", "Punjab": "North Zone",
+  "Chandigarh": "North Zone", "Haryana": "North Zone",
+  "Uttarakhand": "North Zone", "Rajasthan": "North Zone",
+  "Bihar": "East Zone", "Jharkhand": "East Zone", "West Bengal": "East Zone",
+  "Odisha": "East Zone", "Assam": "East Zone", "Arunachal Pradesh": "East Zone",
+  "Manipur": "East Zone", "Sikkim": "East Zone", "Meghalaya": "East Zone",
+  "Mizoram": "East Zone", "Nagaland": "East Zone", "Tripura": "East Zone",
 }
 
 export interface ApplicationFormData {

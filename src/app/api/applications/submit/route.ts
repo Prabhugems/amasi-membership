@@ -246,34 +246,96 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Save application
-    const { data: app, error: insertError } = await supabase
+    // Save application.
+    //
+    // WS-C: when WSC_EARLY_APPLICATION_ENABLED is on, the applicant created a
+    // skeleton membership_applications row at status='pending_payment' BEFORE
+    // paying (api/applications/create-pending), keyed by this same
+    // reference_number. We FINALIZE that row in place rather than INSERT a
+    // second one — a second insert for the same (email, membership_type) would
+    // violate the partial unique index idx_unique_active_application
+    // (status NOT IN ('rejected','withdrawn')). When the flag is off no such
+    // row exists and we fall through to the original insert, so this branch is
+    // a no-op in production until the flag flips.
+    const applicationRow = buildApplicationRow({
+      referenceNumber,
+      formData,
+      uploads,
+      paymentId,
+      emailVerified,
+      mobileVerified,
+      allAiVerified,
+      documentsUnreadable,
+      approval,
+      aiConfidence,
+      aiFlags,
+      hasPendingReview,
+      manualReviewReason,
+      applicationStatus,
+    })
+
+    const { data: pendingRow } = await supabase
       .from("membership_applications")
-      .insert(buildApplicationRow({
-        referenceNumber,
-        formData,
-        uploads,
-        paymentId,
-        emailVerified,
-        mobileVerified,
-        allAiVerified,
-        documentsUnreadable,
-        approval,
-        aiConfidence,
-        aiFlags,
-        hasPendingReview,
-        manualReviewReason,
-        applicationStatus,
-      }))
       .select("id")
-      .single()
+      .eq("reference_number", referenceNumber)
+      .eq("status", "pending_payment")
+      .maybeSingle()
+
+    let app: { id: string } | null = null
+    let insertError: { message: string; code?: string } | null = null
+
+    if (pendingRow) {
+      // Finalize the early row. The status guard makes this idempotent: a
+      // concurrent finalize (or a Razorpay-driven retry) that already promoted
+      // the row out of pending_payment matches zero rows here.
+      const { data: finalized, error: finalizeErr } = await supabase
+        .from("membership_applications")
+        .update({ ...applicationRow, updated_at: new Date().toISOString() })
+        .eq("id", pendingRow.id)
+        .eq("status", "pending_payment")
+        .select("id")
+        .maybeSingle()
+
+      if (finalizeErr) {
+        insertError = finalizeErr
+      } else if (finalized) {
+        app = finalized
+      } else {
+        // Lost the finalize race — another request already promoted this row.
+        // Return its current outcome instead of re-scoring / re-approving (which
+        // could double-run auto-approval).
+        const { data: current } = await supabase
+          .from("membership_applications")
+          .select("id, status")
+          .eq("reference_number", referenceNumber)
+          .maybeSingle()
+        if (current?.id) {
+          const approved = current.status === "approved" || current.status === "ai_approved"
+          return Response.json({
+            status: true,
+            approved,
+            applicationId: current.id,
+            message: approved ? "Application already approved." : "Application already submitted.",
+          })
+        }
+        insertError = { message: "pending_payment row vanished during finalize" }
+      }
+    } else {
+      const ins = await supabase
+        .from("membership_applications")
+        .insert(applicationRow)
+        .select("id")
+        .single()
+      app = ins.data
+      insertError = ins.error
+    }
 
     if (insertError) {
       console.error("Application insert error:", insertError)
       Sentry.captureException(insertError, {
         level: "fatal",
         tags: { route: "applications/submit", op: "application_insert_failure" },
-        extra: { referenceNumber, paymentId },
+        extra: { referenceNumber, paymentId, finalize: !!pendingRow },
       })
       return Response.json({ status: false, message: "Failed to save application" }, { status: 500 })
     }

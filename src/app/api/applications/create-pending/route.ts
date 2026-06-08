@@ -5,11 +5,12 @@
 // WSC_EARLY_APPLICATION_ENABLED — flag OFF returns 404 (route pretends not
 // to exist).
 //
-// Two-tab race: two simultaneous POSTs can both pass the idempotency check
-// and reach the insert. WS-C commit 4 MUST add a partial unique index on
-// membership_applications(email, membership_type) WHERE status='pending_payment'
-// to make this safe. Until then: flag is OFF in production and no client
-// caller exists (no caller is wired until WS-C commit 3).
+// Two-tab race: two simultaneous POSTs can both pass the idempotency SELECT
+// and reach the insert. This is made safe by the existing partial unique index
+// idx_unique_active_application on membership_applications(email,
+// membership_type) WHERE status NOT IN ('rejected','withdrawn') — which covers
+// pending_payment. The loser's insert hits 23505; we catch it below and return
+// the winning row so both tabs converge (no 500, no duplicate).
 import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
@@ -21,10 +22,10 @@ const REFERENCE_NUMBER_RE = /^AMASI-\d{4}-[A-F0-9]{10}$/
 
 export async function POST(request: NextRequest) {
   if (!featureFlags.wscEarlyApplication()) {
-    // Flag is OFF in production until WS-C commit 4 ships the partial
-    // unique index on membership_applications(email, membership_type)
-    // WHERE status='pending_payment'. Until then this route is supposed
-    // to be invisible: 404 with no Sentry log. The client at
+    // Flag is OFF in production until WS-C is validated end-to-end on Preview
+    // (the index prerequisite is already satisfied — see the partial unique
+    // index note above). Until then this route is supposed to be invisible:
+    // 404 with no Sentry log. The client at
     // apply/page.tsx:1314 already treats 404 as a silent no-op (it's
     // the documented expected shape while the flag is off), so logging
     // each call generated noise without signal once WS-C commit 3
@@ -129,6 +130,28 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError || !inserted) {
+      // Two-tab race: a concurrent create-pending won and the partial unique
+      // index idx_unique_active_application rejected this insert. Re-read and
+      // return the existing pending_payment row so both tabs converge on the
+      // same application instead of one getting a 500.
+      if (insertError?.code === "23505") {
+        const { data: raceRow } = await supabase
+          .from("membership_applications")
+          .select("id, reference_number, status")
+          .eq("email", emailKey)
+          .eq("membership_type", typeKey)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (raceRow?.status === "pending_payment") {
+          return Response.json({
+            status: true,
+            applicationId: raceRow.id,
+            referenceNumber: raceRow.reference_number,
+            idempotent: true,
+          })
+        }
+      }
       Sentry.captureException(insertError ?? new Error("create-pending insert returned no row"), {
         level: "fatal",
         tags: { route: "applications/create-pending", op: "insert_failure" },

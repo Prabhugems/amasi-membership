@@ -197,7 +197,24 @@ async function main() {
   // FORCE manual review regardless of score — this is an off-path recovery.
   const applicationStatus = documentsUnreadable ? "documents_unreadable" : "pending_review"
 
-  const ref = generateRefNumber()
+  // WS-C finalize-or-insert: with WSC_EARLY_APPLICATION_ENABLED on, a skeleton
+  // row at status='pending_payment' was created BEFORE payment (create-pending),
+  // keyed to this email. A plain INSERT would then violate the partial unique
+  // index idx_unique_active_application (one active app per email+type). Mirror
+  // submit/route.ts: finalize that row in place if present, else INSERT. When we
+  // finalize we KEEP the early row's reference_number (the value the applicant's
+  // tracking email + the linked payment already carry). Lookup is by email only
+  // (most recent pending_payment) so the type-downgrade path still finds it.
+  const { data: pendingRow } = await supabase
+    .from("membership_applications")
+    .select("id, reference_number, membership_type")
+    .eq("email", EMAIL)
+    .eq("status", "pending_payment")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const ref = pendingRow?.reference_number || generateRefNumber()
 
   const row = buildApplicationRow({
     referenceNumber: ref,
@@ -216,7 +233,8 @@ async function main() {
     applicationStatus,
   })
 
-  console.log("\nApplication row to insert:")
+  console.log("\nApplication row to persist:")
+  console.log(`  mode             : ${pendingRow ? `FINALIZE pending_payment row ${pendingRow.id} (WS-C)` : "INSERT new row"}`)
   console.log(`  reference_number : ${ref}`)
   console.log(`  name             : ${row.name}`)
   console.log(`  membership_type  : ${row.membership_type}`)
@@ -232,23 +250,53 @@ async function main() {
     return
   }
 
-  // --- 5. Insert application ---
-  const { data: app, error: insertErr } = await supabase
-    .from("membership_applications")
-    .insert(row)
-    .select("id")
-    .single()
-
-  if (insertErr || !app) {
-    console.error("Application insert failed:", insertErr)
-    process.exit(1)
+  // --- 5. Finalize (WS-C) or insert ---
+  let appId: string
+  if (pendingRow) {
+    // Finalize the early pending_payment row in place. The status guard makes
+    // this idempotent against a concurrent finalize / Razorpay-driven submit.
+    const { data: finalized, error: finalizeErr } = await supabase
+      .from("membership_applications")
+      .update({ ...row, updated_at: new Date().toISOString() })
+      .eq("id", pendingRow.id)
+      .eq("status", "pending_payment")
+      .select("id")
+      .maybeSingle()
+    if (finalizeErr) {
+      console.error("Application finalize failed:", finalizeErr)
+      process.exit(1)
+    }
+    if (!finalized) {
+      // Lost the race — another path already promoted this row out of
+      // pending_payment. Nothing to recover; don't re-run.
+      const { data: cur } = await supabase
+        .from("membership_applications")
+        .select("id, status")
+        .eq("id", pendingRow.id)
+        .maybeSingle()
+      console.log(`Row ${pendingRow.id} already finalized (status=${cur?.status}). Nothing to do.`)
+      process.exit(0)
+    }
+    appId = finalized.id
+    console.log(`✓ Application finalized in place (was pending_payment): ${appId}`)
+  } else {
+    const { data: inserted, error: insertErr } = await supabase
+      .from("membership_applications")
+      .insert(row)
+      .select("id")
+      .single()
+    if (insertErr || !inserted) {
+      console.error("Application insert failed:", insertErr)
+      process.exit(1)
+    }
+    appId = inserted.id
+    console.log(`✓ Application created: ${appId}`)
   }
-  console.log(`✓ Application created: ${app.id}`)
 
   // --- 6a. Link payment ---
   const { error: linkErr } = await supabase
     .from("membership_payments")
-    .update({ application_id: app.id })
+    .update({ application_id: appId })
     .eq("gateway_payment_id", paymentId)
   if (linkErr) console.error("  WARN: payment link failed:", linkErr.message)
   else console.log("✓ Payment linked to application")
@@ -260,7 +308,7 @@ async function main() {
       status: "completed",
       failure_reason: null,
       deleted_at: new Date().toISOString(),
-      step_data: { ...stepData, recovered_at: new Date().toISOString(), recovered_application_id: app.id },
+      step_data: { ...stepData, recovered_at: new Date().toISOString(), recovered_application_id: appId },
       updated_at: new Date().toISOString(),
     })
     .eq("id", draft.id)
@@ -272,7 +320,7 @@ async function main() {
     adminEmail: ADMIN_ACTOR,
     action: "manual_payment_recovery_create_application",
     entityType: "application",
-    entityId: app.id,
+    entityId: appId,
     entityName: row.name,
     details: {
       reference: ref,

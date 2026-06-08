@@ -1542,13 +1542,28 @@ function ApplyForm() {
 
           toast.success("Payment successful!")
 
-          // Blocking save with payment info — recovery safety net (8s cap)
-          try {
-            await Promise.race([
-              enqueueDraftSave(5, { payment_order_id: orderId, payment_id: response.razorpay_payment_id, payment_verified: true }),
-              new Promise(r => setTimeout(r, 8000)),
-            ])
-          } catch {}
+          // Durably record the captured payment on the draft BEFORE attempting
+          // submit. This is the client-side half of the paid-but-no-application
+          // recovery anchor: if submit never lands (tab close, network drop,
+          // crash mid-retry), the draft still carries the payment + a
+          // `paid_pending_submission` marker, and the membership_payments row
+          // (written server-side by /api/payments/verify) is the authoritative
+          // paid record the cleanup-drafts cron (Step 4b) keys off to flag
+          // paid-but-no-application for recovery.
+          //
+          // Awaited with one retry — NOT the old `Promise.race([save, 8s])`
+          // which silently swallowed the result and could skip the save on a
+          // slow network, leaving the draft with no payment trace at all.
+          for (let i = 0; i < 2; i++) {
+            const saveRes = await enqueueDraftSave(5, {
+              payment_order_id: orderId,
+              payment_id: response.razorpay_payment_id,
+              payment_verified: true,
+              paid_pending_submission: true,
+            })
+            if (saveRes.ok) break
+            if (i < 1) await new Promise(r => setTimeout(r, 1500))
+          }
 
           // Step 4: Submit application with retry (up to 3 attempts)
           const uploadData = Object.fromEntries(
@@ -1605,9 +1620,38 @@ function ApplyForm() {
           }
 
           if (!submitSuccess) {
-            toast.error("Your payment is safe but submission failed. We have saved your application. Please try again or contact support.")
+            // Paid, but submission failed after all retries. Leave a durable,
+            // explicit marker on the draft AND a loud Sentry signal so this is
+            // recoverable and observable — never a silent toast-only failure
+            // (see AGENTS.md "crash loudly, not redirect silently"). The
+            // cleanup-drafts cron (Step 4b) + scripts/recover-*.ts promote
+            // these to an application from the draft's step_data.
+            void enqueueDraftSave(5, {
+              payment_order_id: orderId,
+              payment_id: response.razorpay_payment_id,
+              payment_verified: true,
+              paid_pending_submission: true,
+              submit_failed: true,
+              submit_failed_at: new Date().toISOString(),
+            })
+            Sentry.captureException(new Error("apply: paid but submit failed after retries"), {
+              level: "fatal",
+              fingerprint: ["apply-paid-submit-failed"],
+              tags: { component: "apply-flow", op: "post_payment_submit_failed" },
+              extra: { referenceNumber: ref, paymentId: response.razorpay_payment_id, orderId, email: formData.email },
+            })
+            toast.error("Your payment is safe but submission didn't complete. We've saved your application and our team will finish it — you can also contact support.", { duration: 9000 })
           }
-        } catch {
+        } catch (err) {
+          // The whole post-payment block threw (verify, save, or submit). The
+          // payment is captured server-side; make the failure loud so it can be
+          // reconciled rather than lost behind a toast.
+          Sentry.captureException(err, {
+            level: "fatal",
+            fingerprint: ["apply-post-payment-handler-throw"],
+            tags: { component: "apply-flow", op: "post_payment_handler_throw" },
+            extra: { referenceNumber: ref, email: formData.email },
+          })
           toast.error("Something went wrong. Your payment is safe — please try again or contact support.")
         }
         setSubmitting(false)

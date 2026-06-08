@@ -122,6 +122,20 @@ async function main() {
     process.exit(1)
   }
 
+  // --- Optional membership-type override (e.g. LM -> ALM when the applicant is
+  //     missing an LM-only doc but qualifies for ALM at the same ₹4230 fee;
+  //     mirrors the Soham case). The fee is identical, so the paid amount still
+  //     matches. The downgraded type drives both scoring (required-doc set) and
+  //     the application row. --type=ALM
+  const typeOverride = process.argv.slice(2).find((a) => a.startsWith("--type="))?.split("=")[1]?.trim()
+  const originalType: string = formData.membershipType
+  let downgradeNote = ""
+  if (typeOverride && typeOverride !== originalType) {
+    formData.membershipType = typeOverride
+    downgradeNote = ` Membership type changed ${originalType}→${typeOverride} at recovery (same ₹4230 fee; ${typeOverride} does not require the ${originalType}-only document the applicant was missing). Applicant may request an upgrade later.`
+    console.log(`Membership type override: ${originalType} -> ${typeOverride}\n`)
+  }
+
   // --- 2. Re-verify payment is paid and unlinked ---
   const { data: pay, error: payErr } = await supabase
     .from("membership_payments")
@@ -198,7 +212,7 @@ async function main() {
     aiConfidence,
     aiFlags: approval.flags,
     hasPendingReview: true,
-    manualReviewReason: RECOVERY_NOTE,
+    manualReviewReason: RECOVERY_NOTE + downgradeNote,
     applicationStatus,
   })
 

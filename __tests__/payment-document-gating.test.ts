@@ -39,10 +39,11 @@ vi.mock("@/lib/rate-limit", () => ({
 }))
 
 // ── Supabase mock ───────────────────────────────────────────────────────────
-// The create-order route runs three queries:
+// The create-order route runs these queries:
 //   1. draft_applications.select("id, step_data")...    → returns draftRow (or null)
 //   2. draft_applications.select("id, current_step")... → returns null (no paid draft)
 //   3. membership_applications.select(...)...           → returns null (no existing app)
+//   4. membership_payments.select(...)... (orphan guard) → returns null (no orphan)
 // We dispatch by `.select(arg)` to keep the mock concise.
 //
 // The route also queries `application_step_events` from the lost-uploads
@@ -89,6 +90,11 @@ vi.mock("@/lib/supabase", () => ({
       }
       if (table === "membership_applications") {
         // existingApp guard
+        return makeChainable(() => null)
+      }
+      if (table === "membership_payments") {
+        // Orphan-payment guard (create-order:284) — no orphan paid row in
+        // these tests, so the gate passes and order creation proceeds.
         return makeChainable(() => null)
       }
       throw new Error(`Unmocked table: ${table}`)

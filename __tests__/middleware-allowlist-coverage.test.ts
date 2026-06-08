@@ -90,7 +90,12 @@ function parsePublicApiRoutes(): string[] {
         "the literal shape may have changed. Update parsePublicApiRoutes()."
     )
   }
-  return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
+  // Only treat quoted strings that look like API route paths as entries.
+  // Every real allowlist entry starts with "/" (e.g. "/api/credential"); this
+  // excludes quoted prose inside comments within the array literal (e.g. a
+  // comment mentioning a `"feature updating"` envelope), which the previous
+  // catch-all `/"([^"]+)"/` regex wrongly flagged as orphan entries.
+  return [...match[1].matchAll(/"(\/[^"]+)"/g)].map((m) => m[1])
 }
 
 function walkRoutes(dir: string, out: string[] = []): string[] {
@@ -240,7 +245,7 @@ function verdictFor(
       // Loud surface in test output without breaking the build. Removing the
       // route from KNOWN_AUTH_GAPS once it's fixed in middleware is part of
       // the follow-up PR.
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `[middleware-allowlist-coverage] known gap: ${routePath} (member ` +
           `code path unreachable; awaiting middleware allowlist fix)`

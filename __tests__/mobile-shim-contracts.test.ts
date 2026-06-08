@@ -116,53 +116,28 @@ describe("Mobile shim — envelope contract", () => {
     })
   })
 
-  describe("Stub routes — feature updating envelope", () => {
-    const stubs = [
-      "device_token_update",
-      "check_user_data",
-      "check_common_login",
-      "common_member_resend_otp",
-      "memberforgotpassword",
-      "mobile_notification_list",
-      "mobile_notification_all_read",
-      "mobile_notification_status_update",
-      "enquiry_form",
-      "know_membership",
-      "send_details_toMail",
-      "member_info",
-      "track_application",
-      "get_member_activity",
-      "delete_clinic",
-      "delete_work_exp",
-      "delete_old_member_application",
-      "member_conversion",
-    ] as const
-
-    // Use Vite's import.meta.glob (vitest at runtime) to enumerate stubs
-    // without the dynamic-import-vars warning. ImportMeta isn't typed for
-    // .glob by default — cast through a local interface. Vitest evaluates
-    // this at module-load, not per-test, so the cost is paid once.
-    const stubModules = (
-      import.meta as unknown as {
-        glob: (pattern: string) => Record<
-          string,
-          () => Promise<{ POST: () => Promise<Response> }>
-        >
-      }
-    ).glob("/src/app/api/*/route.ts")
-
-    it.each(stubs)("/%s returns the stub envelope", async (name) => {
-      const path = Object.keys(stubModules).find((p) =>
-        p.endsWith(`/api/${name}/route.ts`)
-      )
-      expect(path).toBeDefined()
-      const mod = await stubModules[path!]()
-      const res = await mod.POST()
+  // The shim originally returned a uniform "feature updating" envelope from a
+  // batch of unimplemented routes. Those routes have since GRADUATED to real
+  // implementations — device_token_update → legacyOk("OK");
+  // mobile_notification_*/know_membership/member_conversion/member_info/
+  // track_application/etc. have real logic; check_common_login,
+  // memberforgotpassword and delete_clinic return specific actionable
+  // legacyErr messages. None still call stubFeatureUpdating(), so the old
+  // per-route "returns the stub envelope" assertions were stale and have been
+  // removed. What remains worth pinning is the helper itself — any route that
+  // DOES fall back to it must emit exactly this envelope (the Flutter binary
+  // switches on these fields). Per-route contract tests for the now-real
+  // routes need mocked Supabase/Resend deps and belong in their own suites
+  // (see this file's header note); they are intentionally not covered here.
+  describe("stubFeatureUpdating() helper envelope", () => {
+    it("emits {status:false, 'temporarily unavailable' message, feature:<name>}", async () => {
+      const { stubFeatureUpdating } = await import("@/lib/mobile-shim")
+      const res = stubFeatureUpdating("some_feature")
       const json = (await res.json()) as { status: boolean; message: string; feature: string }
       expect(json.status).toBe(false)
       expect(typeof json.message).toBe("string")
       expect(json.message).toContain("temporarily unavailable")
-      expect(json.feature).toBe(name)
+      expect(json.feature).toBe("some_feature")
     })
   })
 

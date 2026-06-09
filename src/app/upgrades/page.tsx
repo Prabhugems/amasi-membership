@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowUpCircle,
@@ -16,13 +16,26 @@ import {
   ShieldQuestion,
   AlertTriangle,
   AlertCircle,
+  Plus,
+  Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
+
+interface MemberLookupResult {
+  id: string
+  amasi_number: number
+  name: string
+  email: string
+  membership_type: string
+}
 
 /* ---------- types ---------- */
 
@@ -112,6 +125,7 @@ function UpgradesContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [rejectNotes, setRejectNotes] = useState("")
+  const [initiateOpen, setInitiateOpen] = useState(false)
 
   /* --- data fetching --- */
   const { data: upgrades = [], isLoading, isError } = useQuery<UpgradeRecord[]>({
@@ -194,14 +208,20 @@ function UpgradesContent() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-          <ArrowUpCircle className="h-7 w-7 text-primary" />
-          Membership Upgrades
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Review membership upgrade requests (ACM → LM / ALM)
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <ArrowUpCircle className="h-7 w-7 text-primary" />
+            Membership Upgrades
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Review membership upgrade requests (ACM → LM / ALM)
+          </p>
+        </div>
+        <Button onClick={() => setInitiateOpen(true)} className="gap-1.5 shrink-0">
+          <Plus className="h-4 w-4" />
+          Initiate Upgrade
+        </Button>
       </div>
 
       {/* Stats */}
@@ -432,7 +452,255 @@ function UpgradesContent() {
           )
         })}
       </div>
+
+      <InitiateUpgradeDialog
+        open={initiateOpen}
+        onOpenChange={setInitiateOpen}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["upgrades"] })}
+      />
     </div>
+  )
+}
+
+/* ---------- initiate upgrade dialog ---------- */
+
+function InitiateUpgradeDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onSuccess: () => void
+}) {
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [results, setResults] = useState<MemberLookupResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [selected, setSelected] = useState<MemberLookupResult | null>(null)
+  const [asiNo, setAsiNo] = useState("")
+  const [asiState, setAsiState] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+
+  // Reset everything on close so reopening starts clean.
+  useEffect(() => {
+    if (!open) {
+      setQuery("")
+      setDebouncedQuery("")
+      setResults([])
+      setSelected(null)
+      setAsiNo("")
+      setAsiState("")
+    }
+  }, [open])
+
+  // Debounce typed query → triggers /api/members/search.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  useEffect(() => {
+    if (!debouncedQuery || debouncedQuery.length < 2 || selected) {
+      setResults([])
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    fetch(`/api/members/search?q=${encodeURIComponent(debouncedQuery)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        const raw = (j?.data || []) as Array<{
+          id?: string
+          amasi_number?: number
+          name?: string
+          email?: string
+          membership_type?: string
+        }>
+        const mapped: MemberLookupResult[] = raw
+          .filter((m) => m.id && m.amasi_number && m.email)
+          .map((m) => ({
+            id: m.id as string,
+            amasi_number: m.amasi_number as number,
+            name: m.name || "",
+            email: m.email as string,
+            membership_type: m.membership_type || "",
+          }))
+        setResults(mapped)
+      })
+      .catch(() => {
+        if (!cancelled) setResults([])
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedQuery, selected])
+
+  const handleSubmit = async () => {
+    if (!selected) return
+    if (!asiNo.trim()) {
+      toast.error("ASI membership number is required")
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch("/api/members/upgrade/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: selected.id,
+          asiMembershipNo: asiNo.trim(),
+          asiState: asiState.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.status) {
+        throw new Error(json.message || "Failed to initiate upgrade")
+      }
+      toast.success(json.message || "Member upgraded to Life Member")
+      onSuccess()
+      onOpenChange(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to initiate upgrade"
+      toast.error(message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const memberTypeUpper = (selected?.membership_type || "").toUpperCase()
+  const isALM = memberTypeUpper === "ALM" || memberTypeUpper.includes("ASSOCIATE LIFE")
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Initiate ALM → LM Upgrade</DialogTitle>
+          <DialogDescription>
+            Convert an Associate Life Member to Life Member on their behalf. The member is notified by email and WhatsApp; the upgrade is logged as admin-initiated.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-2">
+          {/* Member picker */}
+          <div className="space-y-1.5">
+            <Label htmlFor="upg-initiate-search">Member</Label>
+            {selected ? (
+              <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{selected.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    AMASI #{selected.amasi_number} · {selected.email}
+                  </p>
+                </div>
+                <Badge variant={isALM ? "secondary" : "destructive"} className="shrink-0 text-[10px]">
+                  {selected.membership_type || "—"}
+                </Badge>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="text-xs text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="upg-initiate-search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search by email, AMASI number, or name"
+                    className="pl-9"
+                    autoComplete="off"
+                  />
+                </div>
+                {searching && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Searching…
+                  </p>
+                )}
+                {!searching && debouncedQuery.length >= 2 && results.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No members match “{debouncedQuery}”.</p>
+                )}
+                {results.length > 0 && (
+                  <div className="rounded-md border max-h-56 overflow-y-auto">
+                    {results.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelected(m)}
+                        className="w-full text-left px-3 py-2 hover:bg-accent transition-colors border-b last:border-b-0 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{m.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            AMASI #{m.amasi_number} · {m.email}
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="shrink-0 text-[10px]">
+                          {m.membership_type || "—"}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {selected && !isALM && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/50 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>This member is {selected.membership_type || "not ALM"}. Only ALM members can be upgraded to LM via this flow.</p>
+            </div>
+          )}
+
+          {/* ASI details */}
+          <div className="space-y-1.5">
+            <Label htmlFor="upg-initiate-asi-no">ASI Membership Number</Label>
+            <Input
+              id="upg-initiate-asi-no"
+              value={asiNo}
+              onChange={(e) => setAsiNo(e.target.value)}
+              placeholder="e.g. 12345"
+              disabled={!selected || !isALM}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="upg-initiate-asi-state">ASI State (optional)</Label>
+            <Input
+              id="upg-initiate-asi-state"
+              value={asiState}
+              onChange={(e) => setAsiState(e.target.value)}
+              placeholder="e.g. Maharashtra"
+              disabled={!selected || !isALM}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitting || !selected || !isALM || !asiNo.trim()}
+            className="gap-1.5"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            Upgrade to Life Member
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -28,6 +28,78 @@ import { INDIAN_STATES } from "@/lib/membership-types"
 type Phase = "login" | "otp" | "dashboard"
 type Tab = "overview" | "card" | "certificate" | "profile" | "documents" | "support" | "upgrade"
 
+interface MemberRow {
+  id: string
+  _id?: string
+  email: string
+  name: string
+  first_name?: string
+  last_name?: string
+  application_name?: string
+  application_no?: string
+  amasi_number: string | number
+  membership_no?: string | number
+  membership_type: string
+  date_of_birth?: string
+  joining_date?: string
+  created_at?: string
+  updated_at?: string
+  father_name?: string
+  gender?: string
+  phone?: string
+  mobile?: string
+  state?: string
+  city?: string
+  zone?: string
+  mci_council_number?: string
+  asi_membership_no?: string
+  pg_degree?: string
+  pg_college?: string
+  profile?: string
+  profile_photo?: string
+  [key: string]: unknown
+}
+
+interface MemberTicket {
+  id: string
+  ticket_number?: string
+  subject?: string
+  description?: string
+  category?: string
+  status: string
+  last_reply_preview?: string
+  created_at?: string
+}
+
+interface TicketReply {
+  id?: string
+  message?: string
+  is_admin?: boolean
+  created_at?: string
+}
+
+interface UpgradeRequest {
+  id: string
+  status: string
+  asi_membership_no?: string
+  asi_state?: string | null
+  asi_certificate_url?: string | null
+  ai_confidence?: "high" | "medium" | "low" | null
+  ai_verified?: boolean
+  review_notes?: string | null
+  created_at?: string
+}
+
+interface QuickAction {
+  tab: Tab
+  icon: typeof CreditCard
+  title: string
+  desc: string
+  colors: string
+  iconBg: string
+  badge?: string
+}
+
 // Session timeout in milliseconds (15 minutes)
 const SESSION_TIMEOUT = 15 * 60 * 1000
 const SESSION_WARNING = 13 * 60 * 1000 // warn at 13 min (2 min before timeout)
@@ -47,7 +119,7 @@ function MemberPortalContent() {
   const searchParams = useSearchParams()
   const [phase, setPhase] = useState<Phase>("login")
   const [email, setEmail] = useState("")
-  const [member, setMember] = useState<any>(null)
+  const [member, setMember] = useState<MemberRow | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>("overview")
   // Drives the Admin Dashboard sidebar link gate below. `null` covers both
   // "still resolving /api/auth/me" and "not an admin" — same null-gate
@@ -425,7 +497,12 @@ function MemberPortalContent() {
     const profileData = getProfileCompleteness()
     const notifications = getNotifications()
 
-    const isACM = memberType.toUpperCase().includes("ACM") || memberType.toUpperCase().includes("CANDIDATE")
+    const upperType = memberType.toUpperCase()
+    const isACM = upperType.includes("ACM") || upperType.includes("CANDIDATE")
+    const isALM =
+      (upperType.includes("ALM") && !upperType.includes("ACM")) ||
+      (upperType.includes("ASSOCIATE") && !upperType.includes("CANDIDATE"))
+    const canUpgrade = isACM || isALM
 
     // Document counts for badge
     const docFields = ["profile_photo", "mci_certificate", "pg_degree_certificate", "mbbs_degree_certificate", "asi_member_certificate", "active_license", "letter_hod"]
@@ -439,7 +516,7 @@ function MemberPortalContent() {
       { id: "certificate", label: "Certificate", icon: Award },
       { id: "profile", label: "My Profile", icon: User, badge: profileData.percent < 100 ? `${profileData.percent}%` : undefined },
       { id: "documents", label: "Documents", icon: Upload, badge: docsUploaded < docsRequired ? `${docsUploaded}/${docsRequired}` : undefined },
-      ...(isACM ? [{ id: "upgrade" as Tab, label: "Upgrade Membership", icon: Star }] : []),
+      ...(canUpgrade ? [{ id: "upgrade" as Tab, label: "Upgrade Membership", icon: Star }] : []),
       { id: "support", label: "Support", icon: Ticket },
     ]
 
@@ -559,9 +636,9 @@ function MemberPortalContent() {
           {/* Footer */}
           <div className="p-3 border-t space-y-1">
             {adminRole && (
-              <a href="/" className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-accent">
+              <Link href="/" className="flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-xl hover:bg-accent">
                 <ShieldCheck className="h-3.5 w-3.5" /> Admin Dashboard
-              </a>
+              </Link>
             )}
             <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs text-muted-foreground hover:text-destructive transition-colors rounded-xl hover:bg-destructive/5">
               <LogOut className="h-3.5 w-3.5" /> Sign Out
@@ -774,20 +851,20 @@ function MemberPortalContent() {
                 <div>
                   <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</h3>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {[
+                    {([
                       { tab: "card" as Tab, icon: CreditCard, title: "Membership Card", desc: "View & download your digital card", colors: "hover:border-blue-300 hover:bg-blue-50/50", iconBg: "bg-blue-100 text-blue-600" },
                       { tab: "certificate" as Tab, icon: Award, title: "Certificate", desc: "Download membership certificate", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" },
                       { tab: "profile" as Tab, icon: UserPen, title: "Edit Profile", desc: profileData.percent < 100 ? `${profileData.percent}% complete — update your details` : "Update your details & documents", colors: "hover:border-green-300 hover:bg-green-50/50", iconBg: "bg-green-100 text-green-600", badge: profileData.percent < 100 ? `${profileData.percent}%` : undefined },
                       { tab: "documents" as Tab, icon: Upload, title: "Upload Documents", desc: !hasProfilePhoto ? "Profile photo missing — upload now" : `${docsUploaded} documents uploaded`, colors: "hover:border-purple-300 hover:bg-purple-50/50", iconBg: "bg-purple-100 text-purple-600", badge: !hasProfilePhoto ? "Photo needed" : docsUploaded < docsRequired ? `${docsUploaded}/${docsRequired}` : undefined },
                       { tab: "support" as Tab, icon: Ticket, title: "Support Tickets", desc: "Get help from AMASI team", colors: "hover:border-rose-300 hover:bg-rose-50/50", iconBg: "bg-rose-100 text-rose-600" },
-                      ...(isACM ? [{ tab: "upgrade" as Tab, icon: Star, title: "Upgrade Membership", desc: "Upgrade to Life Member or Associate Life Member", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" }] : []),
-                    ].map((action) => (
+                      ...(canUpgrade ? [{ tab: "upgrade" as Tab, icon: Star, title: "Upgrade Membership", desc: isALM ? "Upgrade to Life Member with ASI details" : "Upgrade to Life Member or Associate Life Member", colors: "hover:border-amber-300 hover:bg-amber-50/50", iconBg: "bg-amber-100 text-amber-600" }] : []),
+                    ] satisfies QuickAction[]).map((action) => (
                       <button key={action.tab} onClick={() => setActiveTab(action.tab)} className={`group p-5 rounded-xl border bg-card transition-all text-left relative ${action.colors}`}>
                         <div className={`p-2.5 rounded-lg w-fit mb-3 ${action.iconBg}`}><action.icon className="h-5 w-5" /></div>
                         <p className="font-semibold text-sm">{action.title}</p>
                         <p className="text-xs text-muted-foreground mt-1">{action.desc}</p>
-                        {(action as any).badge && (
-                          <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{(action as any).badge}</span>
+                        {action.badge && (
+                          <span className="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{action.badge}</span>
                         )}
                       </button>
                     ))}
@@ -1161,7 +1238,7 @@ const DOC_SLOTS = [
   { label: "HOD Letter", field: "letter_hod", docType: "letter_hod", required: false, icon: FileText, accept: "image/jpeg,image/png,application/pdf" },
 ] as const
 
-function DocumentsTab({ member, setMember, memberType }: { member: any; setMember: (m: any) => void; memberType: string }) {
+function DocumentsTab({ member, setMember, memberType }: { member: MemberRow; setMember: (m: MemberRow) => void; memberType: string }) {
   const [uploadingField, setUploadingField] = useState<string | null>(null)
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -1220,7 +1297,7 @@ function DocumentsTab({ member, setMember, memberType }: { member: any; setMembe
       </div>
       <div className="grid gap-3">
         {visibleDocs.map((doc) => {
-          const url = member[doc.field]
+          const url = member[doc.field] as string | undefined
           const isUploading = uploadingField === doc.field
           const IconComponent = doc.icon
 
@@ -1291,11 +1368,11 @@ const TICKET_CATEGORIES = [
   "Application Issue", "Profile Update", "Payment Issue", "Certificate/Card", "Technical Issue", "Other",
 ]
 
-function MemberSupportTab({ member }: { member: any }) {
+function MemberSupportTab({ member }: { member: MemberRow }) {
   const [view, setView] = useState<"list" | "new" | "detail">("list")
-  const [tickets, setTickets] = useState<any[]>([])
-  const [selectedTicket, setSelectedTicket] = useState<any>(null)
-  const [replies, setReplies] = useState<any[]>([])
+  const [tickets, setTickets] = useState<MemberTicket[]>([])
+  const [selectedTicket, setSelectedTicket] = useState<MemberTicket | null>(null)
+  const [replies, setReplies] = useState<TicketReply[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [replyText, setReplyText] = useState("")
@@ -1379,7 +1456,7 @@ function MemberSupportTab({ member }: { member: any }) {
     finally { setSubmitting(false) }
   }
 
-  const openTicket = async (ticket: any) => {
+  const openTicket = async (ticket: MemberTicket) => {
     setSelectedTicket(ticket)
     setView("detail")
     setReplies([])
@@ -1724,7 +1801,7 @@ function MemberSupportTab({ member }: { member: any }) {
             </Card>
           ) : (
             <div className="space-y-2">
-              {tickets.map((t: any) => (
+              {tickets.map((t) => (
                 <div
                   key={t.id}
                   onClick={() => openTicket(t)}
@@ -1822,7 +1899,7 @@ function MemberSupportTab({ member }: { member: any }) {
                 </div>
               )}
 
-              {replies.map((r: any, i: number) => {
+              {replies.map((r, i) => {
                 const { text, url } = extractAttachment(r.message)
                 return (
                   <div key={r.id || i} className={`flex ${r.is_admin ? "justify-start" : "justify-end"}`}>
@@ -1977,13 +2054,13 @@ function MemberSupportTab({ member }: { member: any }) {
 
 // ===================== MEMBER UPGRADE TAB =====================
 
-function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; memberType: string; amasiNum: string | number }) {
+function MemberUpgradeTab({ member, memberType, amasiNum }: { member: MemberRow; memberType: string; amasiNum: string | number }) {
   const [asiNumber, setAsiNumber] = useState("")
   const [asiState, setAsiState] = useState("")
   const [asiCertFile, setAsiCertFile] = useState<File | null>(null)
   const [asiEmailFile, setAsiEmailFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [upgrades, setUpgrades] = useState<any[]>([])
+  const [upgrades, setUpgrades] = useState<UpgradeRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [result, setResult] = useState<{ success: boolean; message: string; autoApproved?: boolean } | null>(null)
 
@@ -2250,7 +2327,7 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: any; membe
           </Card>
         ) : (
           <div className="space-y-3">
-            {upgrades.map((u: any) => (
+            {upgrades.map((u) => (
               <Card key={u.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">

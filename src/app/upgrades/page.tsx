@@ -215,7 +215,7 @@ function UpgradesContent() {
             Membership Upgrades
           </h1>
           <p className="text-muted-foreground mt-1">
-            Review membership upgrade requests (ACM → LM / ALM)
+            Review member-submitted upgrade requests, or initiate ALM → LM, ACM → LM, and ACM → ALM upgrades.
           </p>
         </div>
         <Button onClick={() => setInitiateOpen(true)} className="gap-1.5 shrink-0">
@@ -464,6 +464,23 @@ function UpgradesContent() {
 
 /* ---------- initiate upgrade dialog ---------- */
 
+type ToType = "LM" | "ALM"
+type FromType = "ALM" | "ACM"
+
+function classifyFromType(value: string | null | undefined): FromType | null {
+  const v = (value || "").toUpperCase()
+  if (!v) return null
+  if (v === "ACM" || v.includes("CANDIDATE")) return "ACM"
+  if (v === "ALM" || (v.includes("ASSOCIATE") && v.includes("LIFE"))) return "ALM"
+  return null
+}
+
+function allowedTargets(from: FromType): ToType[] {
+  if (from === "ALM") return ["LM"]
+  if (from === "ACM") return ["LM", "ALM"]
+  return []
+}
+
 function InitiateUpgradeDialog({
   open,
   onOpenChange,
@@ -478,6 +495,7 @@ function InitiateUpgradeDialog({
   const [results, setResults] = useState<MemberLookupResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState<MemberLookupResult | null>(null)
+  const [toType, setToType] = useState<ToType>("LM")
   const [asiNo, setAsiNo] = useState("")
   const [asiState, setAsiState] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -489,6 +507,7 @@ function InitiateUpgradeDialog({
       setDebouncedQuery("")
       setResults([])
       setSelected(null)
+      setToType("LM")
       setAsiNo("")
       setAsiState("")
     }
@@ -540,10 +559,22 @@ function InitiateUpgradeDialog({
     }
   }, [debouncedQuery, selected])
 
+  const fromType = classifyFromType(selected?.membership_type)
+  const targets = fromType ? allowedTargets(fromType) : []
+
+  // If the selected member can only go one place (ALM), force toType to it.
+  useEffect(() => {
+    if (targets.length === 1 && toType !== targets[0]) {
+      setToType(targets[0])
+    }
+  }, [targets, toType])
+
+  const asiRequired = toType === "LM"
+
   const handleSubmit = async () => {
-    if (!selected) return
-    if (!asiNo.trim()) {
-      toast.error("ASI membership number is required")
+    if (!selected || !fromType) return
+    if (asiRequired && !asiNo.trim()) {
+      toast.error("ASI membership number is required for Life Member")
       return
     }
     setSubmitting(true)
@@ -553,15 +584,16 @@ function InitiateUpgradeDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           memberId: selected.id,
-          asiMembershipNo: asiNo.trim(),
-          asiState: asiState.trim() || null,
+          toType,
+          asiMembershipNo: asiRequired ? asiNo.trim() : null,
+          asiState: asiRequired ? asiState.trim() || null : null,
         }),
       })
       const json = await res.json()
       if (!res.ok || !json.status) {
         throw new Error(json.message || "Failed to initiate upgrade")
       }
-      toast.success(json.message || "Member upgraded to Life Member")
+      toast.success(json.message || "Member upgraded")
       onSuccess()
       onOpenChange(false)
     } catch (err) {
@@ -572,16 +604,16 @@ function InitiateUpgradeDialog({
     }
   }
 
-  const memberTypeUpper = (selected?.membership_type || "").toUpperCase()
-  const isALM = memberTypeUpper === "ALM" || memberTypeUpper.includes("ASSOCIATE LIFE")
+  const targetLabel = toType === "LM" ? "Life Member" : "Associate Life Member"
+  const canSubmit = !!selected && !!fromType && targets.includes(toType) && (!asiRequired || asiNo.trim().length > 0)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Initiate ALM → LM Upgrade</DialogTitle>
+          <DialogTitle>Initiate Membership Upgrade</DialogTitle>
           <DialogDescription>
-            Convert an Associate Life Member to Life Member on their behalf. The member is notified by email and WhatsApp; the upgrade is logged as admin-initiated.
+            Convert an eligible member on their behalf. Supports ALM → LM, ACM → LM, and ACM → ALM. The member is notified by email and WhatsApp; the upgrade is logged as admin-initiated.
           </DialogDescription>
         </DialogHeader>
 
@@ -597,7 +629,7 @@ function InitiateUpgradeDialog({
                     AMASI #{selected.amasi_number} · {selected.email}
                   </p>
                 </div>
-                <Badge variant={isALM ? "secondary" : "destructive"} className="shrink-0 text-[10px]">
+                <Badge variant={fromType ? "secondary" : "destructive"} className="shrink-0 text-[10px]">
                   {selected.membership_type || "—"}
                 </Badge>
                 <button
@@ -655,48 +687,74 @@ function InitiateUpgradeDialog({
             )}
           </div>
 
-          {selected && !isALM && (
+          {selected && !fromType && (
             <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/50 px-3 py-2 text-xs text-red-700 dark:text-red-300">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>This member is {selected.membership_type || "not ALM"}. Only ALM members can be upgraded to LM via this flow.</p>
+              <p>This member is {selected.membership_type || "(unknown)"}. Only ALM and ACM members can be upgraded via this flow.</p>
             </div>
           )}
 
-          {/* ASI details */}
-          <div className="space-y-1.5">
-            <Label htmlFor="upg-initiate-asi-no">ASI Membership Number</Label>
-            <Input
-              id="upg-initiate-asi-no"
-              value={asiNo}
-              onChange={(e) => setAsiNo(e.target.value)}
-              placeholder="e.g. 12345"
-              disabled={!selected || !isALM}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="upg-initiate-asi-state">ASI State (optional)</Label>
-            <Input
-              id="upg-initiate-asi-state"
-              value={asiState}
-              onChange={(e) => setAsiState(e.target.value)}
-              placeholder="e.g. Maharashtra"
-              disabled={!selected || !isALM}
-            />
-          </div>
+          {/* Target type selector — only shown when ACM (two valid targets). */}
+          {selected && fromType === "ACM" && (
+            <div className="space-y-1.5">
+              <Label>Upgrade to</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["LM", "ALM"] as ToType[]).map((t) => {
+                  const active = toType === t
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setToType(t)}
+                      className={`px-3 py-2 rounded-md border text-sm font-medium transition-colors text-left ${
+                        active
+                          ? "border-primary bg-primary/5 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                      }`}
+                    >
+                      <p className="font-semibold">{t === "LM" ? "Life Member" : "Associate Life Member"}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {t === "LM" ? "Voting rights · ASI required" : "No ASI required"}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ASI details — only when target is LM. */}
+          {selected && fromType && asiRequired && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="upg-initiate-asi-no">ASI Membership Number</Label>
+                <Input
+                  id="upg-initiate-asi-no"
+                  value={asiNo}
+                  onChange={(e) => setAsiNo(e.target.value)}
+                  placeholder="e.g. 12345"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="upg-initiate-asi-state">ASI State (optional)</Label>
+                <Input
+                  id="upg-initiate-asi-state"
+                  value={asiState}
+                  onChange={(e) => setAsiState(e.target.value)}
+                  placeholder="e.g. Maharashtra"
+                />
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={submitting || !selected || !isALM || !asiNo.trim()}
-            className="gap-1.5"
-          >
+          <Button size="sm" onClick={handleSubmit} disabled={submitting || !canSubmit} className="gap-1.5">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Upgrade to Life Member
+            Upgrade to {targetLabel}
           </Button>
         </div>
       </DialogContent>

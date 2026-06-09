@@ -7,18 +7,58 @@ import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { escapeHtml } from "@/lib/html-escape"
 import { Resend } from "resend"
 
-// Admin-initiated ALM → LM upgrade. Skips the member-submitted flow entirely:
-// no ASI cert OCR, no AI scoring, no pending_review queue. Admin trust is the
-// authorization signal. Creates a `membership_upgrades` row pre-approved so
-// the audit trail matches member-submitted upgrades that were later approved.
+// Admin-initiated membership conversion. Skips the member-submitted flow
+// entirely: no ASI cert OCR, no AI scoring, no pending_review queue. Admin
+// trust is the authorization signal. Creates a `membership_upgrades` row
+// pre-approved so the audit trail matches member-submitted upgrades that
+// were later approved.
 //
-// Companion to POST /api/members/upgrade (member-submitted) and
-// PATCH /api/members/upgrade/[id] (admin review of member-submitted requests).
+// Supported transitions (extended 2026-06-09 for ACM, follow-up to 3d0dede):
+//   - ALM → LM   (requires ASI membership no)
+//   - ACM → LM   (requires ASI membership no)
+//   - ACM → ALM  (no ASI required — qualified surgeon without ASI)
+//
+// LM and ILM cannot be upgraded via this route. Member-submitted POST
+// /api/members/upgrade is still ALM → LM only.
+
+type ToType = "LM" | "ALM"
+type FromType = "ALM" | "ACM"
+
+const TARGET_LABEL: Record<ToType, string> = {
+  LM: "Life Member",
+  ALM: "Associate Life Member",
+}
+
+const SOURCE_LABEL: Record<FromType, string> = {
+  ALM: "Associate Life Member (ALM)",
+  ACM: "Associate Candidate Member (ACM)",
+}
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
   if (!key) throw new Error("RESEND_API_KEY not configured")
   return new Resend(key)
+}
+
+// Classify the member's current type into one we can upgrade FROM. Accepts
+// both shortcodes ("ALM") and the longform display values that some legacy
+// rows carry ("Associate Life Member").
+function classifyFromType(value: string | null | undefined): FromType | null {
+  const v = (value || "").toUpperCase()
+  if (!v) return null
+  // ACM must be checked first — "ASSOCIATE CANDIDATE MEMBER" contains "ASSOCIATE"
+  // but is NOT ALM. The ALM check guards against the same overlap.
+  if (v === "ACM" || v.includes("CANDIDATE")) return "ACM"
+  if (v === "ALM" || (v.includes("ASSOCIATE") && v.includes("LIFE"))) return "ALM"
+  return null
+}
+
+// Allowed transitions. ALM → ALM and ACM → ACM are rejected as no-ops.
+function isAllowedTransition(from: FromType, to: ToType): boolean {
+  if (from === "ALM" && to === "LM") return true
+  if (from === "ACM" && to === "LM") return true
+  if (from === "ACM" && to === "ALM") return true
+  return false
 }
 
 export async function POST(request: NextRequest) {
@@ -29,18 +69,29 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { memberId, amasiNumber, asiMembershipNo, asiState } = body as {
+    const {
+      memberId,
+      amasiNumber,
+      toType: rawToType,
+      asiMembershipNo,
+      asiState,
+    } = body as {
       memberId?: string
       amasiNumber?: string | number
+      toType?: string
       asiMembershipNo?: string
       asiState?: string | null
     }
 
-    if (!asiMembershipNo || !asiMembershipNo.trim()) {
-      return Response.json({ status: false, message: "ASI membership number is required" }, { status: 400 })
-    }
+    // Default toType to LM for backward compatibility with the original
+    // ALM → LM contract that shipped in 3d0dede.
+    const toType: ToType = rawToType === "ALM" ? "ALM" : "LM"
+
     if (!memberId && !amasiNumber) {
       return Response.json({ status: false, message: "memberId or amasiNumber is required" }, { status: 400 })
+    }
+    if (toType === "LM" && (!asiMembershipNo || !asiMembershipNo.trim())) {
+      return Response.json({ status: false, message: "ASI membership number is required for Life Member" }, { status: 400 })
     }
 
     const supabase = createAdminClient()
@@ -81,11 +132,19 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })
     }
 
-    const memberType = (member.membership_type || "").toUpperCase()
-    const isALM = memberType === "ALM" || memberType.includes("ASSOCIATE LIFE")
-    if (!isALM) {
+    const fromType = classifyFromType(member.membership_type)
+    if (!fromType) {
       return Response.json(
-        { status: false, message: `Member is ${member.membership_type || "(unknown)"}, not ALM. Only ALM members can be upgraded to LM here.` },
+        {
+          status: false,
+          message: `Member is ${member.membership_type || "(unknown)"}. Only ALM and ACM members can be upgraded here.`,
+        },
+        { status: 400 }
+      )
+    }
+    if (!isAllowedTransition(fromType, toType)) {
+      return Response.json(
+        { status: false, message: `Cannot upgrade ${fromType} → ${toType}.` },
         { status: 400 }
       )
     }
@@ -108,7 +167,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const asiTrim = asiMembershipNo.trim()
+    const asiTrim = asiMembershipNo?.trim() || null
     const asiStateTrim = asiState?.trim() || null
     const adminEmail = (session.email as string) || "unknown"
 
@@ -119,7 +178,7 @@ export async function POST(request: NextRequest) {
 
     // Insert pre-approved upgrade row. ai_verified=false + ai_confidence=null
     // distinguish admin-initiated from member-submitted auto-approves; the
-    // review_notes string carries the actor identity.
+    // review_notes string carries the actor identity and the transition.
     const { data: upgrade, error: insertError } = await supabase
       .from("membership_upgrades")
       .insert({
@@ -128,14 +187,14 @@ export async function POST(request: NextRequest) {
         amasi_number: member.amasi_number,
         member_name: member.name,
         member_email: member.email,
-        from_type: "ALM",
-        to_type: "LM",
+        from_type: fromType,
+        to_type: toType,
         asi_membership_no: asiTrim,
         asi_state: asiStateTrim,
         ai_verified: false,
         ai_confidence: null,
         status: "approved",
-        review_notes: `Admin-initiated upgrade by ${adminEmail}`,
+        review_notes: `Admin-initiated ${fromType} → ${toType} by ${adminEmail}`,
         reviewed_at: nowIso,
       })
       .select()
@@ -144,21 +203,28 @@ export async function POST(request: NextRequest) {
     if (insertError || !upgrade) {
       Sentry.captureException(insertError, {
         tags: { route: "members/upgrade/initiate", op: "insert" },
-        extra: { memberId: member.id, amasiNumber: member.amasi_number },
+        extra: { memberId: member.id, amasiNumber: member.amasi_number, fromType, toType },
       })
       return Response.json({ status: false, message: "Failed to record upgrade" }, { status: 500 })
     }
 
-    // Flip the member to LM.
+    // Flip the member to the target type. Voting rights are LM-only per the
+    // bylaws (src/lib/membership-types.ts:59,79); explicitly setting
+    // voting_eligible=false on the ACM → ALM path keeps the flag aligned with
+    // tier even if a stale value was sitting on the row.
+    const memberUpdate: Record<string, unknown> = {
+      membership_type: toType,
+      voting_eligible: toType === "LM",
+      updated_at: nowIso,
+    }
+    if (toType === "LM" && asiTrim) {
+      memberUpdate.asi_membership_no = asiTrim
+      memberUpdate.asi_state = asiStateTrim
+    }
+
     const { error: memberUpdateError } = await supabase
       .from("members")
-      .update({
-        membership_type: "LM",
-        asi_membership_no: asiTrim,
-        asi_state: asiStateTrim,
-        voting_eligible: true,
-        updated_at: nowIso,
-      })
+      .update(memberUpdate)
       .eq("id", member.id)
 
     if (memberUpdateError) {
@@ -166,18 +232,25 @@ export async function POST(request: NextRequest) {
       await supabase.from("membership_upgrades").delete().eq("id", upgrade.id)
       Sentry.captureException(memberUpdateError, {
         tags: { route: "members/upgrade/initiate", op: "member-update" },
-        extra: { memberId: member.id, upgradeId: upgrade.id },
+        extra: { memberId: member.id, upgradeId: upgrade.id, fromType, toType },
       })
       return Response.json({ status: false, message: "Failed to update member record" }, { status: 500 })
     }
 
-    // Approval email — mirrors the member-submitted auto-approve copy.
+    const targetLabel = TARGET_LABEL[toType]
+    const sourceLabel = SOURCE_LABEL[fromType]
+    const votingLine =
+      toType === "LM"
+        ? `<p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>`
+        : `<p style="color: #555; font-size: 14px;">Your Associate Life Member benefits are now active. You can convert to Life Member later by providing your ASI membership details.</p>`
+
+    // Approval email.
     try {
       const resend = getResend()
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
         to: member.email,
-        subject: `AMASI Membership Upgraded to Life Member`,
+        subject: `AMASI Membership Upgraded to ${targetLabel}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
             <div style="text-align: center; margin-bottom: 24px;">
@@ -186,13 +259,13 @@ export async function POST(request: NextRequest) {
             </div>
             <h2 style="color: #1a1a1a;">Membership Upgraded!</h2>
             <p style="color: #555;">Dear ${escapeHtml(member.name)},</p>
-            <p style="color: #555;">Your AMASI membership has been upgraded from <strong>Associate Life Member (ALM)</strong> to <strong>Life Member (LM)</strong>.</p>
+            <p style="color: #555;">Your AMASI membership has been upgraded from <strong>${escapeHtml(sourceLabel)}</strong> to <strong>${escapeHtml(targetLabel)} (${escapeHtml(toType)})</strong>.</p>
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
               <p style="color: #666; font-size: 13px; margin: 0 0 8px;">Membership Status</p>
-              <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">Life Member (LM)</p>
+              <p style="font-size: 24px; font-weight: bold; color: #0f766e; margin: 0;">${escapeHtml(targetLabel)} (${escapeHtml(toType)})</p>
               <p style="color: #666; font-size: 13px; margin: 8px 0 0;">AMASI #${escapeHtml(String(member.amasi_number))}</p>
             </div>
-            <p style="color: #555; font-size: 14px;">You are now eligible for voting rights and all Life Member benefits.</p>
+            ${votingLine}
             <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
             <p style="color: #999; font-size: 12px; text-align: center;">Association of Minimal Access Surgeons of India</p>
           </div>
@@ -207,7 +280,7 @@ export async function POST(request: NextRequest) {
       if (member.phone) {
         const phone = String(member.phone).replace(/\D/g, "")
         if (phone.length >= 10) {
-          await sendMemberApprovedWhatsApp(phone, member.name, "Life Member", String(member.amasi_number))
+          await sendMemberApprovedWhatsApp(phone, member.name, targetLabel, String(member.amasi_number))
         }
       }
     } catch (whatsappErr) {
@@ -221,12 +294,17 @@ export async function POST(request: NextRequest) {
       entityType: "upgrade",
       entityId: upgrade.id,
       entityName: member.name,
-      details: { fromType: "ALM", toType: "LM", amasiNumber: member.amasi_number, asiMembershipNo: asiTrim },
+      details: {
+        fromType,
+        toType,
+        amasiNumber: member.amasi_number,
+        ...(asiTrim ? { asiMembershipNo: asiTrim } : {}),
+      },
     })
 
     return Response.json({
       status: true,
-      message: `${member.name} upgraded to Life Member.`,
+      message: `${member.name} upgraded to ${targetLabel}.`,
       upgrade,
     })
   } catch (error: unknown) {

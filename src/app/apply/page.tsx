@@ -779,12 +779,31 @@ function ApplyForm() {
       // post-order, post-OTP) are no longer invisible even when the user
       // closes the tab mid-flight. UX is unchanged — callers decide whether
       // to block on the return value.
-      postClientLog({
-        message: "apply: saveDraftToServer failed after retry",
-        level: "warning",
-        tags: { component: "apply-flow", step: String(step), error: second.error || "unknown" },
-        extra: { firstError: first.error, hasExtraData: !!extraData },
-      })
+      //
+      // Filter the abort-class cohort: when BOTH attempts return an
+      // abort/load-failed/network-error string, the user navigated away or
+      // the page got suspended mid-save. The document file is already on
+      // the server via /api/ocr's persistOcrUploadToDraft, and the form
+      // snapshot is autosaved to localStorage every 30s, so this is not
+      // a data-integrity failure — it's natural attrition. Skipping the
+      // relay cuts AMASI-MEMBERSHIP-D noise (Seer-flagged super_low
+      // actionability) while preserving signal on actual server failures
+      // (401, 500, conflict-after-retry, etc.).
+      const isAbortClass = (e: string | null | undefined) =>
+        !!e && /aborted|abort|Load failed|NetworkError/i.test(e)
+      const bothAbort = isAbortClass(first.error) && isAbortClass(second.error)
+      if (!bothAbort) {
+        postClientLog({
+          message: "apply: saveDraftToServer failed after retry",
+          level: "warning",
+          tags: { component: "apply-flow", step: String(step), error: second.error || "unknown" },
+          extra: { firstError: first.error, hasExtraData: !!extraData },
+        })
+      } else {
+        console.warn(
+          "apply: saveDraftToServer aborted (both attempts) — likely page unload; localStorage snapshot covers recovery",
+        )
+      }
     }
     return { ok: second.ok, error: second.error }
     // `emailVerified` deliberately omitted from deps — the guard reads

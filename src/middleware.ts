@@ -334,17 +334,24 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      /api/dashboard, /api/badges, etc. after JWT TTL elapsed) and is
       //      not a regression. Pre-2026-05-05 we logged both cases and
       //      AMASI-MEMBERSHIP-7 accumulated 58 false positives in a week.
-      //   2. Skip admin-only-by-design paths (/api/admin/*, /api/dashboard*).
-      //      These will never be allowlisted, so a 401 here cannot represent
-      //      a missing-allowlist regression — it's either a logged-out admin
-      //      tab whose session cookie expired (browser dropped it;
-      //      indistinguishable from "no cookie" at this layer) or an external
-      //      probe. Neither is actionable. AMASI-MEMBERSHIP-2V was the noise
-      //      channel for /api/admin/* (39 events / 3 days from sidebar
-      //      polling) and regressed in late May 2026 from the same pattern
-      //      against /api/dashboard polled by src/app/page.tsx — the admin
-      //      homepage refetches dashboard + heatmap data on every range
-      //      change, so a cleared cookie + open tab fires both routes.
+      //   2. Skip admin-only-by-design paths (/api/admin/*, /api/dashboard*,
+      //      /api/applications/list). These will never be allowlisted, so a
+      //      401 here cannot represent a missing-allowlist regression — it's
+      //      either a logged-out admin tab whose session cookie expired
+      //      (browser dropped it; indistinguishable from "no cookie" at this
+      //      layer) or an external probe. Neither is actionable. AMASI-
+      //      MEMBERSHIP-2V was the noise channel for /api/admin/* (39 events
+      //      / 3 days from sidebar polling), regressed in late May 2026 from
+      //      the same pattern against /api/dashboard polled by
+      //      src/app/page.tsx — the admin homepage refetches dashboard +
+      //      heatmap data on every range change — and regressed again in
+      //      early Jun 2026 from /api/applications/list polled by
+      //      /pending/page.tsx:251 (145 events / 16 days). The applications
+      //      namespace is split (list/approve/reject/clarification/rescore/
+      //      refund/create-pending are admin; submit/draft/save-draft/[id]
+      //      etc. are member) so we cannot prefix-skip — listed explicitly.
+      //      Long-term: withAdminAuth() inversion (see CONTEXT.md fragile-
+      //      area #2) eliminates this carve-out entirely.
       //   3. Skip obvious vulnerability-scanner probes (/api/.env,
       //      /api/wp-login.php, /api/phpmyadmin/, etc.). Bots scan every
       //      public site for these; the path shapes are forbidden by Next's
@@ -356,7 +363,9 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      regressed at 2026-05-30T12:07Z on the first such probe after
       //      the admin-path carve-out shipped (GET /api/.env from a CIS VPS).
       const isAdminOnlyByDesign =
-        pathname.startsWith("/api/admin/") || pathname.startsWith("/api/dashboard")
+        pathname.startsWith("/api/admin/") ||
+        pathname.startsWith("/api/dashboard") ||
+        pathname === "/api/applications/list"
       if (!token && !isAdminOnlyByDesign && !isScannerProbe(pathname)) {
         // Mobile-app traffic (Flutter v1.0.4+2 sets X-Source: mobile-app on
         // every request) gets its own Sentry fingerprint + tag so we can

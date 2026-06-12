@@ -81,82 +81,117 @@ export async function PUT(request: NextRequest) {
     }
 
     if (existing) {
-      // Always use optimistic locking for existing drafts
-      const lockValue = lastUpdatedAt || existing.updated_at
-
-      // Merge step_data with existing data.
+      // Optimistic-lock update with bounded server-side retry on conflict.
       //
-      // Non-uploads keys (formData, membership_type, email_verified, etc.):
-      // shallow override, same as pre-Stage-B. Behavior unchanged.
+      // The race we close (AMASI-MEMBERSHIP-D, 44 conflict events / 30d at
+      // diagnosis time): /api/ocr's persistOcrUploadToDraft writes
+      // step_data.uploads + bumps updated_at out of band of the client's
+      // DraftSaveQueue. Client's save sees updated_at moved → 409. Client's
+      // 500ms-delayed retry races yet another OCR write → 409 again.
       //
-      // `uploads`: per-key merge via mergeDraftUploads (Stage B, 2026-05-23).
-      // The shallow-merge wholesale-replace pattern caused six paid
-      // applicants to lose their fileUrls on 2026-05-23. mergeDraftUploads
-      // refuses to clobber an existing fileUrl with a null/empty one and
-      // treats `uploads = {}` as a no-op. Removal is now opt-in via a
-      // null sentinel (apply/page.tsx handleRemoveFile patched in lockstep).
-      const existingStepData = (existing.step_data || {}) as Record<string, unknown>
+      // Solution: when the optimistic lock fails, re-read and retry server-
+      // local, mirroring the loop in src/lib/persist-ocr-upload.ts. Each
+      // iteration re-merges against the freshly-read step_data so uploads
+      // written by concurrent OCR completions are preserved (mergeDraftUploads
+      // already protects against fileUrl clobber per Stage B 2026-05-23).
+      //
+      // Budget: MAX_ATTEMPTS = 3. True cross-tab conflicts still surface 409
+      // after exhaustion; this is intentional — the burst-induced cohort goes
+      // to ~0 while real concurrent-tab races stay visible to the client.
+      const MAX_ATTEMPTS = 3
       const incomingStepData = (step_data || {}) as Record<string, unknown>
-      const mergedStepData: Record<string, unknown> = {
-        ...existingStepData,
-        ...incomingStepData,
-      }
-      if ("uploads" in incomingStepData) {
-        mergedStepData.uploads = mergeDraftUploads(
-          existingStepData.uploads as Record<string, unknown> | null | undefined,
-          incomingStepData.uploads as Record<string, unknown> | null | undefined,
-        )
+
+      let current: typeof existing = existing
+      let lockValue: string = lastUpdatedAt || existing.updated_at
+      let updated: { id: string; email: string; current_step: number; step_data: Record<string, unknown>; payment_order_id: string | null; payment_id: string | null; status: string; updated_at: string } | null = null
+      let writeError: unknown = null
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        // Merge step_data with the latest-known existing data.
+        //
+        // Non-uploads keys (formData, membership_type, email_verified, etc.):
+        // shallow override, same as pre-Stage-B. Behavior unchanged.
+        //
+        // `uploads`: per-key merge via mergeDraftUploads (Stage B, 2026-05-23).
+        // The shallow-merge wholesale-replace pattern caused six paid
+        // applicants to lose their fileUrls on 2026-05-23. mergeDraftUploads
+        // refuses to clobber an existing fileUrl with a null/empty one and
+        // treats `uploads = {}` as a no-op. Removal is now opt-in via a
+        // null sentinel (apply/page.tsx handleRemoveFile patched in lockstep).
+        const existingStepData = (current.step_data || {}) as Record<string, unknown>
+        const mergedStepData: Record<string, unknown> = {
+          ...existingStepData,
+          ...incomingStepData,
+        }
+        if ("uploads" in incomingStepData) {
+          mergedStepData.uploads = mergeDraftUploads(
+            existingStepData.uploads as Record<string, unknown> | null | undefined,
+            incomingStepData.uploads as Record<string, unknown> | null | undefined,
+          )
+        }
+
+        const updatePayload: Record<string, unknown> = {
+          current_step,
+          step_data: mergedStepData,
+          membership_type: membership_type ?? current.membership_type,
+          updated_at: new Date().toISOString(),
+        }
+        if (payment_order_id !== undefined) updatePayload.payment_order_id = payment_order_id
+        if (payment_id !== undefined) {
+          updatePayload.payment_id = payment_id
+          updatePayload.has_verified_payment = true
+        }
+
+        const { data: row, error: updateError } = await supabase
+          .from("draft_applications")
+          .update(updatePayload)
+          .eq("id", current.id)
+          .eq("updated_at", lockValue)
+          .select("id, email, current_step, step_data, payment_order_id, payment_id, status, updated_at")
+          .maybeSingle()
+
+        if (updateError) {
+          writeError = updateError
+          break
+        }
+
+        if (row) {
+          updated = row
+          break
+        }
+
+        // Optimistic lock missed — re-read and loop. Bounded so a real cross-
+        // tab race still surfaces 409 to the caller.
+        const { data: fresh, error: readError } = await supabase
+          .from("draft_applications")
+          .select("id, step_data, updated_at, membership_type, current_step, has_verified_payment")
+          .eq("id", current.id)
+          .maybeSingle()
+
+        if (readError || !fresh) break
+
+        current = fresh
+        lockValue = fresh.updated_at
       }
 
-      const updatePayload: Record<string, unknown> = {
-        current_step,
-        step_data: mergedStepData,
-        membership_type: membership_type ?? existing.membership_type,
-        updated_at: new Date().toISOString(),
-      }
-      if (payment_order_id !== undefined) updatePayload.payment_order_id = payment_order_id
-      if (payment_id !== undefined) {
-        updatePayload.payment_id = payment_id
-        updatePayload.has_verified_payment = true
-      }
-
-      const query = supabase
-        .from("draft_applications")
-        .update(updatePayload)
-        .eq("id", existing.id)
-        .eq("updated_at", lockValue)
-
-      const { data: updated, error: updateError } = await query
-        .select("id, email, current_step, step_data, payment_order_id, payment_id, status, updated_at")
-        .maybeSingle()
-
-      if (updateError) {
-        console.error("Draft update error:", updateError)
-        Sentry.captureException(updateError, {
+      if (writeError) {
+        console.error("Draft update error:", writeError)
+        Sentry.captureException(writeError, {
           tags: { route: "applications/save-draft", op: "update", reason: "save_draft_write_failure" },
           extra: { draft_id: existing.id, current_step, has_payment_order_id: payment_order_id !== undefined, has_payment_id: payment_id !== undefined },
         })
         return Response.json({ status: false, message: "Failed to save draft" }, { status: 500 })
       }
 
-      // If no row returned, it's a conflict (optimistic lock failed). Re-SELECT
-      // to get the actual current updated_at — `existing.updated_at` is the
-      // value we read BEFORE the failed update, which in a 2-writer race
-      // equals the client's stale lastUpdatedAt. Echoing it back makes the
-      // client retry with the same stale value and 409 forever. See Sentry
-      // AMASI-MEMBERSHIP-D (37 users, step 3 parallel OCR save burst).
+      // Attempts exhausted — emit 409 with the latest known updated_at so the
+      // client can retry against a value we know was current at our last read.
       if (!updated) {
-        const { data: fresh } = await supabase
-          .from("draft_applications")
-          .select("updated_at")
-          .eq("id", existing.id)
-          .maybeSingle()
         return Response.json(
           {
             status: false,
             code: "CONFLICT",
             message: "Draft was modified by another session.",
-            serverUpdatedAt: fresh?.updated_at ?? existing.updated_at,
+            serverUpdatedAt: lockValue,
           },
           { status: 409 }
         )
@@ -164,13 +199,15 @@ export async function PUT(request: NextRequest) {
 
       // Funnel: only log when the step actually advanced (save-draft is also
       // called for intra-step auto-saves, which would otherwise spam the table).
-      if (current_step !== existing.current_step) {
+      // Compare against the latest-read current_step so concurrent step writes
+      // are reflected correctly.
+      if (current_step !== current.current_step) {
         void recordStepEvent({
           email: normalizedEmail,
           draftId: updated.id,
           eventType: "step_entered",
           step: current_step,
-          metadata: { from_step: existing.current_step, membership_type: membership_type ?? existing.membership_type },
+          metadata: { from_step: current.current_step, membership_type: membership_type ?? current.membership_type },
         }, supabase)
       }
 

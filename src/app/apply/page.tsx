@@ -781,16 +781,23 @@ function ApplyForm() {
       // to block on the return value.
       //
       // Filter the abort-class cohort: when BOTH attempts return an
-      // abort/load-failed/network-error string, the user navigated away or
-      // the page got suspended mid-save. The document file is already on
-      // the server via /api/ocr's persistOcrUploadToDraft, and the form
-      // snapshot is autosaved to localStorage every 30s, so this is not
-      // a data-integrity failure — it's natural attrition. Skipping the
-      // relay cuts AMASI-MEMBERSHIP-D noise (Seer-flagged super_low
-      // actionability) while preserving signal on actual server failures
-      // (401, 500, conflict-after-retry, etc.).
+      // abort/load-failed/network-error/timeout string, the user navigated
+      // away, the page got suspended mid-save, or the client-side 12s
+      // AbortSignal.timeout fired (mobile network flap). The document file
+      // is already on the server via /api/ocr's persistOcrUploadToDraft,
+      // and the form snapshot is autosaved to localStorage every 30s, so
+      // this is not a data-integrity failure — it's natural attrition.
+      // Skipping the relay cuts AMASI-MEMBERSHIP-D noise (Seer-flagged
+      // super_low actionability) while preserving signal on actual server
+      // failures (401, 500, conflict-after-retry, etc.).
+      //
+      // Timeout was added after d44bb97: 30d breakdown showed conflict (44)
+      // / auth (17) / timeout (9) / Fetch is aborted (4) / Load failed (1)
+      // — d44bb97 only caught the last two. "timeout" maps to a DOMException
+      // with name="TimeoutError" from AbortSignal.timeout(12000), structurally
+      // identical to user-abort and with the same localStorage recovery story.
       const isAbortClass = (e: string | null | undefined) =>
-        !!e && /aborted|abort|Load failed|NetworkError/i.test(e)
+        !!e && /aborted|abort|Load failed|NetworkError|timeout/i.test(e)
       const bothAbort = isAbortClass(first.error) && isAbortClass(second.error)
       if (!bothAbort) {
         postClientLog({
@@ -801,7 +808,7 @@ function ApplyForm() {
         })
       } else {
         console.warn(
-          "apply: saveDraftToServer aborted (both attempts) — likely page unload; localStorage snapshot covers recovery",
+          "apply: saveDraftToServer aborted (both attempts) — likely page unload or network timeout; localStorage snapshot covers recovery",
         )
       }
     }

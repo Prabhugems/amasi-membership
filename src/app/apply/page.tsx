@@ -434,6 +434,7 @@ function ApplyForm() {
   // restored state commits — a brief but real localStorage clobber.
   const restoredRef = useRef(false)
   useEffect(() => {
+    let restoredVerified = false
     try {
       const savedPhase = localStorage.getItem("amasi_apply_phase")
       if (savedPhase && ["check", "landing", "upload", "review"].includes(savedPhase)) {
@@ -445,10 +446,11 @@ function ApplyForm() {
         // first post-restore saveDraftToServer doesn't silent-skip on
         // emailVerifiedRef=false (residual AMASI-MEMBERSHIP-16 tail —
         // f7fb405 closed the stale-closure race, this closes the
-        // missing-restore variant). The cookie remains the real auth; if
-        // it has expired the auto-refresh-token effect prompts re-verify.
+        // missing-restore variant). Cookie validity is checked below.
         if (savedPhase === "upload" || savedPhase === "review") {
           setEmailVerified(true)
+          emailVerifiedRef.current = true
+          restoredVerified = true
         }
       }
       const savedForm = localStorage.getItem("amasi_apply_form")
@@ -460,6 +462,38 @@ function ApplyForm() {
       }
     } catch {}
     restoredRef.current = true
+
+    // Proactive cookie probe when we restored a verified-state phase. The
+    // cookie has a 24h hard cap (auth.ts setMemberCookie + refresh-token
+    // route) and iOS browsers can evict it sooner, so the in-memory
+    // emailVerified flag we just restored may not be backed by a live
+    // session. Without this check, the user's first OCR upload 401s and
+    // surfaces as AMASI-MEMBERSHIP-31 (ocr_auth_rejected) — recoverable
+    // via the rejected-card "Re-verify email" button at the upload step,
+    // but at the cost of one wasted upload attempt per returning user.
+    // Probe via refresh-token (same endpoint the 45-min interval uses);
+    // on 401, mirror the rejected-card recovery: drop the phase/type
+    // localStorage keys, clear the verified flag, route back to "check".
+    // Form data is preserved so typed fields survive.
+    if (restoredVerified) {
+      void (async () => {
+        try {
+          const res = await fetch("/api/member/refresh-token", { method: "POST" })
+          if (res.status === 401) {
+            localStorage.removeItem("amasi_apply_phase")
+            localStorage.removeItem("amasi_apply_type")
+            setEmailVerified(false)
+            emailVerifiedRef.current = false
+            setPhase("check")
+            toast.error("Your session expired. Please verify your email again to continue.", { duration: 10000 })
+          }
+        } catch {
+          // Network failure — leave the optimistic restore in place. If
+          // the cookie is in fact dead, the OCR call will still 401 and
+          // the existing rejected-card recovery handles it.
+        }
+      })()
+    }
   }, [])
 
   // Auto-save form data to localStorage

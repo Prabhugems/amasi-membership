@@ -326,8 +326,74 @@ export async function POST(request: NextRequest) {
         .insert(applicationRow)
         .select("id")
         .single()
-      app = ins.data
-      insertError = ins.error
+
+      if (ins.error?.code === "23505") {
+        // Hit idx_unique_active_application — an active (non-rejected,
+        // non-withdrawn) row already exists for (email, membership_type).
+        // Two cases the client can't distinguish at the network layer:
+        //
+        //   a) Same reference_number → this IS our own retry. The first
+        //      attempt's INSERT landed but the client never saw the 200
+        //      (network blip / Vercel timeout). The client's loop then
+        //      raced the index, the index correctly rejected the duplicate
+        //      with 23505, and we used to surface that as a generic 500
+        //      → status:false → client gave up → fatal "apply: paid but
+        //      submit failed after retries" (AMASI-MEMBERSHIP-3A) on a
+        //      user whose data is fine. Mirror the WS-C lost-race shape
+        //      (lines ~287-321) and return the success envelope so the
+        //      client lands on the success screen.
+        //
+        //   b) Different reference_number → there's a separate active
+        //      application for this (email, type) — the user already
+        //      applied. 409 + retryable:false so the client (once
+        //      updated) breaks out of the retry loop instead of looping
+        //      uselessly and showing the same fatal toast.
+        //
+        // Match by the exact values the insert used; the index is on raw
+        // text columns (no lower/trim), so any normalization here would
+        // miss the conflict row.
+        const { data: existing } = await supabase
+          .from("membership_applications")
+          .select("id, status, reference_number")
+          .eq("email", formData.email)
+          .eq("membership_type", formData.membershipType)
+          .not("status", "in", '("rejected","withdrawn")')
+          .maybeSingle()
+
+        if (existing?.id && existing.reference_number === referenceNumber) {
+          const approved =
+            existing.status === "approved" || existing.status === "ai_approved"
+          return Response.json({
+            status: true,
+            approved,
+            applicationId: existing.id,
+            message: approved
+              ? "Application already approved."
+              : "Application already submitted.",
+          })
+        }
+
+        if (existing?.id) {
+          return Response.json(
+            {
+              status: false,
+              retryable: false,
+              code: "duplicate_active_application",
+              message: "An active application already exists for this email.",
+            },
+            { status: 409 },
+          )
+        }
+
+        // 23505 raised but the active row vanished between the failed
+        // INSERT and our re-read (status flipped to rejected/withdrawn
+        // mid-flight, or some other unique index fired). Surface as a
+        // genuine failure rather than silently succeeding.
+        insertError = ins.error
+      } else {
+        app = ins.data
+        insertError = ins.error
+      }
     }
 
     if (insertError) {

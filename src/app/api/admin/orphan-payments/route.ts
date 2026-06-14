@@ -10,7 +10,6 @@ const MAX_LIMIT = 500
 type DraftHit = {
   id: string
   email: string | null
-  reference_number: string | null
   status: string | null
   updated_at: string | null
 }
@@ -86,12 +85,13 @@ export async function GET(request: NextRequest) {
 
   const rows = orphans ?? []
 
-  // Build the draft-hint set by email only. This endpoint previously also
-  // tried to match by membership_payments.reference_number, but that column
-  // does not exist on the table — pure schema drift (see CONTEXT.md).
-  // The select above and the lookup below were aligned with the real
-  // schema in 2026-05-25; the email-match path was the only one that
-  // ever produced hits anyway.
+  // Build the draft-hint set by email only. Two prior schema-drift bugs
+  // hit this endpoint: (a) selecting membership_payments.reference_number
+  // (fixed 2026-05-25, that column never existed on that table); (b) the
+  // draft-side select below still asked for draft_applications.reference_number,
+  // which also doesn't exist — the request 400'd silently and admins saw no
+  // orphan hints. Both are aligned with the real schema now; email-match was
+  // always the only path that produced hits.
   const emails = Array.from(
     new Set(
       rows
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
   const byEmail = emails.length
     ? await supabase
         .from("draft_applications")
-        .select("id, email, reference_number, status, updated_at")
+        .select("id, email, status, updated_at")
         .in("email", emails)
     : null
 

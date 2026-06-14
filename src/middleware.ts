@@ -211,6 +211,27 @@ const PUBLIC_API_ROUTES = [
   "/api/incomplete_application",
 ]
 
+// Known-dead legacy paths. Confirmed server-side to map to no real flow:
+// every membership Razorpay capture since the 2026-05-27 cutover linked to
+// an application (zero orphans). The Flutter v1.0.4+2 binary nonetheless
+// keeps POSTing /api/verifyPayment (147 events / 146 users since cutover,
+// AMASI-MEMBERSHIP-2V). Listed here purely to mute the middleware-reject
+// Sentry capture for these paths — the 401 JSON response below is
+// unchanged, so dead clients still get a clean terminal failure and
+// behaviour does not change for them. Adding to PUBLIC_API_ROUTES would
+// be wrong (we DO want to keep rejecting these). Match is exact OR prefix
+// + "/" so a future /api/verifyPayment/foo would also be muted, but a
+// look-alike like /api/verifyPaymentX is not.
+const KNOWN_DEAD_LEGACY_PATHS = [
+  "/api/verifyPayment",
+]
+
+function isKnownDeadLegacyPath(pathname: string): boolean {
+  return KNOWN_DEAD_LEGACY_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  )
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const origin = request.headers.get("origin")
@@ -328,7 +349,7 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       // immediately instead of needing a user report. Path goes in `extra`,
       // not `tags`, to keep tag cardinality bounded.
       //
-      // Three carve-outs keep this signal high:
+      // Four carve-outs keep this signal high:
       //   1. Only fire when the cookie is truly absent. A present-but-invalid
       //      cookie means a routine session expiry (admin tab still polling
       //      /api/dashboard, /api/badges, etc. after JWT TTL elapsed) and is
@@ -362,11 +383,24 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      test allowlist of every real /api/* route. AMASI-MEMBERSHIP-2V
       //      regressed at 2026-05-30T12:07Z on the first such probe after
       //      the admin-path carve-out shipped (GET /api/.env from a CIS VPS).
+      //   4. Skip narrowly-listed known-dead legacy paths (KNOWN_DEAD_LEGACY_PATHS,
+      //      defined above PUBLIC_API_ROUTES). These are paths the in-stores
+      //      Flutter binary still calls but which have been confirmed to map
+      //      to no real flow server-side (e.g. /api/verifyPayment — all
+      //      post-cutover Razorpay captures linked to an application). The
+      //      regression alarm must still fire for any genuine new endpoint
+      //      that ships 401-blocked, so this carve-out is opt-in per path,
+      //      not a wildcard.
       const isAdminOnlyByDesign =
         pathname.startsWith("/api/admin/") ||
         pathname.startsWith("/api/dashboard") ||
         pathname === "/api/applications/list"
-      if (!token && !isAdminOnlyByDesign && !isScannerProbe(pathname)) {
+      if (
+        !token &&
+        !isAdminOnlyByDesign &&
+        !isScannerProbe(pathname) &&
+        !isKnownDeadLegacyPath(pathname)
+      ) {
         // Mobile-app traffic (Flutter v1.0.4+2 sets X-Source: mobile-app on
         // every request) gets its own Sentry fingerprint + tag so we can
         // separate legacy-shim regressions from admin/cron auth misses. The

@@ -1,5 +1,4 @@
 "use client"
-import Image from "next/image"
 import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, Upload, X, FileText, Send, Loader2, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
@@ -151,7 +150,7 @@ export default function NewTicketForm({
             <div className="flex items-center gap-4">
               {preview ? (
                 <div className="h-14 w-14 shrink-0 overflow-hidden rounded-md border border-border">
-                  <Image src={preview} alt="" width={56} height={56} className="h-full w-full object-cover" />
+                  <img src={preview} alt="" className="h-full w-full object-cover" />
                 </div>
               ) : (
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-border bg-muted"><FileText className="h-5 w-5 text-muted-foreground" /></div>

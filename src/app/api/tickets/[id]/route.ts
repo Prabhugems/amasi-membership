@@ -169,7 +169,8 @@ export async function PATCH(
       if (reopenErr || !reopened) {
         return Response.json({ error: reopenErr?.message || "Failed to reopen" }, { status: 500 })
       }
-      return Response.json(reopened)
+      // Match the GET handler: members receive only safe columns, never admin-only fields.
+      return Response.json(stripToMemberFields(reopened))
     }
 
     const session = adminSession

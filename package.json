@@ -74,6 +74,7 @@
     "depcheck": "^1.4.7",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "eslint-plugin-diff": "^2.1.7",
     "eslint-plugin-security": "^4.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
@@ -85,6 +86,6 @@
     "vitest": "^4.1.5"
   },
   "lint-staged": {
-    "*.{ts,tsx}": "eslint --fix"
+    "*.{ts,tsx}": "eslint --config eslint.config.staged.mjs --fix"
   }
 }

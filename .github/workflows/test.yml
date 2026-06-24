@@ -19,9 +19,30 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-  # Lint job intentionally not added here yet — repo has 304 pre-existing
-  # ESLint errors (mostly @typescript-eslint/no-explicit-any in fragile payment
-  # and zoho code). Add a `lint` job to CI once that baseline is cleaned up.
+  # Diff-scoped lint. The repo carries ~300 pre-existing ESLint errors (mostly
+  # @typescript-eslint/no-explicit-any in fragile payment / zoho code), so a
+  # full-repo lint would fail every PR on legacy debt. eslint-plugin-diff (via
+  # eslint.config.ci.mjs) filters reports down to lines changed relative to the
+  # PR base branch, so this job blocks only on problems the PR itself introduces.
+  # Mirrors the pre-commit hook (eslint.config.staged.mjs). PR-only: on push to
+  # main there is no base to diff against.
+  lint:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so origin/<base> is present for the diff.
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint changed lines only
+        run: npx eslint --config eslint.config.ci.mjs .
+        env:
+          ESLINT_PLUGIN_DIFF_COMMIT: origin/${{ github.base_ref }}
 
   test:
     runs-on: ubuntu-latest

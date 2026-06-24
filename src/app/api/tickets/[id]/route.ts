@@ -114,8 +114,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getAdminSession()
-    if (!session) {
+    const adminSession = await getAdminSession()
+    const memberSession = adminSession ? null : await getMemberSession()
+    if (!adminSession && !memberSession) {
       return Response.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -137,6 +138,42 @@ export async function PATCH(
 
     const supabase = createAdminClient()
     const isUuid = UUID_REGEX.test(id)
+
+    // Member self-service: a logged-in member who OWNS the ticket may reopen it
+    // (status -> "open") and nothing else — no priority or assignee changes.
+    // Admins fall through to the full update flow below.
+    if (!adminSession) {
+      if (status !== "open" || priority !== undefined || assigned_to !== undefined) {
+        return Response.json(
+          { error: "Members can only reopen their own ticket" },
+          { status: 403 }
+        )
+      }
+      const { data: owned, error: ownedErr } = await supabase
+        .from("support_tickets")
+        .select("id, email")
+        .eq(isUuid ? "id" : "ticket_number", id)
+        .single()
+      if (ownedErr || !owned) {
+        return Response.json({ error: "Ticket not found" }, { status: 404 })
+      }
+      if (((memberSession!.email as string) || "").toLowerCase() !== (owned.email || "").toLowerCase()) {
+        return Response.json({ error: "Ticket not found" }, { status: 404 })
+      }
+      const { data: reopened, error: reopenErr } = await supabase
+        .from("support_tickets")
+        .update({ status: "open", closed_at: null, updated_at: new Date().toISOString() })
+        .eq("id", owned.id)
+        .select()
+        .single()
+      if (reopenErr || !reopened) {
+        return Response.json({ error: reopenErr?.message || "Failed to reopen" }, { status: 500 })
+      }
+      // Match the GET handler: members receive only safe columns, never admin-only fields.
+      return Response.json(stripToMemberFields(reopened))
+    }
+
+    const session = adminSession
 
     const updates: Record<string, unknown> = {
       status,

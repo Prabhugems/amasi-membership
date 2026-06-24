@@ -28,7 +28,7 @@ type DetailHook = ReturnType<typeof useTicketDetail>
 function EmptyConversation() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-      <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+      <div className="h-16 w-16 rounded-md bg-muted/50 flex items-center justify-center mb-4">
         <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
       </div>
       <h3 className="text-lg font-semibold text-muted-foreground/70">
@@ -102,13 +102,13 @@ export function TicketDetailPanel({
   queryClient: DetailHook["queryClient"]
 }) {
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-gray-50/30 dark:bg-slate-800/30" role="complementary" aria-label="Ticket detail">
+    <div className="flex-1 flex flex-col min-w-0 bg-muted/40" role="complementary" aria-label="Ticket detail">
       {!selectedTicketId ? (
         <EmptyConversation />
       ) : detailLoading || !ticketDetail ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
             <span className="text-xs text-muted-foreground">
               Loading conversation...
             </span>
@@ -117,7 +117,7 @@ export function TicketDetailPanel({
       ) : (
         <>
           {/* Ticket header */}
-          <div className="px-6 py-3.5 border-b bg-white dark:bg-slate-900 shrink-0">
+          <div className="px-6 py-3.5 border-b bg-card shrink-0">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <h3 className="text-base font-bold truncate leading-tight">
@@ -148,7 +148,7 @@ export function TicketDetailPanel({
               <div className="flex items-center gap-2 shrink-0">
                 {(ticketDetail.status === "open" ||
                   ticketDetail.status === "in_progress") && (
-                  <div className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/15 px-2 py-1 rounded-full border border-amber-200 font-medium">
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted px-2 py-1 rounded-md border border-border font-medium">
                     <Clock className="h-3 w-3" />
                     {waitingTime(ticketDetail.created_at)}
                   </div>
@@ -162,7 +162,7 @@ export function TicketDetailPanel({
             {(ticketDetail.first_response_at || ticketDetail.sla_due_at) && (
               <div className="flex items-center gap-3 mt-2 flex-wrap">
                 {ticketDetail.first_response_at && ticketDetail.created_at && (
-                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
+                  <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-md border border-border font-medium">
                     First response: {formatDuration(
                       new Date(ticketDetail.first_response_at).getTime() -
                       new Date(ticketDetail.created_at).getTime()
@@ -179,7 +179,7 @@ export function TicketDetailPanel({
           </div>
 
           {/* Admin action bar */}
-          <div className="px-6 py-2.5 border-b bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center gap-4 flex-wrap shrink-0">
+          <div className="px-6 py-2.5 border-b bg-card/80 backdrop-blur-sm flex items-center gap-4 flex-wrap shrink-0">
             {/* Status dropdown */}
             <div className="flex items-center gap-1.5">
               <label className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
@@ -189,7 +189,7 @@ export function TicketDetailPanel({
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {STATUS_OPTIONS.map((s) => (
                     <option key={s} value={s}>
@@ -210,7 +210,7 @@ export function TicketDetailPanel({
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
-                  className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p} value={p}>
@@ -231,7 +231,7 @@ export function TicketDetailPanel({
                 <select
                   value={editAssignee}
                   onChange={(e) => setEditAssignee(e.target.value)}
-                  className="appearance-none rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 focus-visible:border-teal-400 transition-shadow"
+                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {ADMIN_ASSIGNEES.map((a) => (
                     <option key={a} value={a}>
@@ -248,7 +248,7 @@ export function TicketDetailPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs gap-1.5 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/60"
+                className="h-7 text-xs gap-1.5 border-border hover:bg-accent"
                 onClick={handleSaveChanges}
                 disabled={updateMutation.isPending}
               >
@@ -268,7 +268,7 @@ export function TicketDetailPanel({
                 }
                 className={`h-7 text-xs gap-1.5 ${
                   ticketDetail.status === "closed"
-                    ? "border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
+                    ? "border-primary/40 text-primary hover:bg-primary/10"
                     : ""
                 }`}
                 onClick={handleToggleClose}
@@ -292,11 +292,11 @@ export function TicketDetailPanel({
             {/* Original message */}
             <div className="flex justify-start mb-5">
               <div className="flex gap-2.5 max-w-[75%]">
-                <div className="shrink-0 h-9 w-9 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold mt-1 shadow-sm text-gray-600 dark:text-slate-400">
+                <div className="shrink-0 h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-bold mt-1 shadow-sm text-muted-foreground">
                   {ticketDetail.name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div>
-                  <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl rounded-tl-md px-4 py-3.5 shadow-sm">
+                  <div className="bg-card border border-border rounded-md rounded-tl-md px-4 py-3.5 shadow-sm">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs font-bold text-foreground">
                         {ticketDetail.name}
@@ -306,19 +306,19 @@ export function TicketDetailPanel({
                         opened this ticket
                       </span>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-700 dark:text-slate-300">
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground">
                       {ticketDetail.description}
                     </p>
                     {/* Ticket-level attachments */}
                     {ticketDetail.attachments && ticketDetail.attachments.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-gray-100 dark:border-slate-800">
+                      <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2 border-t border-border">
                         {ticketDetail.attachments.map((att, i) => (
                           <a
                             key={i}
                             href={att.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors bg-muted text-muted-foreground hover:bg-accent border border-border"
                           >
                             <Paperclip className="h-3 w-3 shrink-0" />
                             <span className="truncate max-w-[120px]">{att.filename}</span>

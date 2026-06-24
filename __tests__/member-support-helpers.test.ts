@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
-  TICKET_CATEGORIES, PRIORITIES, statusMeta, extractAttachment, isImageUrl,
+  TICKET_CATEGORIES, PRIORITIES, statusMeta, extractAttachment, isImageUrl, isMemberReply,
 } from "@/components/member-support/support-constants"
 
 describe("member-support helpers", () => {
@@ -37,5 +37,13 @@ describe("member-support helpers", () => {
   it("detects image urls", () => {
     expect(isImageUrl("https://x.test/p.JPG")).toBe(true)
     expect(isImageUrl("https://x.test/doc.pdf")).toBe(false)
+  })
+
+  it("treats is_admin=false (and missing) as the member's own reply", () => {
+    expect(isMemberReply({ is_admin: false })).toBe(true)
+    expect(isMemberReply({})).toBe(true)
+  })
+  it("treats is_admin=true as not the member's reply", () => {
+    expect(isMemberReply({ is_admin: true })).toBe(false)
   })
 })

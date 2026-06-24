@@ -16,5 +16,6 @@ export interface TicketReply {
   author_name?: string
   author_role?: string
   as_member?: boolean
+  is_admin?: boolean
   created_at?: string
 }

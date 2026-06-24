@@ -33,3 +33,9 @@ export function extractAttachment(msg?: string): { text: string; url: string | n
 export function isImageUrl(url: string): boolean {
   return /\.(jpg|jpeg|png|gif|webp|bmp|svg)/i.test(url)
 }
+
+// A reply is the member's own when it was not written by an admin.
+// Backend stores ownership as `is_admin` on ticket_replies (admin=true, member=false).
+export function isMemberReply(reply: { is_admin?: boolean }): boolean {
+  return !reply.is_admin
+}

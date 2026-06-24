@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, Send, Loader2, Paperclip, X, FileText, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { statusMeta, extractAttachment, isImageUrl } from "./support-constants"
+import { statusMeta, extractAttachment, isImageUrl, isMemberReply } from "./support-constants"
 import { replyToTicket } from "./support-api"
 import type { MemberTicket, TicketReply } from "./types"
 
@@ -78,7 +78,7 @@ export default function TicketConversation({
           <div className="flex justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : (
           replies.map((r, i) => {
-            const mine = r.as_member || r.author_role === "member"
+            const mine = isMemberReply(r)
             const { text: body, url } = extractAttachment(r.message)
             return (
               <div key={r.id || i} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -110,7 +110,7 @@ export default function TicketConversation({
             <div className="mb-2 flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs">
               <FileText className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">{file.name}</span>
-              <button onClick={() => setFile(null)} aria-label="Remove" className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+              <button onClick={() => { setFile(null); if (fileInput.current) fileInput.current.value = "" }} aria-label="Remove" className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
             </div>
           )}
           <div className="flex items-end gap-2">

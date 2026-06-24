@@ -47,7 +47,7 @@ function TicketsContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
             <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-              <Ticket className="h-5 w-5 text-white" />
+              <Ticket className="h-5 w-5 text-primary-foreground" />
             </div>
             Support Tickets
           </h1>

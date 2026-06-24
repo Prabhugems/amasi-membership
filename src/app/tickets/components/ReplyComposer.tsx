@@ -121,7 +121,7 @@ export function ReplyComposer({
 
       {/* Internal note banner */}
       {isInternalNote && (
-        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-md px-3 py-2">
           <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
             Internal note
           </span>
@@ -167,7 +167,7 @@ export function ReplyComposer({
           type="button"
           onClick={() => setIsInternalNote(!isInternalNote)}
           title={isInternalNote ? "Switch to public reply" : "Switch to internal note"}
-          className={`shrink-0 h-10 px-3 rounded-lg text-xs font-semibold border transition-all duration-150 ${
+          className={`shrink-0 h-10 px-3 rounded-md text-xs font-semibold border transition-all duration-150 ${
             isInternalNote
               ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/30"
               : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"

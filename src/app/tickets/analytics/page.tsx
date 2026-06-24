@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   Clock,
   AlertTriangle,
-  Loader2,
   MessageSquare,
   ShieldAlert,
 } from "lucide-react"

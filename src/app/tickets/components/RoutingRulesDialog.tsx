@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner"
 import { CATEGORIES, ADMIN_ASSIGNEES, PRIORITY_OPTIONS, PRIORITY_CONFIG } from "../lib/constants"
 import type { RoutingRule } from "../lib/types"
+import { PriorityBadge } from "./TicketBadges"
 
 export function RoutingRulesDialog() {
   const queryClient = useQueryClient()
@@ -237,9 +238,7 @@ export function RoutingRulesDialog() {
                           <td className="px-3 py-2">{rule.assigned_to}</td>
                           <td className="px-3 py-2">
                             {rule.priority_override ? (
-                              <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-md border ${PRIORITY_CONFIG[rule.priority_override]?.className || ""}`}>
-                                {PRIORITY_CONFIG[rule.priority_override]?.label || rule.priority_override}
-                              </span>
+                              <PriorityBadge priority={rule.priority_override} />
                             ) : (
                               <span className="text-muted-foreground/40">--</span>
                             )}

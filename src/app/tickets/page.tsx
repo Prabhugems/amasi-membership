@@ -46,7 +46,7 @@ function TicketsContent() {
       <div className="flex items-center justify-between px-1 pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center shadow-sm">
+            <div className="h-9 w-9 rounded-md bg-primary flex items-center justify-center shadow-sm">
               <Ticket className="h-5 w-5 text-primary-foreground" />
             </div>
             Support Tickets
@@ -59,19 +59,16 @@ function TicketsContent() {
           <StatPill
             label="Open"
             count={stats.open}
-            active={stats.open > 0}
             dotColor="bg-amber-500"
           />
           <StatPill
             label="In Progress"
             count={stats.in_progress}
-            active={stats.in_progress > 0}
             dotColor="bg-blue-500"
           />
           <StatPill
             label="Resolved"
             count={stats.resolved}
-            active={stats.resolved > 0}
             dotColor="bg-emerald-500"
           />
           <div className="h-5 w-px bg-border mx-1" />
@@ -81,7 +78,7 @@ function TicketsContent() {
           <div className="h-5 w-px bg-border mx-1" />
           <Link
             href="/tickets/analytics"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <BarChart3 className="h-3.5 w-3.5" />
             Analytics
@@ -91,7 +88,7 @@ function TicketsContent() {
 
       {/* Split layout container */}
       <div
-        className="flex rounded-xl border overflow-hidden shadow-sm bg-card"
+        className="flex rounded-md border overflow-hidden shadow-sm bg-card"
         style={{ height: "calc(100vh - 160px)" }}
       >
         {/* Left Panel: Ticket List */}

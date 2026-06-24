@@ -121,11 +121,11 @@ export function ReplyComposer({
 
       {/* Internal note banner */}
       {isInternalNote && (
-        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-md px-3 py-2">
-          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">
+        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
+          <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">
             Internal note
           </span>
-          <span className="text-[11px] text-amber-600/70 dark:text-amber-400/70">
+          <span className="text-[11px] text-amber-600/70">
             Only visible to admins. The member will not be notified.
           </span>
         </div>
@@ -137,7 +137,7 @@ export function ReplyComposer({
         <Button
           variant="ghost"
           size="sm"
-          className="h-10 w-10 p-0 shrink-0 hover:bg-amber-50 dark:hover:bg-amber-500/15"
+          className="h-10 w-10 p-0 shrink-0 hover:bg-amber-500/10"
           onClick={() => setShowQuickReplies(!showQuickReplies)}
           title="Quick replies"
         >
@@ -169,7 +169,7 @@ export function ReplyComposer({
           title={isInternalNote ? "Switch to public reply" : "Switch to internal note"}
           className={`shrink-0 h-10 px-3 rounded-md text-xs font-semibold border transition-all duration-150 ${
             isInternalNote
-              ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/30"
+              ? "bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20"
               : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"
           }`}
         >
@@ -185,7 +185,7 @@ export function ReplyComposer({
           aria-label="Reply message"
           className={`flex-1 resize-none min-h-[42px] max-h-[120px] transition-colors ${
             isInternalNote
-              ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/20 focus:bg-amber-50 dark:focus:bg-amber-500/10"
+              ? "bg-amber-500/10 border-amber-500/20 focus:bg-amber-500/10"
               : "bg-muted border-border focus:bg-card"
           }`}
           onKeyDown={(e) => {

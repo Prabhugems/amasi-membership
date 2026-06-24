@@ -15,7 +15,6 @@ function StatPill({
 }: {
   label: string
   count: number
-  active?: boolean
   dotColor?: string
 }) {
   return (

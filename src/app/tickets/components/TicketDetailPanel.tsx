@@ -188,7 +188,7 @@ export function TicketDetailPanel({
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
+                  className="appearance-none rounded-md border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {STATUS_OPTIONS.map((s) => (
                     <option key={s} value={s}>
@@ -209,7 +209,7 @@ export function TicketDetailPanel({
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
-                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
+                  className="appearance-none rounded-md border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {PRIORITY_OPTIONS.map((p) => (
                     <option key={p} value={p}>
@@ -230,7 +230,7 @@ export function TicketDetailPanel({
                 <select
                   value={editAssignee}
                   onChange={(e) => setEditAssignee(e.target.value)}
-                  className="appearance-none rounded-lg border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
+                  className="appearance-none rounded-md border border-border bg-card pl-2.5 pr-7 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-shadow"
                 >
                   {ADMIN_ASSIGNEES.map((a) => (
                     <option key={a} value={a}>
@@ -295,7 +295,7 @@ export function TicketDetailPanel({
                   {ticketDetail.name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div>
-                  <div className="bg-card border border-border rounded-md rounded-tl-md px-4 py-3.5 shadow-sm">
+                  <div className="bg-card border border-border rounded-md px-4 py-3.5 shadow-sm">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs font-bold text-foreground">
                         {ticketDetail.name}
@@ -317,7 +317,7 @@ export function TicketDetailPanel({
                             href={att.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors bg-muted text-muted-foreground hover:bg-accent border border-border"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md transition-colors bg-muted text-muted-foreground hover:bg-accent border border-border"
                           >
                             <Paperclip className="h-3 w-3 shrink-0" />
                             <span className="truncate max-w-[120px]">{att.filename}</span>

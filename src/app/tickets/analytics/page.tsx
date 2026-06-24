@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   Clock,
   AlertTriangle,
-  Loader2,
   MessageSquare,
   ShieldAlert,
 } from "lucide-react"
@@ -49,6 +48,11 @@ function formatHours(h: number): string {
   return `${days.toFixed(1)}d`
 }
 
+// Chart series colors — retained as explicit hex because recharts requires color VALUES
+// passed as props/style; no CSS-variable equivalent exists for data-viz series.
+// Created: #3b82f6 (blue), Resolved: #10b981 (emerald)
+// Status open: #f59e0b (amber), in_progress: #3b82f6 (blue),
+// resolved: #10b981 (emerald), closed: #6b7280 (gray)
 const STATUS_COLORS: Record<string, string> = {
   open: "#f59e0b",
   in_progress: "#3b82f6",
@@ -72,16 +76,16 @@ function KpiCard({
   accent?: "teal" | "amber" | "blue" | "red"
 }) {
   const accentStyles: Record<string, string> = {
-    teal: "bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400",
-    amber: "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    blue: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    red: "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400",
+    teal: "bg-primary/10 text-primary",
+    amber: "bg-primary/10 text-primary",
+    blue: "bg-primary/10 text-primary",
+    red: "bg-destructive/10 text-destructive",
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_2px_4px_rgba(15,23,42,0.03)]">
+    <div className="rounded-md border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-3">
-        <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${accentStyles[accent]}`}>
+        <div className={`h-9 w-9 rounded-md flex items-center justify-center ${accentStyles[accent]}`}>
           <Icon className="h-4.5 w-4.5" />
         </div>
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -107,7 +111,7 @@ function VolumeChart({
 
   if (loading) {
     return (
-      <div className="h-[220px] w-full rounded-lg bg-gradient-to-b from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 animate-pulse" />
+      <div className="h-[220px] w-full rounded-md bg-muted animate-pulse" />
     )
   }
 
@@ -116,7 +120,7 @@ function VolumeChart({
   if (data.length === 0 || !hasData) {
     return (
       <div className="flex flex-col items-center justify-center h-[180px] gap-2">
-        <div className="text-sm text-slate-500 dark:text-slate-400">
+        <div className="text-sm text-muted-foreground">
           No ticket activity in this period
         </div>
       </div>
@@ -135,6 +139,7 @@ function VolumeChart({
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
         >
           <defs>
+            {/* Chart series gradient fills — retained as explicit hex (recharts SVG prop) */}
             <linearGradient id="grad-created" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.9} />
               <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.15} />
@@ -173,11 +178,11 @@ function VolumeChart({
             contentStyle={{
               backgroundColor: "rgba(15,23,42,0.92)",
               border: "none",
-              borderRadius: "10px",
+              borderRadius: "6px",
               padding: "8px 12px",
               fontSize: "12px",
               color: "#fff",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.12)",
             }}
             labelStyle={{ color: "#fff", marginBottom: "4px" }}
             itemStyle={{ color: "#fff" }}
@@ -237,7 +242,7 @@ function CategoryBars({
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-7 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
+          <div key={i} className="h-7 rounded-md bg-muted animate-pulse" />
         ))}
       </div>
     )
@@ -257,9 +262,9 @@ function CategoryBars({
             <span className="font-medium text-foreground/80">{item.category}</span>
             <span className="text-muted-foreground font-semibold">{item.count}</span>
           </div>
-          <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div className="h-2 rounded-md bg-muted overflow-hidden">
             <div
-              className="h-full rounded-full bg-teal-500 transition-all duration-700"
+              className="h-full rounded-md bg-primary transition-all duration-700"
               style={{ width: `${(item.count / max) * 100}%` }}
             />
           </div>
@@ -280,7 +285,7 @@ function StatusPills({
     return (
       <div className="flex gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-8 w-20 rounded-full bg-slate-100 dark:bg-slate-800 animate-pulse" />
+          <div key={i} className="h-8 w-20 rounded-md bg-muted animate-pulse" />
         ))}
       </div>
     )
@@ -290,8 +295,8 @@ function StatusPills({
 
   return (
     <div className="space-y-3">
-      {/* Stacked bar */}
-      <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+      {/* Stacked bar — explicit backgroundColor required; recharts/inline-style chart series */}
+      <div className="flex h-3 rounded-md overflow-hidden bg-muted">
         {data.map((item) => (
           <div
             key={item.status}
@@ -307,6 +312,7 @@ function StatusPills({
       <div className="flex flex-wrap gap-3">
         {data.map((item) => (
           <div key={item.status} className="flex items-center gap-1.5 text-xs">
+            {/* Chart series swatch — retained as explicit hex (inline style, data-viz) */}
             <span
               className="h-2.5 w-2.5 rounded-sm"
               style={{ backgroundColor: STATUS_COLORS[item.status] || "#6b7280" }}
@@ -331,7 +337,7 @@ function TeamTable({
     return (
       <div className="space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-10 rounded bg-slate-100 dark:bg-slate-800 animate-pulse" />
+          <div key={i} className="h-10 rounded-md bg-muted animate-pulse" />
         ))}
       </div>
     )
@@ -345,7 +351,7 @@ function TeamTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 dark:border-slate-800">
+          <tr className="border-b border-border">
             <th className="text-left py-2.5 px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
               Team / Assignee
             </th>
@@ -364,12 +370,12 @@ function TeamTable({
           {data.map((row) => (
             <tr
               key={row.team}
-              className="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+              className="border-b border-border hover:bg-accent transition-colors"
             >
               <td className="py-2.5 px-3 font-medium text-foreground/90">{row.team}</td>
               <td className="py-2.5 px-3 text-right text-muted-foreground">{row.assigned}</td>
               <td className="py-2.5 px-3 text-right">
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                <span className="text-primary font-semibold">
                   {row.resolved}
                 </span>
               </td>
@@ -399,7 +405,7 @@ export default function TicketAnalyticsPage() {
   })
 
   const cardChrome =
-    "rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-6 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_2px_4px_rgba(15,23,42,0.03)]"
+    "rounded-md border border-border bg-card p-6 shadow-sm"
 
   const periods: { value: Period; label: string }[] = [
     { value: "7d", label: "7 days" },
@@ -414,14 +420,14 @@ export default function TicketAnalyticsPage() {
         <div className="flex items-center gap-3">
           <Link
             href="/tickets"
-            className="h-9 w-9 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+            className="h-9 w-9 rounded-md border border-border flex items-center justify-center hover:bg-accent transition-colors"
           >
             <ArrowLeft className="h-4 w-4 text-muted-foreground" />
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-lg bg-teal-600 flex items-center justify-center shadow-sm">
-                <Ticket className="h-5 w-5 text-white" />
+              <div className="h-9 w-9 rounded-md bg-primary flex items-center justify-center shadow-sm">
+                <Ticket className="h-5 w-5 text-primary-foreground" />
               </div>
               Ticket Analytics
             </h1>
@@ -432,14 +438,14 @@ export default function TicketAnalyticsPage() {
         </div>
 
         {/* Period selector */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-muted rounded-md p-1">
           {periods.map((p) => (
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
               className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150 ${
                 period === p.value
-                  ? "bg-white dark:bg-slate-900 text-foreground shadow-sm"
+                  ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -465,7 +471,7 @@ export default function TicketAnalyticsPage() {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-900 p-5 h-[120px] animate-pulse"
+                className="rounded-md border border-border bg-card p-5 h-[120px] animate-pulse"
               />
             ))}
           </>
@@ -516,7 +522,8 @@ export default function TicketAnalyticsPage() {
             </div>
           </div>
           <VolumeChart data={data?.volumeByDay ?? []} loading={isLoading} />
-          <div className="flex gap-4 mt-4 text-xs text-slate-500 dark:text-slate-400">
+          {/* Chart series legend — hex swatches retained (data-viz series colors) */}
+          <div className="flex gap-4 mt-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#3b82f6" }} />
               Created

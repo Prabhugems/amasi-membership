@@ -11,81 +11,27 @@ export const STATUS_OPTIONS = ["open", "in_progress", "resolved", "closed"] as c
 
 export const PRIORITY_OPTIONS = ["low", "normal", "high", "urgent"] as const
 
-export const STATUS_CONFIG: Record<
-  string,
-  { label: string; variant: string; className: string; dotColor: string; tabBg: string; tabText: string }
-> = {
-  open: {
-    label: "Open",
-    variant: "warning",
-    className: "bg-amber-50 text-amber-700 border-amber-200 soft-pulse",
-    dotColor: "bg-amber-500",
-    tabBg: "bg-amber-50 border-amber-200 hover:bg-amber-100",
-    tabText: "text-amber-700",
-  },
-  in_progress: {
-    label: "In Progress",
-    variant: "default",
-    className: "bg-blue-50 text-blue-700 border-blue-200 soft-pulse",
-    dotColor: "bg-blue-500",
-    tabBg: "bg-blue-50 border-blue-200 hover:bg-blue-100",
-    tabText: "text-blue-700",
-  },
-  resolved: {
-    label: "Resolved",
-    variant: "success",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    dotColor: "bg-emerald-500",
-    tabBg: "bg-emerald-50 border-emerald-200 hover:bg-emerald-100",
-    tabText: "text-emerald-700",
-  },
-  closed: {
-    label: "Closed",
-    variant: "secondary",
-    className: "bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-slate-700",
-    dotColor: "bg-gray-400",
-    tabBg: "bg-gray-50 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800",
-    tabText: "text-gray-500 dark:text-slate-400",
-  },
+export const STATUS_CONFIG: Record<string, { label: string; dotColor: string }> = {
+  open:        { label: "Open",        dotColor: "bg-amber-500" },
+  in_progress: { label: "In Progress", dotColor: "bg-blue-500" },
+  resolved:    { label: "Resolved",    dotColor: "bg-emerald-500" },
+  closed:      { label: "Closed",      dotColor: "bg-muted-foreground" },
 }
 
-export const PRIORITY_CONFIG: Record<
-  string,
-  { label: string; className: string; borderColor: string; dotColor: string }
-> = {
-  low: {
-    label: "Low",
-    className: "bg-gray-50 dark:bg-slate-800/60 text-gray-600 dark:text-slate-400 border-gray-200 dark:border-slate-700",
-    borderColor: "border-l-gray-300",
-    dotColor: "bg-gray-400",
-  },
-  normal: {
-    label: "Normal",
-    className: "bg-blue-50 text-blue-600 border-blue-200",
-    borderColor: "border-l-blue-400",
-    dotColor: "bg-blue-400",
-  },
-  high: {
-    label: "High",
-    className: "bg-amber-50 text-amber-700 border-amber-200",
-    borderColor: "border-l-amber-500",
-    dotColor: "bg-amber-500",
-  },
-  urgent: {
-    label: "Urgent",
-    className: "bg-red-50 text-red-700 border-red-200",
-    borderColor: "border-l-red-500",
-    dotColor: "bg-red-500",
-  },
+export const PRIORITY_CONFIG: Record<string, { label: string; dotColor: string }> = {
+  low:    { label: "Low",    dotColor: "bg-muted-foreground" },
+  normal: { label: "Normal", dotColor: "bg-blue-400" },
+  high:   { label: "High",   dotColor: "bg-amber-500" },
+  urgent: { label: "Urgent", dotColor: "bg-destructive" },
 }
 
 export const FILTER_TABS = [
-  { value: "", label: "All", color: "bg-gray-800 text-white border-gray-800" },
-  { value: "open", label: "Open", color: "bg-amber-600 text-white border-amber-600" },
-  { value: "in_progress", label: "In Progress", color: "bg-blue-600 text-white border-blue-600" },
-  { value: "resolved", label: "Resolved", color: "bg-emerald-600 text-white border-emerald-600" },
-  { value: "closed", label: "Closed", color: "bg-gray-500 text-white border-gray-500" },
-]
+  { value: "", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "resolved", label: "Resolved" },
+  { value: "closed", label: "Closed" },
+] as const
 
 export const FALLBACK_QUICK_REPLIES = [
   {

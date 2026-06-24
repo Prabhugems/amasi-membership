@@ -78,3 +78,6 @@ import_members.js
 
 # OCR prompt test fixtures (real applicant PII — never commit)
 /test-certs/
+
+# stray data artifact (not part of the app)
+/fmasians_unmatched_2026-04-28.csv

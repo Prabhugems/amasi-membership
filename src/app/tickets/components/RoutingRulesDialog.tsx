@@ -131,7 +131,7 @@ export function RoutingRulesDialog() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 w-8 p-0 shrink-0 hover:bg-gray-100 dark:hover:bg-slate-800"
+          className="h-8 w-8 p-0 shrink-0 hover:bg-accent"
           title="Routing Rules"
         >
           <Settings className="h-3.5 w-3.5 text-muted-foreground" />
@@ -140,7 +140,7 @@ export function RoutingRulesDialog() {
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Settings className="h-4 w-4 text-teal-600" />
+            <Settings className="h-4 w-4 text-primary" />
             Ticket Routing Rules
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-1">
@@ -155,10 +155,10 @@ export function RoutingRulesDialog() {
         ) : (
           <div className="space-y-4 mt-2">
             {/* Rules table */}
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-md overflow-hidden">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 dark:bg-slate-800/60 border-b">
+                  <tr className="bg-muted border-b">
                     <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Category</th>
                     <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Assigned To</th>
                     <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Priority Override</th>
@@ -168,14 +168,14 @@ export function RoutingRulesDialog() {
                 </thead>
                 <tbody>
                   {rules.map((rule) => (
-                    <tr key={rule.id} className="border-b last:border-b-0 hover:bg-gray-50/50 dark:hover:bg-slate-800/30">
+                    <tr key={rule.id} className="border-b last:border-b-0 hover:bg-accent">
                       {editingId === rule.id ? (
                         <>
                           <td className="px-3 py-2">
                             <select
                               value={editForm.category || ""}
                               onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs"
                             >
                               <option value="">Select...</option>
                               {CATEGORIES.map((c) => (
@@ -187,7 +187,7 @@ export function RoutingRulesDialog() {
                             <select
                               value={editForm.assigned_to || ""}
                               onChange={(e) => setEditForm({ ...editForm, assigned_to: e.target.value })}
-                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs"
                             >
                               {ADMIN_ASSIGNEES.filter((a) => a !== "Unassigned").map((a) => (
                                 <option key={a} value={a}>{a}</option>
@@ -198,7 +198,7 @@ export function RoutingRulesDialog() {
                             <select
                               value={(editForm.priority_override as string) || ""}
                               onChange={(e) => setEditForm({ ...editForm, priority_override: e.target.value })}
-                              className="w-full rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                              className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs"
                             >
                               <option value="">None</option>
                               {PRIORITY_OPTIONS.map((p) => (
@@ -214,7 +214,7 @@ export function RoutingRulesDialog() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
+                                className="h-6 w-6 p-0 text-primary hover:text-primary hover:bg-primary/10"
                                 onClick={saveEdit}
                                 disabled={updateMutation.isPending}
                               >
@@ -237,7 +237,7 @@ export function RoutingRulesDialog() {
                           <td className="px-3 py-2">{rule.assigned_to}</td>
                           <td className="px-3 py-2">
                             {rule.priority_override ? (
-                              <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PRIORITY_CONFIG[rule.priority_override]?.className || ""}`}>
+                              <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-md border ${PRIORITY_CONFIG[rule.priority_override]?.className || ""}`}>
                                 {PRIORITY_CONFIG[rule.priority_override]?.label || rule.priority_override}
                               </span>
                             ) : (
@@ -250,12 +250,12 @@ export function RoutingRulesDialog() {
                               disabled={updateMutation.isPending}
                               role="switch"
                               aria-checked={rule.active}
-                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                                rule.active ? "bg-teal-500" : "bg-gray-300 dark:bg-slate-600"
+                              className={`relative inline-flex h-5 w-9 items-center rounded-md transition-colors ${
+                                rule.active ? "bg-primary" : "bg-muted-foreground/30"
                               }`}
                             >
                               <span
-                                className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                                className={`inline-block h-3.5 w-3.5 rounded-md bg-card shadow-sm transition-transform ${
                                   rule.active ? "translate-x-[18px]" : "translate-x-[3px]"
                                 }`}
                               />
@@ -274,7 +274,7 @@ export function RoutingRulesDialog() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/15"
+                                className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                                 onClick={() => deleteMutation.mutate(rule.id)}
                                 disabled={deleteMutation.isPending}
                               >
@@ -298,7 +298,7 @@ export function RoutingRulesDialog() {
             </div>
 
             {/* Add new rule form */}
-            <div className="border rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/30 space-y-2">
+            <div className="border rounded-md p-3 bg-muted/40 space-y-2">
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                 <Plus className="h-3 w-3" />
                 Add Rule
@@ -307,7 +307,7 @@ export function RoutingRulesDialog() {
                 <select
                   value={newRule.category}
                   onChange={(e) => setNewRule({ ...newRule, category: e.target.value })}
-                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  className="rounded-md border border-border bg-card px-2 py-1.5 text-xs"
                 >
                   <option value="">Category...</option>
                   {CATEGORIES.map((c) => (
@@ -317,7 +317,7 @@ export function RoutingRulesDialog() {
                 <select
                   value={newRule.assigned_to}
                   onChange={(e) => setNewRule({ ...newRule, assigned_to: e.target.value })}
-                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  className="rounded-md border border-border bg-card px-2 py-1.5 text-xs"
                 >
                   <option value="">Assign to...</option>
                   {ADMIN_ASSIGNEES.filter((a) => a !== "Unassigned").map((a) => (
@@ -327,7 +327,7 @@ export function RoutingRulesDialog() {
                 <select
                   value={newRule.priority_override}
                   onChange={(e) => setNewRule({ ...newRule, priority_override: e.target.value })}
-                  className="rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs"
+                  className="rounded-md border border-border bg-card px-2 py-1.5 text-xs"
                 >
                   <option value="">Priority override (optional)</option>
                   {PRIORITY_OPTIONS.map((p) => (
@@ -337,7 +337,7 @@ export function RoutingRulesDialog() {
               </div>
               <Button
                 size="sm"
-                className="h-7 text-xs gap-1.5 bg-teal-600 hover:bg-teal-700"
+                className="h-7 text-xs gap-1.5 bg-primary hover:bg-primary/90"
                 onClick={handleCreate}
                 disabled={createMutation.isPending}
               >

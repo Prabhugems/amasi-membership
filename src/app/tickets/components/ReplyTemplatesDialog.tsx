@@ -124,7 +124,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
-          className="text-[10px] text-muted-foreground/60 hover:text-teal-600 transition-colors flex items-center gap-1"
+          className="text-[10px] text-muted-foreground/60 hover:text-primary transition-colors flex items-center gap-1"
           title="Edit templates"
         >
           <Settings className="h-3 w-3" />
@@ -134,7 +134,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Zap className="h-4 w-4 text-amber-500" />
+            <Zap className="h-4 w-4 text-primary" />
             Reply Templates
           </DialogTitle>
           <p className="text-xs text-muted-foreground mt-1">
@@ -149,10 +149,10 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
         ) : (
           <div className="space-y-4 mt-2">
             {/* Templates table */}
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-md overflow-hidden">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="bg-gray-50 dark:bg-slate-800/60 border-b">
+                  <tr className="bg-muted border-b">
                     <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Title</th>
                     <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Body</th>
                     <th className="text-center px-3 py-2 font-semibold text-muted-foreground">Active</th>
@@ -161,7 +161,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                 </thead>
                 <tbody>
                   {templates.map((tpl) => (
-                    <tr key={tpl.id} className="border-b last:border-b-0 hover:bg-gray-50/50 dark:hover:bg-slate-800/30">
+                    <tr key={tpl.id} className="border-b last:border-b-0 hover:bg-accent">
                       {editingId === tpl.id ? (
                         <>
                           <td className="px-3 py-2">
@@ -189,7 +189,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/15"
+                                className="h-6 w-6 p-0 text-primary hover:text-primary hover:bg-primary/10"
                                 onClick={saveEdit}
                                 disabled={updateMutation.isPending}
                               >
@@ -218,12 +218,12 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                               disabled={updateMutation.isPending}
                               role="switch"
                               aria-checked={tpl.active}
-                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                                tpl.active ? "bg-teal-500" : "bg-gray-300 dark:bg-slate-600"
+                              className={`relative inline-flex h-5 w-9 items-center rounded-md transition-colors ${
+                                tpl.active ? "bg-primary" : "bg-muted-foreground/30"
                               }`}
                             >
                               <span
-                                className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                                className={`inline-block h-3.5 w-3.5 rounded-md bg-card shadow-sm transition-transform ${
                                   tpl.active ? "translate-x-[18px]" : "translate-x-[3px]"
                                 }`}
                               />
@@ -242,7 +242,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/15"
+                                className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                                 onClick={() => deleteMutation.mutate(tpl.id)}
                                 disabled={deleteMutation.isPending}
                               >
@@ -266,7 +266,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
             </div>
 
             {/* Add new template form */}
-            <div className="border rounded-lg p-3 bg-gray-50/50 dark:bg-slate-800/30 space-y-2">
+            <div className="border rounded-md p-3 bg-muted/40 space-y-2">
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                 <Plus className="h-3 w-3" />
                 Add Template
@@ -288,7 +288,7 @@ export function ReplyTemplatesDialog({ onTemplatesChanged }: { onTemplatesChange
               </div>
               <Button
                 size="sm"
-                className="h-7 text-xs gap-1.5 bg-teal-600 hover:bg-teal-700"
+                className="h-7 text-xs gap-1.5 bg-primary hover:bg-primary/90"
                 onClick={handleCreate}
                 disabled={createMutation.isPending}
               >

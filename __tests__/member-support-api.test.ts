@@ -48,6 +48,9 @@ describe("support-api", () => {
     expect(url).toBe("/api/tickets/t1/reply")
     expect(opts.method).toBe("POST")
     expect(opts.body instanceof FormData).toBe(true)
+    expect(opts.body.get("author_name")).toBe("Dr X")
+    expect(opts.body.get("message")).toBe("hi")
+    expect(opts.body.get("as_member")).toBe("true")
   })
 
   it("replyToTicket sends JSON when no file", async () => {
@@ -56,5 +59,6 @@ describe("support-api", () => {
     const [, opts] = fetchMock.mock.calls[0]
     expect(opts.headers["Content-Type"]).toBe("application/json")
     expect(JSON.parse(opts.body).as_member).toBe(true)
+    expect(JSON.parse(opts.body).author_name).toBe("Dr X")
   })
 })

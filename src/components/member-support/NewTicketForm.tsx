@@ -14,7 +14,7 @@ export interface MemberCtx {
   phone?: string
   mobile?: string
   amasi_number?: string | number
-  membership_no?: string
+  membership_no?: string | number
 }
 
 export default function NewTicketForm({

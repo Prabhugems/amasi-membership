@@ -46,7 +46,7 @@ function TicketsContent() {
       <div className="flex items-center justify-between px-1 pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-teal-600 flex items-center justify-center shadow-sm">
+            <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center shadow-sm">
               <Ticket className="h-5 w-5 text-white" />
             </div>
             Support Tickets
@@ -81,7 +81,7 @@ function TicketsContent() {
           <div className="h-5 w-px bg-border mx-1" />
           <Link
             href="/tickets/analytics"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <BarChart3 className="h-3.5 w-3.5" />
             Analytics
@@ -156,7 +156,7 @@ export default function TicketsPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       }
     >

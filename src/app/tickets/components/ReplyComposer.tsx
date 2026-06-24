@@ -52,10 +52,10 @@ export function ReplyComposer({
   queryClient: DetailHook["queryClient"]
 }) {
   return (
-    <div className="border-t bg-white dark:bg-slate-900 px-6 py-3.5 shrink-0 space-y-2.5">
+    <div className="border-t bg-card px-6 py-3.5 shrink-0 space-y-2.5">
       {/* Quick reply templates */}
       {showQuickReplies && (
-        <div className="bg-gray-50 dark:bg-slate-800/60 rounded-xl p-3 border border-gray-200 dark:border-slate-700 shadow-sm">
+        <div className="bg-muted rounded-md p-3 border border-border shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
               <Zap className="h-3 w-3 text-amber-500" />
@@ -77,9 +77,9 @@ export function ReplyComposer({
               <button
                 key={qr.label}
                 onClick={() => handleQuickReplySelect(qr.text)}
-                className="text-left text-xs px-3 py-2.5 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-500/15 border border-transparent hover:border-teal-200 transition-all duration-150 group"
+                className="text-left text-xs px-3 py-2.5 rounded-md hover:bg-primary/10 border border-transparent hover:border-primary/20 transition-all duration-150 group"
               >
-                <span className="font-semibold text-teal-700 group-hover:text-teal-800">
+                <span className="font-semibold text-primary group-hover:text-primary">
                   {qr.label}
                 </span>
                 <p className="text-muted-foreground/60 mt-0.5 line-clamp-1 text-[11px]">
@@ -93,26 +93,26 @@ export function ReplyComposer({
 
       {/* File preview */}
       {attachedFile && (
-        <div className="flex items-center gap-3 bg-teal-50 dark:bg-teal-500/15 border border-teal-200 rounded-lg px-3 py-2">
-          <div className="h-8 w-8 rounded-lg bg-teal-100 dark:bg-teal-500/20 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-md px-3 py-2">
+          <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
             {attachedFile.type.startsWith("image/") ? (
-              <ImageIcon className="h-4 w-4 text-teal-600" />
+              <ImageIcon className="h-4 w-4 text-primary" />
             ) : (
-              <FileText className="h-4 w-4 text-teal-600" />
+              <FileText className="h-4 w-4 text-primary" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-teal-800 truncate">
+            <p className="text-xs font-medium text-foreground truncate">
               {attachedFile.name}
             </p>
-            <p className="text-[10px] text-teal-600/70">
+            <p className="text-[10px] text-primary/70">
               {formatFileSize(attachedFile.size)}
             </p>
           </div>
           <button
             onClick={() => setAttachedFile(null)}
             aria-label="Remove attachment"
-            className="text-teal-500 hover:text-teal-700 transition-colors shrink-0"
+            className="text-primary hover:text-primary transition-colors shrink-0"
           >
             <X className="h-4 w-4" />
           </button>
@@ -148,7 +148,7 @@ export function ReplyComposer({
         <Button
           variant="ghost"
           size="sm"
-          className="h-10 w-10 p-0 shrink-0 hover:bg-gray-100 dark:hover:bg-slate-800"
+          className="h-10 w-10 p-0 shrink-0 hover:bg-accent"
           onClick={() => fileInputRef.current?.click()}
           title="Attach file"
         >
@@ -170,7 +170,7 @@ export function ReplyComposer({
           className={`shrink-0 h-10 px-3 rounded-lg text-xs font-semibold border transition-all duration-150 ${
             isInternalNote
               ? "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:bg-amber-200 dark:hover:bg-amber-500/30"
-              : "bg-white dark:bg-slate-900 text-muted-foreground border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800/60 hover:text-foreground"
+              : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"
           }`}
         >
           Internal note
@@ -186,7 +186,7 @@ export function ReplyComposer({
           className={`flex-1 resize-none min-h-[42px] max-h-[120px] transition-colors ${
             isInternalNote
               ? "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200 dark:border-amber-500/20 focus:bg-amber-50 dark:focus:bg-amber-500/10"
-              : "bg-gray-50/80 dark:bg-slate-800/60 border-gray-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900"
+              : "bg-muted border-border focus:bg-card"
           }`}
           onKeyDown={(e) => {
             if (
@@ -209,7 +209,7 @@ export function ReplyComposer({
           className={`h-10 gap-1.5 shrink-0 shadow-sm ${
             isInternalNote
               ? "bg-amber-500 hover:bg-amber-600 text-white"
-              : "bg-teal-600 hover:bg-teal-700"
+              : "bg-primary hover:bg-primary/90"
           }`}
         >
           {replyMutation.isPending ? (

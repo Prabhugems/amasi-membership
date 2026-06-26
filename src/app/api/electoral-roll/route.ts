@@ -11,13 +11,15 @@ import { checkRateLimit } from "@/lib/rate-limit"
 // whole address. Members can still recognise their own row from the
 // visible tail.
 //
-// `@noemail.amasi.org` is the internal placeholder used during legacy
-// imports when no real email existed (907 LM rows as of 2026-05-21).
+// `noemail-N@placeholder.invalid` is the internal placeholder used during
+// legacy imports when no real email existed. (Previously the domain was
+// `@noemail.amasi.org`; renamed 2026-06-26 to a guaranteed-invalid TLD
+// per RFC 2606 so it doesn't masquerade as an amasi.org address.)
 // Return null for those so the UI shows "—" rather than a fake masked
 // value that looks real.
 function maskEmail(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.includes("@")) return null
-  if (/@noemail\.amasi\.org$/i.test(raw.trim())) return null
+  if (/@(placeholder\.invalid|noemail\.amasi\.org)$/i.test(raw.trim())) return null
   const [local, domain] = raw.split("@", 2)
   if (!local || !domain) return null
   if (local.length <= 6) {

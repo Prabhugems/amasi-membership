@@ -3,6 +3,15 @@ import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { isExcludedEmail } from "@/lib/email-exclusions"
+import { signResumeToken } from "@/lib/draft-resume"
+import {
+  INCOMPLETE_REMINDER_SUBJECT,
+  INCOMPLETE_REMINDER_TITLE,
+  PAID_PENDING_REMINDER_SUBJECT,
+  PAID_PENDING_REMINDER_TITLE,
+  buildIncompleteReminderBody,
+  buildPaidPendingReminderBody,
+} from "@/lib/draft-reminder-emails"
 import { Resend } from "resend"
 
 // Iterates stuck drafts with per-draft Razorpay SDK calls.
@@ -290,28 +299,25 @@ export async function GET(request: Request) {
         }, supabase)
         continue
       }
-      const html = emailWrapper(
-        "Complete Your Application",
-        `
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-        </p>
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
-        </p>
-        <div style="margin:20px 0;text-align:center;">
-          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
-        </div>
-        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-          If you no longer wish to apply, your application will be removed after further inactivity.
-        </p>
-        `,
-      )
+      const isPaidPending = draft.has_verified_payment === true
+      const resumeUrl = isPaidPending
+        ? `${baseUrl}/apply?resume=${encodeURIComponent(await signResumeToken(draft.id, draft.email))}`
+        : `${baseUrl}/apply`
+      const html = isPaidPending
+        ? emailWrapper(PAID_PENDING_REMINDER_TITLE, buildPaidPendingReminderBody({ resumeUrl }))
+        : emailWrapper(
+            INCOMPLETE_REMINDER_TITLE,
+            buildIncompleteReminderBody({
+              stepLabel: stepLabel(draft.current_step),
+              resumeUrl,
+              removalHint: "If you no longer wish to apply, your application will be removed after further inactivity.",
+            }),
+          )
       try {
         await resend!.emails.send({
           from: fromEmail,
           to: draft.email,
-          subject: "Complete your AMASI membership application",
+          subject: isPaidPending ? PAID_PENDING_REMINDER_SUBJECT : INCOMPLETE_REMINDER_SUBJECT,
           html,
         })
         await supabase
@@ -385,23 +391,20 @@ export async function GET(request: Request) {
         }, supabase)
         continue
       }
-      const html = emailWrapper(
-        "Complete Your Application",
-        `
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-        </p>
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
-        </p>
-        <div style="margin:20px 0;text-align:center;">
-          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
-        </div>
-        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-          If you no longer wish to apply, your application will be removed soon.
-        </p>
-        `,
-      )
+      const isPaidPending = draft.has_verified_payment === true
+      const resumeUrl = isPaidPending
+        ? `${baseUrl}/apply?resume=${encodeURIComponent(await signResumeToken(draft.id, draft.email))}`
+        : `${baseUrl}/apply`
+      const html = isPaidPending
+        ? emailWrapper(PAID_PENDING_REMINDER_TITLE, buildPaidPendingReminderBody({ resumeUrl }))
+        : emailWrapper(
+            INCOMPLETE_REMINDER_TITLE,
+            buildIncompleteReminderBody({
+              stepLabel: stepLabel(draft.current_step),
+              resumeUrl,
+              removalHint: "If you no longer wish to apply, your application will be removed soon.",
+            }),
+          )
       // Send-then-update. Setting reminder_sent_at only after a successful
       // send means transient Resend failures get re-picked next run (still
       // capped by the broader retry budget upstream). The Sentry capture
@@ -410,7 +413,7 @@ export async function GET(request: Request) {
         await resend!.emails.send({
           from: fromEmail,
           to: draft.email,
-          subject: "Complete your AMASI membership application",
+          subject: isPaidPending ? PAID_PENDING_REMINDER_SUBJECT : INCOMPLETE_REMINDER_SUBJECT,
           html,
         })
         await supabase

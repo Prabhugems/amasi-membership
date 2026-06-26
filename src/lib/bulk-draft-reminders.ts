@@ -1,9 +1,14 @@
 import { Resend } from "resend"
 import { createAdminClient } from "@/lib/supabase"
-import { escapeHtml } from "@/lib/html-escape"
 import { signResumeToken } from "@/lib/draft-resume"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { isExcludedEmail } from "@/lib/email-exclusions"
+import {
+  INCOMPLETE_REMINDER_SUBJECT,
+  PAID_PENDING_REMINDER_SUBJECT,
+  buildIncompleteReminderBody,
+  buildPaidPendingReminderBody,
+} from "@/lib/draft-reminder-emails"
 
 const STEP_LABELS: Record<number, string> = {
   1: "Select Membership Type",
@@ -63,7 +68,7 @@ export async function runBulkDraftReminders(
 
   const { data: drafts, error } = await supabase
     .from("draft_applications")
-    .select("id, email, current_step, updated_at, reminder_sent_at, reminder_count, status")
+    .select("id, email, current_step, updated_at, reminder_sent_at, reminder_count, status, has_verified_payment")
     .in("status", ["in_progress", "stuck"])
     .lte("updated_at", cutoff)
     .lt("reminder_count", MAX_LIFETIME_REMINDERS)
@@ -135,15 +140,21 @@ export async function runBulkDraftReminders(
     }
 
     const currentStep = draft.current_step || 1
-    const stepLabel = escapeHtml(STEP_LABELS[currentStep] || `Step ${currentStep}`)
+    const stepLabelText = STEP_LABELS[currentStep] || `Step ${currentStep}`
     const resumeToken = await signResumeToken(draft.id, email)
     const resumeUrl = `${baseUrl}/apply?resume=${encodeURIComponent(resumeToken)}`
+    const isPaidPending = draft.has_verified_payment === true
+
+    const subject = isPaidPending ? PAID_PENDING_REMINDER_SUBJECT : INCOMPLETE_REMINDER_SUBJECT
+    const innerBody = isPaidPending
+      ? buildPaidPendingReminderBody({ resumeUrl })
+      : buildIncompleteReminderBody({ stepLabel: stepLabelText, resumeUrl })
 
     try {
       await resend.emails.send({
         from,
         to: email,
-        subject: "Complete your AMASI membership application",
+        subject,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); padding: 32px 24px; border-radius: 12px 12px 0 0; text-align: center;">
@@ -152,19 +163,7 @@ export async function runBulkDraftReminders(
             </div>
             <div style="padding: 28px 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
               <p style="color: #374151; font-size: 15px;">Dear Applicant,</p>
-              <p style="color: #555; font-size: 14px; line-height: 1.6;">
-                We noticed your AMASI membership application is still incomplete. You stopped at
-                <strong>${stepLabel}</strong>.
-              </p>
-              <p style="color: #555; font-size: 14px; line-height: 1.6;">
-                Click below to pick up exactly where you left off — no need to re-enter your details.
-              </p>
-              <div style="text-align: center; margin: 28px 0 16px;">
-                <a href="${escapeHtml(resumeUrl)}"
-                   style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
-                  Resume Application
-                </a>
-              </div>
+              ${innerBody}
               <p style="color: #999; font-size: 12px; text-align: center;">This link works for 14 days and only for this email address.</p>
               <p style="color: #555; font-size: 13px;">Questions? Contact <a href="mailto:support@amasi.org" style="color: #0f766e;">support@amasi.org</a>.</p>
               <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />

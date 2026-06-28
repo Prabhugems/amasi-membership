@@ -1,9 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Loader2, RefreshCw, Search } from "lucide-react"
+import { AlertTriangle, ArrowRightCircle, Loader2, RefreshCw, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "sonner"
 
 type DraftHint = {
@@ -56,6 +57,8 @@ export default function OrphanPaymentsPage() {
   const [authorized, setAuthorized] = useState(true)
   const [days, setDays] = useState<number>(DEFAULT_DAYS)
   const [filter, setFilter] = useState("")
+  const [target, setTarget] = useState<OrphanPayment | null>(null)
+  const [promoting, setPromoting] = useState(false)
 
   const fetchRows = useCallback(async (lookbackDays: number) => {
     setLoading(true)
@@ -81,6 +84,30 @@ export default function OrphanPaymentsPage() {
   useEffect(() => {
     fetchRows(days)
   }, [fetchRows, days])
+
+  const handlePromote = useCallback(async () => {
+    if (!target) return
+    setPromoting(true)
+    try {
+      const res = await fetch("/api/admin/orphan-payments/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id }),
+      })
+      const data = await res.json()
+      if (res.ok && data?.status) {
+        toast.success(data.message || "Moved to Pending Actions")
+        setTarget(null)
+        fetchRows(days)
+      } else {
+        toast.error(data?.message || "Failed to move payment")
+      }
+    } catch {
+      toast.error("Failed to move payment")
+    } finally {
+      setPromoting(false)
+    }
+  }, [target, days, fetchRows])
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return rows
@@ -113,8 +140,8 @@ export default function OrphanPaymentsPage() {
         <h1 className="text-2xl font-bold tracking-tight mt-1">Orphan payments</h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
           Razorpay payments captured with no linked application row. Use this list
-          to identify applicants who paid but never completed the submit step.
-          Read-only — no state changes happen from this page.
+          to identify applicants who paid but never completed the submit step, then
+          move them straight into the Pending Actions review queue.
         </p>
       </div>
 
@@ -190,6 +217,7 @@ export default function OrphanPaymentsPage() {
                   <th scope="col" className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider text-muted-foreground">Order ID</th>
                   <th scope="col" className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider text-muted-foreground">Reference</th>
                   <th scope="col" className="text-left px-4 py-3 font-medium text-xs uppercase tracking-wider text-muted-foreground">Draft hint</th>
+                  <th scope="col" className="text-right px-4 py-3 font-medium text-xs uppercase tracking-wider text-muted-foreground">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -218,6 +246,17 @@ export default function OrphanPaymentsPage() {
                     <td className="px-4 py-3">
                       <DraftHintCell hint={r.draft_hint} />
                     </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setTarget(r)}
+                      >
+                        <ArrowRightCircle className="h-3.5 w-3.5" />
+                        Move to pending
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -232,6 +271,44 @@ export default function OrphanPaymentsPage() {
         across drafts, so the highlighted draft may not be the one this payment
         belongs to. Use the payment ID and timestamps to confirm before acting.
       </p>
+
+      <ConfirmDialog
+        open={target !== null}
+        onOpenChange={(open) => {
+          if (!open && !promoting) setTarget(null)
+        }}
+        title="Move payment to Pending Actions?"
+        confirmLabel="Move to pending"
+        onConfirm={handlePromote}
+        isPending={promoting}
+      >
+        <p>
+          This creates a reviewable application for this payment and adds it to the
+          Pending Actions queue. If the payer&apos;s draft still has their details and
+          documents, the full application is rebuilt; otherwise a flagged skeleton is
+          created for manual completion. The payment is linked — no second charge.
+        </p>
+        {target && (
+          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1">
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Email</span>
+              <span className="font-medium text-right">{displayEmail(target.member_email)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Amount</span>
+              <span className="font-medium">{formatAmount(target.amount, target.currency)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Payment ID</span>
+              <span className="font-mono">{target.gateway_payment_id || "—"}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Draft</span>
+              <span className="text-right">{target.draft_hint ? "matched — full rebuild" : "none — skeleton"}</span>
+            </div>
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

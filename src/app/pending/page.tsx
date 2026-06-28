@@ -1592,7 +1592,14 @@ function PendingPageInner() {
                         setRejectReason("")
                         setActionMessage("")
                         pendingAdvanceFromId.current = app.id
-                        approveMutation.mutate({ id: app.id, notes: "Manually approved" })
+                        // needs_manual_review === confirmed admin out-of-band verification
+                        // → bypass the doc-validation gate (validateRequiredDocuments rejects
+                        // status="uploaded" docs even when fileUrl is present).
+                        approveMutation.mutate({
+                          id: app.id,
+                          notes: "Manually approved",
+                          force: app.needs_manual_review === true,
+                        })
                       }}
                       disabled={approveMutation.isPending}
                     >

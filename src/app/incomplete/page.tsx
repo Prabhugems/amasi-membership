@@ -459,6 +459,12 @@ function IncompletePageInner() {
     return draft.email?.toLowerCase().includes(q)
   })
 
+  // True when a client-side filter (stage / fault / search) is narrowing the
+  // loaded list — used to distinguish "this status has nothing" from "filters
+  // hid everything" in the empty state.
+  const loadedCount = draftsData?.drafts?.length || 0
+  const clientFiltersActive = stage !== "all" || fault !== "all" || search.trim() !== ""
+
   const tabs: { key: TabFilter; label: string }[] = [
     { key: "all", label: "All" },
     { key: "in_progress", label: "In Progress" },
@@ -480,9 +486,17 @@ function IncompletePageInner() {
   // Counts for the stage chips. Fall back to computing from the currently
   // loaded draft list when the server hasn't returned `by_step` yet.
   const stageCountMap: Record<number, number> = (() => {
-    if (counts?.by_step) return counts.by_step
+    // The server's by_step counts are not fault/search aware, so they'd
+    // overstate the chips whenever a fault or search filter is active (e.g.
+    // showing "Email/OTP 70" while the System-fault list is empty). When such a
+    // filter is on, derive the stage counts from the loaded list scoped to that
+    // filter so the chips match what the list actually shows.
+    const faultOrSearchActive = fault !== "all" || search.trim() !== ""
+    if (counts?.by_step && !faultOrSearchActive) return counts.by_step
     const map: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
     for (const d of draftsData?.drafts || []) {
+      if (fault !== "all" && getFaultCategory(d.failure_reason) !== fault) continue
+      if (search.trim() && !d.email?.toLowerCase().includes(search.toLowerCase())) continue
       if (d.current_step >= 1 && d.current_step <= 6) {
         map[d.current_step] = (map[d.current_step] || 0) + 1
       }
@@ -893,8 +907,29 @@ function IncompletePageInner() {
             <Card className="border-dashed rounded-xl">
               <CardContent className="py-16 text-center">
                 <Inbox className="h-14 w-14 text-muted-foreground/30 mx-auto mb-4" />
-                <p className="text-lg font-semibold">No incomplete applications</p>
-                <p className="text-sm text-muted-foreground mt-1">All applications are accounted for</p>
+                {loadedCount > 0 && clientFiltersActive ? (
+                  <>
+                    <p className="text-lg font-semibold">No applications match the active filters</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {loadedCount} {loadedCount === 1 ? "application is" : "applications are"} hidden by the current filter{
+                        [stage !== "all", fault !== "all", search.trim() !== ""].filter(Boolean).length > 1 ? "s" : ""
+                      } — clear {loadedCount === 1 ? "it" : "them"} to see {loadedCount === 1 ? "it" : "them"}.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => { setStage("all"); setFault("all"); setSearch("") }}
+                    >
+                      Clear filters
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold">No incomplete applications</p>
+                    <p className="text-sm text-muted-foreground mt-1">All applications are accounted for</p>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1001,6 +1036,7 @@ function IncompletePageInner() {
           {draftsData?.drafts && draftsData.drafts.length > 0 && (
             <p className="text-sm text-muted-foreground text-center pt-2">
               Showing {drafts.length} of {draftsData.drafts.length} incomplete applications
+              {clientFiltersActive && drafts.length !== draftsData.drafts.length ? " (filtered)" : ""}
             </p>
           )}
         </motion.div>

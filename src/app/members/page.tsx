@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, Upload, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
@@ -121,10 +121,31 @@ function FilterSelect({
 /* --- Hover preview popup --- */
 function MemberPreview({ hover }: { hover: HoverState }) {
   const m = hover.member
+  const ref = useRef<HTMLDivElement>(null)
+  // hover.x is anchored to the row's right edge; place the card beside it, but
+  // measure the real card size and clamp to the viewport so it never spills off
+  // the right edge on wide screens (flips to the left of the anchor when needed).
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: hover.x + 16, top: hover.y - 10 })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    const PAD = 8
+    const GAP = 16
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    // Prefer the right of the anchor; flip to the left if that overflows.
+    let left = hover.x + GAP
+    if (left + width > vw - PAD) left = hover.x - width - GAP
+    left = Math.max(PAD, Math.min(left, vw - width - PAD))
+    const top = Math.max(PAD, Math.min(hover.y - 10, vh - height - PAD))
+    setPos({ left, top })
+  }, [hover.x, hover.y, hover.member])
   return (
     <div
+      ref={ref}
       className="fixed z-50 pointer-events-none"
-      style={{ left: hover.x + 16, top: hover.y - 10 }}
+      style={{ left: pos.left, top: pos.top }}
     >
       <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-start gap-3">

@@ -356,7 +356,8 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      not a regression. Pre-2026-05-05 we logged both cases and
       //      AMASI-MEMBERSHIP-7 accumulated 58 false positives in a week.
       //   2. Skip admin-only-by-design paths (/api/admin/*, /api/dashboard*,
-      //      /api/applications/list). These will never be allowlisted, so a
+      //      /api/applications/list, /api/applications/incomplete). These will
+      //      never be allowlisted, so a
       //      401 here cannot represent a missing-allowlist regression — it's
       //      either a logged-out admin tab whose session cookie expired
       //      (browser dropped it; indistinguishable from "no cookie" at this
@@ -368,9 +369,10 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       //      heatmap data on every range change — and regressed again in
       //      early Jun 2026 from /api/applications/list polled by
       //      /pending/page.tsx:251 (145 events / 16 days). The applications
-      //      namespace is split (list/approve/reject/clarification/rescore/
-      //      refund/create-pending are admin; submit/draft/save-draft/[id]
-      //      etc. are member) so we cannot prefix-skip — listed explicitly.
+      //      namespace is split (list/incomplete/approve/reject/clarification/
+      //      rescore/refund/create-pending are admin; submit/draft/save-draft/
+      //      [id] etc. are member) so we cannot prefix-skip — listed
+      //      explicitly.
       //      Long-term: withAdminAuth() inversion (see CONTEXT.md fragile-
       //      area #2) eliminates this carve-out entirely.
       //   3. Skip obvious vulnerability-scanner probes (/api/.env,
@@ -394,7 +396,8 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
       const isAdminOnlyByDesign =
         pathname.startsWith("/api/admin/") ||
         pathname.startsWith("/api/dashboard") ||
-        pathname === "/api/applications/list"
+        pathname === "/api/applications/list" ||
+        pathname === "/api/applications/incomplete"
       if (
         !token &&
         !isAdminOnlyByDesign &&

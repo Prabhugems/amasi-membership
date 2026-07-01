@@ -439,11 +439,18 @@ function CardContent() {
 
   const handleShare = async () => {
     if (navigator.share) {
-      await navigator.share({
-        title: `AMASI Membership Card - ${card.name}`,
-        text: `AMASI Membership #${card.amasiNumber}`,
-        url: card.verifyUrl,
-      })
+      try {
+        await navigator.share({
+          title: `AMASI Membership Card - ${card.name}`,
+          text: `AMASI Membership #${card.amasiNumber}`,
+          url: card.verifyUrl,
+        })
+      } catch (err) {
+        // AbortError = user dismissed the share sheet — not an error
+        if (err instanceof Error && err.name === "AbortError") return
+        await navigator.clipboard.writeText(card.verifyUrl)
+        toast.success("Verification link copied!")
+      }
     } else {
       await navigator.clipboard.writeText(card.verifyUrl)
       toast.success("Verification link copied!")

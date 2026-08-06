@@ -121,10 +121,13 @@ export async function uploadShimFile(
       upsert: true,
     })
   if (error) throw error
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from("uploads").getPublicUrl(path)
-  return publicUrl
+  // Phase B: return the object PATH, not a public URL — the uploads bucket is
+  // going private, at which point a stored public URL is dead. Safe for the
+  // in-store Flutter binary: member_two and member_three only persist this
+  // into the draft's step_data[docKey].fileUrl, they never hand it back to the
+  // app for display. The one route that does surface documents to the binary,
+  // member_info, signs them on read.
+  return path
 }
 
 // 4-digit numeric OTP. The published Flutter binary's Pinput widget on

@@ -19,6 +19,7 @@ import type { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { legacyOk, legacyErr, parseLegacyForm, field } from "@/lib/mobile-shim"
+import { signRecordFields } from "@/lib/storage-url"
 
 // Coerce values that may be null/undefined/bigint to a JSON-safe string.
 const str = (v: unknown): string => {
@@ -176,8 +177,22 @@ export async function POST(request: NextRequest) {
     void clinics // referenced earlier; intentionally not surfaced here
     const clinic: unknown[] = []
 
+    // Phase B: sign the document columns. This shim answers the in-store
+    // Flutter binary, which cannot be updated — once the uploads bucket goes
+    // private a stored public URL is dead to it, so a signed URL is strictly
+    // better than what it gets today. 30-day TTL because the binary caches the
+    // profile payload; note `profile` is the legacy field name for
+    // profile_photo. If the binary persists these URLs beyond 30 days they
+    // will expire and the user must re-open the profile screen to refresh.
+    const signedMemberRow = await signRecordFields(
+      memberRow,
+      ["mci_certificate", "pg_degree_certificate", "asi_member_certificate",
+       "active_license", "letter_hod", "mbbs_degree_certificate", "profile"],
+      60 * 60 * 24 * 30,
+    )
+
     return legacyOk("Member info fetched", {
-      data: [memberRow],
+      data: [signedMemberRow],
       clinic,
       // The new member_experiences table holds (position, institution,
       // dates), not the legacy surgical-procedure-count shape — emit empty

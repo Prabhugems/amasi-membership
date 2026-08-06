@@ -136,18 +136,21 @@ export async function signStorageValues(
  * The common read-boundary case: take a row out of the database and hand the
  * client signed URLs under the same field names it already expects.
  */
-export async function signRecordFields<T extends Record<string, unknown>>(
+// `T extends object` rather than `Record<string, unknown>` so callers can pass
+// a declared interface (e.g. FmasResponseRow) without an index signature.
+export async function signRecordFields<T extends object>(
   record: T,
   fields: readonly string[],
   ttlSeconds: number = DEFAULT_SIGNED_URL_TTL_SECONDS,
 ): Promise<T> {
-  const values = fields.map((f) => record[f]).filter((v): v is string => typeof v === "string" && v.length > 0)
+  const source = record as Record<string, unknown>
+  const values = fields.map((f) => source[f]).filter((v): v is string => typeof v === "string" && v.length > 0)
   if (values.length === 0) return record
 
   const signed = await signStorageValues(values, ttlSeconds)
-  const copy: Record<string, unknown> = { ...record }
+  const copy: Record<string, unknown> = { ...source }
   for (const field of fields) {
-    const original = record[field]
+    const original = source[field]
     if (typeof original === "string" && original) {
       copy[field] = signed.get(original) ?? null
     }
@@ -156,15 +159,16 @@ export async function signRecordFields<T extends Record<string, unknown>>(
 }
 
 /** Same as signRecordFields, across a list of records, in a single round trip. */
-export async function signRecordsFields<T extends Record<string, unknown>>(
+export async function signRecordsFields<T extends object>(
   records: T[],
   fields: readonly string[],
   ttlSeconds: number = DEFAULT_SIGNED_URL_TTL_SECONDS,
 ): Promise<T[]> {
   const values: string[] = []
   for (const r of records) {
+    const source = r as Record<string, unknown>
     for (const f of fields) {
-      const v = r[f]
+      const v = source[f]
       if (typeof v === "string" && v) values.push(v)
     }
   }
@@ -172,9 +176,10 @@ export async function signRecordsFields<T extends Record<string, unknown>>(
 
   const signed = await signStorageValues(values, ttlSeconds)
   return records.map((r) => {
-    const copy: Record<string, unknown> = { ...r }
+    const source = r as Record<string, unknown>
+    const copy: Record<string, unknown> = { ...source }
     for (const f of fields) {
-      const v = r[f]
+      const v = source[f]
       if (typeof v === "string" && v) copy[f] = signed.get(v) ?? null
     }
     return copy as T

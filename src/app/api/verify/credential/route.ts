@@ -3,6 +3,7 @@
 import type { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { readVerifyToken } from "@/lib/credentials/verify-token"
+import { signStorageValue } from "@/lib/storage-url"
 
 interface VerifyResponse {
   valid: boolean
@@ -76,7 +77,8 @@ export async function GET(req: NextRequest) {
     member: {
       name: member?.name ?? null,
       amasi_number: cred.amasi_number,
-      profile_photo: member?.profile_photo ?? null,
+      // Phase B: sign at the API boundary (see src/lib/storage-url.ts).
+      profile_photo: await signStorageValue(member?.profile_photo ?? null),
     },
     credential: {
       type: cred.credential_type,

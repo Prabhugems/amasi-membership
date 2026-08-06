@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs"
 import { getMemberSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { createAdminClient } from "@/lib/supabase"
+import { signRecordsFields } from "@/lib/storage-url"
 
 // GET /api/members/sync — bulk member sync for amasi-mobile offline cache.
 // Per AMASI Mobile Tech Spec §5.1 and EC Decision C "Option B" field set.
@@ -170,10 +171,16 @@ export async function GET(request: NextRequest) {
       email: r.email,
     }))
 
+    // Phase B: sign profile photos at the API boundary. This is a sync feed —
+    // clients cache what they pull — so it uses a 30-day TTL rather than the
+    // 1-hour default, matching the existing precedent in tickets/upload and
+    // tickets/[id]/reply. A client that holds a row longer than that re-syncs.
+    const signedMembers = await signRecordsFields(members, ["profile_photo"], 60 * 60 * 24 * 30)
+
     return Response.json({
       status: true,
       schema_version: SCHEMA_VERSION,
-      members,
+      members: signedMembers,
       next_page: hasMore ? page + 1 : null,
       server_time: new Date().toISOString(),
     })

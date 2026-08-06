@@ -4,6 +4,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import QRCode from "qrcode"
+import { signStorageValue } from "@/lib/storage-url"
 
 export async function GET(request: NextRequest) {
   const amasiNumber = request.nextUrl.searchParams.get("id")
@@ -67,7 +68,10 @@ export async function GET(request: NextRequest) {
         pgDegree: member.pg_degree,
         mciNumber: member.mci_council_number,
         joiningDate: member.joining_date || member.application_date || member.created_at,
-        profilePhoto: member.profile_photo,
+        // Phase B: sign at the API boundary — the stored value is a path (new
+        // rows) or a legacy public URL (old rows), neither of which resolves
+        // once the uploads bucket goes private.
+        profilePhoto: await signStorageValue(member.profile_photo),
         votingEligible: member.voting_eligible,
         qrCode: qrDataUrl,
         verifyUrl,

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { getAuthenticatedMember } from "@/lib/auth"
+import { signRecordsFields } from "@/lib/storage-url"
 
 // Unauthenticated callers see only public-safe fields — no email, phone,
 // DOB, MCI number.
@@ -119,9 +120,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return Response.json({
-      status: true,
-      data: rows.map((m: Record<string, unknown>) => {
+    const entries = rows.map((m: Record<string, unknown>) => {
         const base = {
           name: m.name,
           salutation: m.salutation || "Dr.",
@@ -144,7 +143,14 @@ export async function GET(request: NextRequest) {
           email: m.email || null,
           mobile,
         }
-      }),
+      })
+
+    // Phase B: one batched signing round trip for the whole page of results.
+    const signedEntries = await signRecordsFields(entries, ["profile_photo"])
+
+    return Response.json({
+      status: true,
+      data: signedEntries,
       count: count || 0,
       page,
       limit,

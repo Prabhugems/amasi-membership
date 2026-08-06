@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase"
+import { signRecordsFields } from "@/lib/storage-url"
 
 interface CredRow {
   amasi_number: number
@@ -211,8 +212,11 @@ export async function GET() {
         .sort((a, b) => b.id - a.id),
     }
 
+    // Phase B: sign profile photos at the API boundary (see src/lib/storage-url.ts).
+    const signedRows = await signRecordsFields(rows, ["profile_photo"])
+
     const response: FmasResponse = {
-      rows,
+      rows: signedRows,
       stats: { total: rows.length, byYear, byPlace },
       facets,
       warnings,

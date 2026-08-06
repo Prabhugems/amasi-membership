@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
+import { signRecordsFields, MEMBER_DOCUMENT_FIELDS } from "@/lib/storage-url"
 
 // Union of fields the response mapper reads off a Supabase row. Every
 // field is optional because the SELECT varies by auth tier (admin = *,
@@ -111,10 +112,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (data && data.length > 0) {
-      return Response.json({
-        status: true,
-        message: "Member found",
-        data: (data as unknown as MemberRow[]).map((m: MemberRow) => ({
+      const rows = (data as unknown as MemberRow[]).map((m: MemberRow) => ({
           ...m,
           _id: m.id, // Supabase row ID for update API
           profile_incomplete: !m.pg_degree && !m.mci_council_number && !m.date_of_birth && !m.gender,
@@ -145,7 +143,18 @@ export async function GET(request: NextRequest) {
           member_reg_date: m.application_date || m.created_at,
           joining_date: m.joining_date || m.created_at,
           zone: m.zone || "",
-        })),
+        }))
+
+      // Phase B: sign document columns at the API boundary. PUBLIC_SELECT
+      // carries profile_photo and the admin branch selects "*", so this
+      // response surfaces stored document values to a browser. One batched
+      // round trip for the whole page of results.
+      const signedRows = await signRecordsFields(rows, MEMBER_DOCUMENT_FIELDS)
+
+      return Response.json({
+        status: true,
+        message: "Member found",
+        data: signedRows,
       })
     }
 

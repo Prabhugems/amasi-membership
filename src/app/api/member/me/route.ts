@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { getMemberSession } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"
+import { signRecordFields, MEMBER_DOCUMENT_FIELDS } from "@/lib/storage-url"
 
 // GET /api/member/me — full self-profile for the authenticated member, with
 // experience and clinics joined in. Used by amasi-mobile Profile/Card/Settings.
@@ -122,9 +123,7 @@ export async function GET(_request: NextRequest) {
       return null
     })()
 
-    return Response.json({
-      status: true,
-      member: {
+    const memberPayload = {
         id: member.id,
         amasi_number: member.amasi_number,
         salutation: member.salutation || "Dr.",
@@ -191,7 +190,16 @@ export async function GET(_request: NextRequest) {
 
         created_at: member.created_at,
         updated_at: member.updated_at,
-      },
+    }
+
+    // Phase B: document columns hold either a legacy public URL or a bare
+    // object path. Sign them here, at the API boundary, so the portal keeps
+    // rendering `member.profile_photo` unchanged once the bucket goes private.
+    const signedMember = await signRecordFields(memberPayload, MEMBER_DOCUMENT_FIELDS)
+
+    return Response.json({
+      status: true,
+      member: signedMember,
       experience: experiences || [],
       clinics: clinics || [],
     })

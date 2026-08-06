@@ -148,7 +148,9 @@ describe("POST /api/ocr — Stage C only-success-writes contract", () => {
     const args = persistMock.mock.calls[0][0]
     expect(args.docKey).toBe("mci_certificate")
     expect(args.entry.status).toBe("extracted")
-    expect(args.entry.fileUrl).toMatch(/^https:\/\/storage\.test\/uploads\/mci_certificate\//)
+    // Phase B: fileUrl is now the bare object path, not a public URL — the
+    // uploads bucket is going private and reads sign the path instead.
+    expect(args.entry.fileUrl).toMatch(/^mci_certificate\//)
     expect(args.entry.extracted).toEqual({ full_name: "Test", registration_number: "1234" })
   })
 
@@ -164,7 +166,7 @@ describe("POST /api/ocr — Stage C only-success-writes contract", () => {
     // hard-coded "profile" key. See persist-ocr-upload.ts ALLOWED_DOC_KEYS.
     expect(args.docKey).toBe("profile")
     expect(args.entry.status).toBe("uploaded")
-    expect(args.entry.fileUrl).toMatch(/^https:\/\/storage\.test\/uploads\/photo\//) // storage folder is "photo", that's fine
+    expect(args.entry.fileUrl).toMatch(/^photo\//) // Phase B: bare path; storage folder is "photo", that's fine
     expect(args.entry.extracted).toEqual({})
   })
 
@@ -279,7 +281,7 @@ describe("POST /api/ocr — Stage C only-success-writes contract", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.outcome).toBe("extracted")
-    expect(body.fileUrl).toMatch(/^https:\/\/storage\.test\/uploads\/mci_certificate\//)
+    expect(body.fileUrl).toMatch(/^mci_certificate\//) // Phase B: bare object path
     // The OCR response shape is preserved even when the persist failed.
   })
 
@@ -310,6 +312,6 @@ describe("POST /api/ocr — Stage C only-success-writes contract", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.outcome).toBe("stored")
-    expect(body.fileUrl).toMatch(/^https:\/\/storage\.test\/uploads\/photo\//)
+    expect(body.fileUrl).toMatch(/^photo\//) // Phase B: bare object path
   })
 })

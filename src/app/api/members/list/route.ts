@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
+import { signRecordsFields } from "@/lib/storage-url"
 
 export async function GET(request: NextRequest) {
   const session = await getAdminSession()
@@ -107,7 +108,11 @@ export async function GET(request: NextRequest) {
       credentials: credentialsByAmasi[m.amasi_number] ?? [],
     }))
 
-    return Response.json({ status: true, data: enrichedData, total: count || 0 })
+    // Phase B: sign profile photos at the API boundary, one batched round trip
+    // for the page (see src/lib/storage-url.ts).
+    const signedData = await signRecordsFields(enrichedData, ["profile_photo"])
+
+    return Response.json({ status: true, data: signedData, total: count || 0 })
   } catch (error: any) {
     console.error("Members list error:", error.message)
     return Response.json({ status: false, message: "Unable to load members. Please try again." }, { status: 500 })

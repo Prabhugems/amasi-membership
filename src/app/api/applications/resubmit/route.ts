@@ -131,8 +131,8 @@ export async function POST(request: NextRequest) {
               upsert: true,
             })
           if (!uploadError) {
-            const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(storagePath)
-            fileUrl = urlData?.publicUrl || null
+            // Phase B: store the object path, not a public URL — reads sign it.
+            fileUrl = storagePath
           } else {
             console.error(`File upload failed for ${canonicalKey}:`, uploadError.message)
             uploadWarnings.push(`${canonicalKey} upload failed — please try again`)
@@ -166,8 +166,8 @@ export async function POST(request: NextRequest) {
             .from("uploads")
             .upload(storagePath, buffer, { contentType: file.type || "image/jpeg", upsert: true })
           if (!uploadError) {
-            const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(storagePath)
-            fileUrl = urlData?.publicUrl || null
+            // Phase B: store the object path, not a public URL — reads sign it.
+            fileUrl = storagePath
           }
         } catch {}
 

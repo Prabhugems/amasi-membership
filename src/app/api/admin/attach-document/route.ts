@@ -106,16 +106,12 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: false, message: "Storage upload failed" }, { status: 500 })
   }
 
-  const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(storagePath)
-  const fileUrl = urlData?.publicUrl
-  if (!fileUrl) {
-    Sentry.captureMessage("admin/attach-document: getPublicUrl returned no url", {
-      level: "warning",
-      tags: { route: "admin/attach-document", doc_key: docKey, kind },
-      extra: { id, storagePath },
-    })
-    return Response.json({ status: false, message: "Failed to resolve public URL" }, { status: 500 })
-  }
+  // Phase B: store the object path, not a public URL. The uploads bucket is
+  // going private, at which point every stored public URL 404s; reads sign the
+  // path at the API boundary (src/lib/storage-url.ts). storagePath is already
+  // known-good here — the upload above succeeded — so the old "could not
+  // resolve public URL" failure branch no longer has anything to guard.
+  const fileUrl = storagePath
 
   // ─── 2. Build the doc entry ────────────────────────────────────────────
   // Same shape used by applicant upload + the scripts/<name>-attach-docs

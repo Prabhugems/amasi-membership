@@ -189,8 +189,13 @@ export async function POST(request: NextRequest) {
           error: "Could not save your document. Please try again in a moment.",
         }, { status: 500 })
       }
-      const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
-      fileUrl = urlData?.publicUrl || null
+      // Phase B: store the object PATH, not a public URL. The uploads bucket is
+      // going private, at which point every stored public URL 404s. Reads sign
+      // the path at the API boundary (src/lib/storage-url.ts). fileUrl is never
+      // rendered as an img src or href in the apply flow — it is a validation
+      // token (validateRequiredDocuments) and the value copied onto the member
+      // row — so a bare path is safe here.
+      fileUrl = fileName
     }
 
     // Profile photos don't need OCR — return after storage

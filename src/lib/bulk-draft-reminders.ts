@@ -79,12 +79,19 @@ export async function runBulkDraftReminders(
   }
 
   const emails = Array.from(new Set(candidates.map(d => d.email?.toLowerCase()).filter(Boolean) as string[]))
-  const { data: existingApps } = await supabase
-    .from("membership_applications")
-    .select("email")
-    .in("email", emails)
+  const [{ data: existingApps }, { data: existingMembers }] = await Promise.all([
+    supabase.from("membership_applications").select("email").in("email", emails),
+    supabase.from("members").select("email").in("email", emails),
+  ])
 
-  const alreadySubmitted = new Set((existingApps || []).map(a => a.email?.toLowerCase()))
+  // Anti-join against both membership_applications AND members — a draft can
+  // go stale for an already-approved member (e.g. they revisit /apply after
+  // being approved) with no matching membership_applications row under the
+  // same email. See cleanup-drafts/route.ts for the same pattern.
+  const alreadySubmitted = new Set([
+    ...(existingApps || []).map(a => a.email?.toLowerCase()),
+    ...(existingMembers || []).map(m => m.email?.toLowerCase()),
+  ])
 
   const resendKey = process.env.RESEND_API_KEY?.trim()
   if (!resendKey) {

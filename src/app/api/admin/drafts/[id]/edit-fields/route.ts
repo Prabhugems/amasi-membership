@@ -68,6 +68,10 @@ function coerceValue(raw: unknown): string | null {
 // Basic shape validation per field. Light by design — admin entered the
 // value, they likely know what they're doing, and the applicant's resume
 // will re-validate downstream. Returns null on OK, error string on fail.
+//
+// Cross-field rule (middleName ≠ firstName) is enforced in the POST handler
+// below, after all per-field coercions land, because it needs both incoming
+// values + the current draft state to evaluate correctly.
 function validateField(key: EditableField, value: string | null): string | null {
   if (value === null || value === "") return null // empty / clear is allowed for middleName, dob, etc.
   switch (key) {
@@ -210,6 +214,36 @@ export async function POST(
   // tweaks one field, and hits Save without touching the others.
   const stepData = (draft.step_data as { formData?: Record<string, unknown> } | null) ?? {}
   const currentFormData = (stepData.formData as Record<string, unknown>) ?? {}
+
+  // Cross-field rule: middleName must not be a case-insensitive duplicate
+  // of firstName. Evaluated against the EFFECTIVE values — incoming when
+  // present, current when not — so a partial edit (e.g. only firstName)
+  // is rejected if the existing middleName would suddenly match. Only
+  // enforced when THIS request actually touches firstName or middleName —
+  // otherwise an unrelated edit (e.g. just fixing `mobile`) on a draft that
+  // already carries a pre-existing OCR-era duplicate would be blocked
+  // even though the request never touched either name field, contradicting
+  // the "tweak one field, hit Save" design goal above.
+  // See src/lib/normalize-name.ts for the incident this prevents.
+  const touchesNameFields = typeof coerced.firstName !== "undefined" || typeof coerced.middleName !== "undefined"
+  const effFirst =
+    typeof coerced.firstName !== "undefined" ? coerced.firstName : (currentFormData.firstName as string | null | undefined)
+  const effMiddle =
+    typeof coerced.middleName !== "undefined" ? coerced.middleName : (currentFormData.middleName as string | null | undefined)
+  if (
+    touchesNameFields &&
+    effFirst &&
+    effMiddle &&
+    String(effFirst).trim().toLowerCase() === String(effMiddle).trim().toLowerCase()
+  ) {
+    return Response.json(
+      {
+        error:
+          "middleName cannot equal firstName. Clear the middle-name field or set it to a different value.",
+      },
+      { status: 400 },
+    )
+  }
 
   const oldDelta: Record<string, unknown> = {}
   const newDelta: Record<string, unknown> = {}

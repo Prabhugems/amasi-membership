@@ -26,7 +26,7 @@ Add a new entry **at the top of the Unreleased section** for every bug fix commi
 
 ## [Unreleased]
 
-### 2026-08-07 — bulk-draft-reminders skip approved members — `9dd3cf7`
+### 2026-08-07 — bulk-draft-reminders skip approved members — `35b77d6`
 - **File(s):** `src/lib/bulk-draft-reminders.ts:81-90`
 - **Root cause:** The reminder-eligibility exclusion set only anti-joined idle drafts against `membership_applications`, never `members`. An approved member with a stray `in_progress` draft (created via `/api/otp/send`, which creates a draft whenever `/apply` is visited with a `membershipType` and never checks the `members` table) has no matching `membership_applications` row under the same email, so nothing excluded them — they received "incomplete application" reminder emails despite already being members. The sibling job `cleanup-drafts/route.ts` already anti-joined against both tables; the lesson was never ported here.
 - **Fix:** Added a parallel `members` table query and merged its emails into the `alreadySubmitted` exclusion set, mirroring `cleanup-drafts/route.ts`'s existing pattern.

@@ -29,6 +29,7 @@ import {
   partitionEditableUpdates,
   computeFieldDiff,
   deriveZoneFromStateChange,
+  findNameDuplicateError,
 } from "@/lib/edit-application-fields"
 
 // ---------------------------------------------------------------------------
@@ -640,6 +641,30 @@ describe("admin edit-application-fields", () => {
     const diff = computeFieldDiff(current, { state: "Atlantis" })
     const z = deriveZoneFromStateChange(current, diff)
     expect(z).toEqual({ zone: null })
+  })
+
+  it("findNameDuplicateError rejects a name-field edit that creates a first_name/middle_name duplicate", () => {
+    // Mirrors the admin/drafts edit-fields guard fix — same OCR-era
+    // "Shivani Shivani Samaiya" bug class, see src/lib/normalize-name.ts.
+    const current = { first_name: "Shivani", middle_name: "Anand" }
+    expect(findNameDuplicateError(current, { middle_name: "Shivani" })).toMatch(/middle_name cannot equal first_name/)
+    expect(findNameDuplicateError(current, { middle_name: "shivani" })).toMatch(/middle_name cannot equal first_name/)
+    expect(findNameDuplicateError(current, { first_name: "Anand" })).toMatch(/middle_name cannot equal first_name/)
+  })
+
+  it("findNameDuplicateError does not block an unrelated field edit on an application with a pre-existing duplicate", () => {
+    // Regression: the guard must only fire when THIS request touches
+    // first_name/middle_name — otherwise a draft/application that already
+    // carries a pre-existing duplicate becomes uneditable for any field.
+    const current = { first_name: "Shivani", middle_name: "Shivani" }
+    expect(findNameDuplicateError(current, { city: "Mumbai" })).toBeNull()
+  })
+
+  it("findNameDuplicateError allows clearing middle_name and allows a distinct middle_name", () => {
+    const current = { first_name: "Shivani", middle_name: "Shivani" }
+    expect(findNameDuplicateError(current, { middle_name: "" })).toBeNull()
+    expect(findNameDuplicateError(current, { middle_name: null })).toBeNull()
+    expect(findNameDuplicateError(current, { middle_name: "Kumari" })).toBeNull()
   })
 
   it("FINAL_APPLICATION_STATUSES blocks edits on approved and rejected rows only", () => {

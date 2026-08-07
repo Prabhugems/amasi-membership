@@ -7,6 +7,7 @@ import {
   partitionEditableUpdates,
   computeFieldDiff,
   deriveZoneFromStateChange,
+  findNameDuplicateError,
   FINAL_APPLICATION_STATUSES,
 } from "@/lib/edit-application-fields"
 
@@ -87,6 +88,11 @@ export async function PATCH(
         },
         { status: 400 },
       )
+    }
+
+    const nameDuplicateError = findNameDuplicateError(app as Record<string, unknown>, accepted)
+    if (nameDuplicateError) {
+      return Response.json({ status: false, message: nameDuplicateError }, { status: 400 })
     }
 
     const diff = computeFieldDiff(app as Record<string, unknown>, accepted)

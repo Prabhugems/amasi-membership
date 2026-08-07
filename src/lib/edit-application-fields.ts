@@ -1,4 +1,5 @@
 import { STATE_TO_ZONE } from "@/lib/membership-types"
+import { normalizeMiddleName } from "@/lib/normalize-name"
 
 // Server-side allowlist for PATCH /api/applications/[id]/edit-fields.
 // Any key not here is rejected with 400 — locked fields include payment
@@ -144,6 +145,37 @@ export function deriveZoneFromStateChange(
       : null
   if (zone === (currentRow.zone ?? null)) return {}
   return { zone }
+}
+
+// Cross-field rule: middle_name must not be a case-insensitive duplicate of
+// first_name — same class of bug src/lib/normalize-name.ts was built to
+// close (OCR-derived "Shivani Shivani Samaiya" duplicates). Evaluated
+// against EFFECTIVE values (this request's `accepted` value when present,
+// otherwise the current row) but only enforced when the request actually
+// touches first_name or middle_name — mirrors the fix applied to the
+// sibling admin/drafts edit-fields route, so an edit to an unrelated field
+// on an application that already carries a pre-existing duplicate isn't
+// blocked. Returns an error string, or null when OK.
+export function findNameDuplicateError(
+  currentRow: Record<string, unknown>,
+  accepted: Record<string, unknown>,
+): string | null {
+  const touchesName =
+    Object.prototype.hasOwnProperty.call(accepted, "first_name") ||
+    Object.prototype.hasOwnProperty.call(accepted, "middle_name")
+  if (!touchesName) return null
+
+  const effFirst = Object.prototype.hasOwnProperty.call(accepted, "first_name")
+    ? (accepted.first_name as string | null | undefined)
+    : (currentRow.first_name as string | null | undefined)
+  const effMiddle = Object.prototype.hasOwnProperty.call(accepted, "middle_name")
+    ? (accepted.middle_name as string | null | undefined)
+    : (currentRow.middle_name as string | null | undefined)
+
+  if (effFirst && effMiddle && normalizeMiddleName(effFirst, effMiddle) === null) {
+    return "middle_name cannot equal first_name. Clear the middle-name field or set it to a different value."
+  }
+  return null
 }
 
 // Status values on `membership_applications` that block edits. Approved and

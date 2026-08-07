@@ -8,6 +8,7 @@ import { logAiDecision, type AiDecisionInput } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 import { normalizeDocumentKey, requiresExtraction, CANONICAL_KEYS, EXTRACTION_SKIPPED_KEYS } from "@/lib/document-keys"
 import { extractDocument } from "@/lib/document-extraction"
+import { normalizeMiddleName } from "@/lib/normalize-name"
 
 // Same reason as /api/ocr — extractDocument runs Claude vision + OCR.space
 // fallback and exceeds Vercel's 15s default.
@@ -222,8 +223,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Normalize middle_name against the effective first_name (incoming if
+    // this resubmit changed it, otherwise what's already on the
+    // application) so re-uploaded documents can't reintroduce the
+    // "Shivani Shivani Samaiya" duplicate via re-run OCR extraction — same
+    // class of bug src/lib/normalize-name.ts was built to close.
+    if (updates.middleName !== undefined) {
+      updateFields.middle_name = normalizeMiddleName(
+        updates.firstName !== undefined ? updates.firstName : app.first_name,
+        updates.middleName,
+      )
+    }
+
     // Also update the full name
-    const nameParts = [updates.salutation, updates.firstName, updates.middleName, updates.lastName].filter(Boolean)
+    const nameParts = [updates.salutation, updates.firstName, updateFields.middle_name, updates.lastName].filter(Boolean)
     if (nameParts.length > 0) {
       updateFields.name = nameParts.join(" ")
     }

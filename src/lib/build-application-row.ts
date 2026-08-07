@@ -16,6 +16,7 @@
 // + lib/auto-approval.ts (the two remaining inline call sites for the
 // parallel member-row construction).
 import type { ApprovalResult } from "@/lib/ai-approval"
+import { normalizeMiddleName, buildFullName } from "@/lib/normalize-name"
 
 // Shape of an entry in the `uploads` map posted by the /apply submit handler.
 // Mirrors the client payload built at apply/page.tsx:1366-1377. All optional —
@@ -75,9 +76,9 @@ export function buildApplicationRow(args: BuildApplicationRowArgs) {
     reference_number: referenceNumber,
     salutation: formData.salutation,
     first_name: formData.firstName,
-    middle_name: formData.middleName,
+    middle_name: normalizeMiddleName(formData.firstName, formData.middleName),
     last_name: formData.lastName,
-    name: [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" "),
+    name: buildFullName(formData.firstName, formData.middleName, formData.lastName),
     email: formData.email,
     phone: formData.mobile,
     mobile_code: formData.mobileCode || "+91",

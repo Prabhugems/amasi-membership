@@ -1100,7 +1100,20 @@ function ApplyForm() {
         if (isValidName) {
           if (nameParts[0]) updates.firstName = nameParts[0]
           if (nameParts.length === 2) updates.lastName = nameParts[1]
-          if (nameParts.length >= 3) { updates.middleName = nameParts[1]; updates.lastName = nameParts.slice(2).join(" ") }
+          if (nameParts.length >= 3) {
+            // Skip middle when it's a case-insensitive duplicate of first —
+            // OCR on certificates sometimes emits "Shivani Shivani Samaiya"
+            // and writing that through poisons members.middle_name + badges.
+            // See src/lib/normalize-name.ts header for incident context.
+            const candidateMiddle = nameParts[1]
+            if (candidateMiddle.toLowerCase() !== nameParts[0].toLowerCase()) {
+              updates.middleName = candidateMiddle
+              updates.lastName = nameParts.slice(2).join(" ")
+            } else {
+              updates.middleName = ""
+              updates.lastName = nameParts.slice(2).join(" ")
+            }
+          }
         }
       }
 

@@ -3,6 +3,7 @@ import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
+import { normalizeMiddleName, buildFullName } from "@/lib/normalize-name"
 
 /**
  * Normalized shape used by the auto-approval helper.
@@ -317,7 +318,7 @@ export async function autoApproveApplication(
   }
 
   // 2. Create member row
-  const fullName = [input.firstName, input.middleName, input.lastName].filter(Boolean).join(" ")
+  const fullName = buildFullName(input.firstName, input.middleName, input.lastName)
   const memberId = crypto.randomUUID()
   const nowIso = new Date().toISOString()
   const today = nowIso.split("T")[0]
@@ -329,7 +330,7 @@ export async function autoApproveApplication(
     updated_at: nowIso,
     name: fullName,
     first_name: input.firstName,
-    middle_name: input.middleName,
+    middle_name: normalizeMiddleName(input.firstName, input.middleName),
     last_name: input.lastName,
     email: input.email,
     phone: input.phone || null,

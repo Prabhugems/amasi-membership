@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { scoreApplication, toScorerFormShape } from "@/lib/ai-approval"
+import { signDocumentsAcrossRows } from "@/lib/storage-url"
 
 export async function GET(request: NextRequest) {
   const session = await getAdminSession()
@@ -43,8 +44,12 @@ export async function GET(request: NextRequest) {
     }
 
     const healed = await autoHealBuggyScores(supabase, data || [])
+    // documents.*.fileUrl is stored as a bare storage path since Phase B
+    // (src/lib/storage-url.ts) — sign at the API boundary so the admin
+    // dashboard's <img>/lightbox tags get a loadable URL.
+    const signed = await signDocumentsAcrossRows(healed)
 
-    return Response.json({ status: true, data: healed, total: count || 0 })
+    return Response.json({ status: true, data: signed, total: count || 0 })
   } catch (error: any) {
     return Response.json({ status: false, message: error.message }, { status: 500 })
   }

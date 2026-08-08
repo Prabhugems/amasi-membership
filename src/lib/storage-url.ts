@@ -196,3 +196,46 @@ export const MEMBER_DOCUMENT_FIELDS = [
   "active_license",
   "letter_hod",
 ] as const
+
+type DocumentsBlob = Record<string, { fileUrl?: string | null; url?: string | null; [key: string]: unknown }>
+
+/**
+ * Sign every fileUrl/url inside `documents` JSON blobs (the shape stored on
+ * `membership_applications.documents` — keyed by document type, each entry
+ * optionally carrying `fileUrl` and/or `url`), across a list of rows.
+ *
+ * `documents` is a JSON blob rather than flat columns, so it isn't covered by
+ * signRecordFields/signRecordsFields above — those sign named top-level
+ * fields on `members` rows. This is the same "store paths, sign on read"
+ * rule applied to the nested shape.
+ */
+export async function signDocumentsAcrossRows<T extends { documents?: unknown }>(
+  rows: T[],
+  ttlSeconds: number = DEFAULT_SIGNED_URL_TTL_SECONDS,
+): Promise<T[]> {
+  const allValues: string[] = []
+  for (const row of rows) {
+    const docs = row.documents as DocumentsBlob | null | undefined
+    if (!docs || typeof docs !== "object") continue
+    for (const doc of Object.values(docs)) {
+      if (doc?.fileUrl) allValues.push(doc.fileUrl)
+      if (doc?.url) allValues.push(doc.url)
+    }
+  }
+  if (allValues.length === 0) return rows
+
+  const signed = await signStorageValues(allValues, ttlSeconds)
+  return rows.map((row) => {
+    const docs = row.documents as DocumentsBlob | null | undefined
+    if (!docs || typeof docs !== "object") return row
+    const signedDocs: Record<string, unknown> = {}
+    for (const [key, doc] of Object.entries(docs)) {
+      signedDocs[key] = {
+        ...doc,
+        ...(doc?.fileUrl ? { fileUrl: signed.get(doc.fileUrl) ?? null } : {}),
+        ...(doc?.url ? { url: signed.get(doc.url) ?? null } : {}),
+      }
+    }
+    return { ...row, documents: signedDocs }
+  })
+}

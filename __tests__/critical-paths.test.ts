@@ -19,6 +19,7 @@ import {
   parseManualReviewReason,
   MANUAL_REVIEW_REASON_CODES,
   manualReviewReasonForExtractionFailure,
+  findDocumentByCanonicalKey,
 } from "@/lib/document-keys"
 import { validatePersonalDetails } from "@/lib/validators"
 import type { ApplicationFormData } from "@/lib/membership-types"
@@ -109,6 +110,29 @@ describe("document key normalisation", () => {
     // If we add a new doc type and forget to register it, default to OCR
     // rather than silently skipping — matches the comment in document-keys.ts.
     expect(requiresExtraction("brand_new_doctype_2027")).toBe(true)
+  })
+
+  it("findDocumentByCanonicalKey finds an entry stored under a different alias than the lookup key", () => {
+    // Root cause of the apply/resubmit "currently uploaded" preview bug:
+    // build-application-row.ts stores documents.* keys verbatim from the
+    // client's uploads map ("profile", "pg_degree_certificate"), while
+    // apply/resubmit's own upload slots are declared under the aliases
+    // "photo" and "pg_certificate". An exact-key lookup misses both.
+    const documents = {
+      profile: { fileUrl: "photo/1.jpg" },
+      pg_degree_certificate: { fileUrl: "pg_degree_certificate/2.pdf" },
+      mci_certificate: { fileUrl: "mci_certificate/3.pdf" },
+    }
+    expect(findDocumentByCanonicalKey(documents, "photo")).toEqual({ fileUrl: "photo/1.jpg" })
+    expect(findDocumentByCanonicalKey(documents, "pg_certificate")).toEqual({ fileUrl: "pg_degree_certificate/2.pdf" })
+    // Exact match still works when the stored key equals the lookup key.
+    expect(findDocumentByCanonicalKey(documents, "mci_certificate")).toEqual({ fileUrl: "mci_certificate/3.pdf" })
+  })
+
+  it("findDocumentByCanonicalKey returns undefined for a doc type that was never uploaded", () => {
+    expect(findDocumentByCanonicalKey({ mci_certificate: { fileUrl: "x" } }, "pg_certificate")).toBeUndefined()
+    expect(findDocumentByCanonicalKey(null, "photo")).toBeUndefined()
+    expect(findDocumentByCanonicalKey(undefined, "photo")).toBeUndefined()
   })
 
   it("CANONICAL keys exposed by DOCUMENT_TYPES are stable", () => {

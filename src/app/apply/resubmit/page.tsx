@@ -16,6 +16,7 @@ import { toast } from "sonner"
 import { INDIAN_STATES } from "@/lib/membership-types"
 import { ProfileOtp } from "@/components/profile/profile-otp"
 import { compressImageIfNeeded } from "@/lib/compress-image"
+import { findDocumentByCanonicalKey } from "@/lib/document-keys"
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -55,7 +56,7 @@ interface ApplicationData {
   mci_council_number?: string
   mci_council_state?: string
   asi_membership_no?: string
-  documents?: Record<string, { url?: string; status?: string }>
+  documents?: Record<string, { fileUrl?: string; url?: string; status?: string }>
 }
 
 type Phase = "loading" | "form" | "submitting" | "otp_verify" | "success" | "error"
@@ -882,8 +883,8 @@ function ResubmitContent() {
               { key: "pg_certificate", label: "PG Degree Certificate" },
               { key: "mci_certificate", label: "MCI / State Medical Council Certificate" },
             ] as const).map(({ key, label }) => {
-              const existingDoc = application?.documents?.[key]
-              const existingUrl = existingDoc?.url || (typeof existingDoc === "string" ? existingDoc : null)
+              const existingDoc = findDocumentByCanonicalKey(application?.documents, key)
+              const existingUrl = existingDoc?.fileUrl || existingDoc?.url || null
               const selectedFile = files[key]
 
               return (

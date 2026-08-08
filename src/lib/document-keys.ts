@@ -93,6 +93,32 @@ export function normalizeDocumentKey(key: string): string {
 }
 
 /**
+ * Looks up an entry in a `documents`-shaped record by canonical form rather
+ * than exact key, so a lookup with one alias finds an entry stored under a
+ * different alias of the same canonical type.
+ *
+ * Why this is needed: `documents` columns are keyed by whatever raw upload
+ * key was used at write time — apply/page.tsx's submit path stores "profile"
+ * and "pg_degree_certificate" verbatim (build-application-row.ts does not
+ * call normalizeDocumentKey on the top-level documents keys), while other
+ * call sites (e.g. apply/resubmit's upload slots) use the aliases "photo"
+ * and "pg_certificate". An exact-key lookup silently misses the existing
+ * document. See CONTEXT.md's "Document handling" fragile-area note.
+ */
+export function findDocumentByCanonicalKey<T>(
+  documents: Record<string, T> | null | undefined,
+  key: string,
+): T | undefined {
+  if (!documents) return undefined
+  if (documents[key] !== undefined) return documents[key]
+  const target = normalizeDocumentKey(key)
+  for (const [k, v] of Object.entries(documents)) {
+    if (normalizeDocumentKey(k) === target) return v
+  }
+  return undefined
+}
+
+/**
  * Check if a document type requires OCR extraction.
  * Normalizes the key first, then checks. Unknown types default to true (safer).
  */

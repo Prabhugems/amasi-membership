@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { getMemberSession } from "@/lib/auth"
+import { signDocumentsAcrossRows } from "@/lib/storage-url"
 
 // Return all fields needed for status display AND resubmit form
 const SELECT_FIELDS = "id, reference_number, name, first_name, middle_name, last_name, salutation, email, phone, mobile_code, membership_type, status, payment_status, ai_confidence, ai_verified, needs_manual_review, review_notes, assigned_amasi_number, created_at, reviewed_at, date_of_birth, gender, father_name, nationality, street_address_1, street_address_2, city, state, country, postal_code, zone, pg_degree, pg_college, pg_university, pg_year, ug_college, mci_council_number, mci_council_state, asi_membership_no, documents"
@@ -192,7 +193,12 @@ export async function GET(request: NextRequest) {
 
     const rowEmail = (data as Record<string, unknown>)?.email as string | undefined
     const canSeeFullRow = await callerOwnsRow(supabase, rowEmail)
-    const safeData = canSeeFullRow ? data : redactRow(data as Record<string, unknown>)
+    // The full row (returned only to the owning caller) carries `documents`
+    // with fileUrl values that are bare storage paths since Phase B — sign
+    // them so /apply/resubmit's "currently uploaded" preview link resolves.
+    const safeData = canSeeFullRow
+      ? (await signDocumentsAcrossRows([data as Record<string, unknown> & { documents?: unknown }]))[0]
+      : redactRow(data as Record<string, unknown>)
     return Response.json({ status: true, data: safeData, applications: [safeData] })
   } catch (error: unknown) {
     console.error("Status lookup error:", error)

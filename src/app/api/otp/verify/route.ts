@@ -1,6 +1,7 @@
 // @auth: public — verifies an email OTP and may issue the member session
 // itself; cannot require a session before there is one. Rate-limited per IP.
 import { NextRequest } from "next/server"
+import { otpMatches, OTP_FAILURE_MESSAGE } from "@/lib/otp-hash"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { signToken, setMemberCookie } from "@/lib/auth"
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     // Find the latest unexpired, unverified OTP for this email
     const { data: otpRecord, error } = await supabase
       .from("otp_codes")
-      .select("*")
+      .select("id, code_hash, attempts, email")
       .eq("email", email.toLowerCase())
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
@@ -35,12 +36,12 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error || !otpRecord) {
-      return Response.json({ status: false, message: "No valid OTP found. Please request a new one." }, { status: 400 })
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     // Check max attempts (5)
     if (otpRecord.attempts >= 5) {
-      return Response.json({ status: false, message: "Too many incorrect attempts. Please request a new OTP." }, { status: 429 })
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     // Increment attempts
@@ -55,13 +56,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Verify code
-    if (otpRecord.code !== code.trim()) {
-      const remaining = 5 - (otpRecord.attempts + 1)
-      return Response.json({
-        status: false,
-        message: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,
-      }, { status: 400 })
+    // Compare against the stored hash. The code itself is never read back.
+    if (!otpMatches(code, otpRecord.code_hash)) {
+      // One message for wrong / expired / already-used / too many attempts:
+      // a remaining-attempts count told a guesser a live code existed here.
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     // Mark as verified

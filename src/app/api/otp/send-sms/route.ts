@@ -1,6 +1,7 @@
 // @auth: public — issues an SMS OTP; runs before the recipient has any
 // session. Rate-limited per IP.
 import { NextRequest } from "next/server"
+import { hashOtp } from "@/lib/otp-hash"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { randomInt } from "node:crypto"
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
     const { count } = await supabase
       .from("otp_codes")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("email", `sms:${mobile}`)
       .gte("created_at", tenMinAgo)
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     // Store OTP in DB
     const { error: insertError } = await supabase.from("otp_codes").insert({
       email: `sms:${mobile}`,
-      code,
+      code_hash: hashOtp(code),
       expires_at: expiresAt.toISOString(),
     })
 

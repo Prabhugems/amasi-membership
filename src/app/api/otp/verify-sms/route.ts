@@ -1,6 +1,7 @@
 // @auth: public — verifies an SMS OTP for the apply flow; runs before the
 // applicant has any session. Rate-limited per IP.
 import { NextRequest } from "next/server"
+import { otpMatches, OTP_FAILURE_MESSAGE } from "@/lib/otp-hash"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     // Find latest unexpired, unverified OTP for this mobile
     const { data: otpRecord, error } = await supabase
       .from("otp_codes")
-      .select("*")
+      .select("id, code_hash, attempts, email")
       .eq("email", `sms:${mobile}`)
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
@@ -33,11 +34,11 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error || !otpRecord) {
-      return Response.json({ status: false, message: "No valid OTP found. Please request a new one." }, { status: 400 })
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     if (otpRecord.attempts >= 5) {
-      return Response.json({ status: false, message: "Too many incorrect attempts. Please request a new OTP." }, { status: 429 })
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     // Increment attempts
@@ -50,9 +51,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (otpRecord.code !== code.trim()) {
-      const remaining = 4 - (otpRecord.attempts + 1)
-      return Response.json({ status: false, message: `Incorrect code. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.` }, { status: 400 })
+    // Compare against the stored hash. The code itself is never read back.
+    if (!otpMatches(code, otpRecord.code_hash)) {
+      return Response.json({ status: false, message: OTP_FAILURE_MESSAGE }, { status: 400 })
     }
 
     // Mark verified

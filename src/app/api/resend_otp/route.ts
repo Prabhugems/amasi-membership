@@ -2,6 +2,7 @@
 // draft by `id`, mints a new OTP, sends via Resend. See backend-spec.md §23.
 
 import type { NextRequest } from "next/server"
+import { hashOtp } from "@/lib/otp-hash"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     const { error: otpErr } = await supabase.from("otp_codes").insert({
       email,
-      code,
+      code_hash: hashOtp(code),
       expires_at: expiresAt.toISOString(),
     })
     if (otpErr) {

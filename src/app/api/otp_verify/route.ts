@@ -12,6 +12,7 @@
 // screen (which comes after /application_data).
 
 import type { NextRequest } from "next/server"
+import { otpMatches, OTP_FAILURE_MESSAGE } from "@/lib/otp-hash"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     const { data: otpRecord } = await supabase
       .from("otp_codes")
-      .select("id, code, attempts")
+      .select("id, code_hash, attempts")
       .eq("email", emailLower)
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
@@ -59,10 +60,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (!otpRecord) {
-      return legacyErr("OTP has expired")
+      return legacyErr(OTP_FAILURE_MESSAGE)
     }
     if (otpRecord.attempts >= 5) {
-      return legacyErr("Too many incorrect attempts. Please request a new OTP.")
+      return legacyErr(OTP_FAILURE_MESSAGE)
     }
 
     await supabase
@@ -70,9 +71,10 @@ export async function POST(request: NextRequest) {
       .update({ attempts: (otpRecord.attempts ?? 0) + 1 })
       .eq("id", otpRecord.id)
 
-    if (otpRecord.code !== code) {
+    // Compare against the stored hash. The code itself is never read back.
+    if (!otpMatches(code, otpRecord.code_hash)) {
       return new Response(
-        JSON.stringify({ status: false, message: "Invalid OTP" }),
+        JSON.stringify({ status: false, message: OTP_FAILURE_MESSAGE }),
         { status: 201, headers: { "content-type": "application/json" } }
       )
     }

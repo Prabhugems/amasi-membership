@@ -6,6 +6,7 @@
 // See migration/backend-spec.md §5.
 
 import type { NextRequest } from "next/server"
+import { hashOtp } from "@/lib/otp-hash"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     const { error: insertError } = await supabase.from("otp_codes").insert({
       email,
-      code,
+      code_hash: hashOtp(code),
       expires_at: expiresAt.toISOString(),
     })
     if (insertError) {

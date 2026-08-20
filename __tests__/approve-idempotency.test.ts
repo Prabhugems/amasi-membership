@@ -16,6 +16,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // ── Auth mock ────────────────────────────────────────────────────────────────
 vi.mock("@/lib/auth", () => ({
   getAdminSession: vi.fn(async () => ({ email: "admin@test.com", name: "Test Admin" })),
+  // Session has no `sub` claim in this mock, matching real adminReviewerId()
+  // behavior for a caller with no uuid — returns null, never throws.
+  adminReviewerId: vi.fn(() => null),
 }))
 
 // ── Audit / AI decision mocks (not under test; prevent real DB calls) ────────

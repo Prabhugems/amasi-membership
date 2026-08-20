@@ -161,6 +161,7 @@ export async function POST(
       action: "draft_complete_and_submit",
       entityType: "application",
       entityId: result.applicationId,
+      entityName: email,
       details: {
         draftId,
         referenceNumber: result.referenceNumber,
@@ -189,6 +190,7 @@ export async function POST(
     action: "draft_complete_and_submit",
     entityType: "application",
     entityId: result.applicationId,
+    entityName: email,
     details: { draftId, referenceNumber: result.referenceNumber, paymentId: payment.gateway_payment_id, email },
   })
 

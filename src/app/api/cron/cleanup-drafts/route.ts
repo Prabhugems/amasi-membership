@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
 import { isExcludedEmail } from "@/lib/email-exclusions"
+import { extractStoragePaths } from "@/lib/draft-utils"
 import { Resend } from "resend"
 
 // Iterates stuck drafts with per-draft Razorpay SDK calls.
@@ -74,9 +75,18 @@ function errMessage(e: unknown): string {
 // ---------------------------------------------------------------------------
 // GET /api/cron/cleanup-drafts[?dryRun=true]
 //
-// Hourly draft maintenance. Soft-delete model (sets deleted_at, keeps row);
-// storage files retained for the 90-day audit window (separate hard-delete
-// sweep, not in this route).
+// Hourly draft maintenance.
+//
+// Policy (2026-08-20): a draft with NO captured payment is hard-deleted —
+// row and uploaded documents permanently removed — 24h after it goes idle.
+// Applicants are responsible for finishing within that window; we hold
+// nothing beyond it. Every path below that can delete first re-checks
+// membership_payments (via isPaidNoApp / the draft's own payment columns) —
+// a draft with real captured money is NEVER deleted here, it's routed to
+// `payment_on_hold` for a human to recover or refund. Refunded drafts
+// (Step 5) are a different lifecycle — they already had a real payment —
+// and keep the prior soft-delete behavior; this policy is specifically
+// about applicants who never paid at all.
 //
 // dryRun=true: returns the planned actions per draft without sending any
 // email, writing any state, or logging any audit/step events.
@@ -117,6 +127,7 @@ export async function GET(request: Request) {
     reminders_sent: 0,
     reminders_sent_5h: 0,
     expired: 0,
+    hard_deleted: 0,
     payment_holds: 0,
     refunds_completed: 0,
     would_act_on: [] as Action[],
@@ -443,8 +454,12 @@ export async function GET(request: Request) {
 
     // -----------------------------------------------------------------------
     // Cutoffs used by Step 3a, Step 3, Step 4 below.
+    // 24h (was 48h until 2026-08-20): no payment made → deleted 24h after
+    // going idle. Lines up exactly with the 18h second reminder (Step 2) +
+    // the existing 6h grace window below — an applicant who's been idle
+    // 18h gets one more nudge, then 6h of runway before deletion.
     // -----------------------------------------------------------------------
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 3600000).toISOString()
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
     const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
 
     // -----------------------------------------------------------------------
@@ -462,7 +477,7 @@ export async function GET(request: Request) {
       .from("draft_applications")
       .select("id, email, phone, current_step, status, updated_at, created_at, step_data, payment_order_id, payment_id, has_verified_payment")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", fortyEightHoursAgo)
+      .lt("updated_at", twentyFourHoursAgo)
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
@@ -477,22 +492,31 @@ export async function GET(request: Request) {
         continue
       }
       if (dryRun) {
-        planAction(draft, "silent_soft_delete_no_formdata", `OTP-only abandoned, ${hoursIdle(draft.updated_at)}h idle, no formData persisted`)
+        planAction(draft, "silent_hard_delete_no_formdata", `OTP-only abandoned, ${hoursIdle(draft.updated_at)}h idle, no formData persisted`)
         continue
       }
       try {
-        const { data: marked } = await supabase
+        // Atomic conditional delete — the WHERE clause is the race guard
+        // (same role the prior conditional .update() played): if a payment
+        // landed between the SELECT above and now, 0 rows match and this is
+        // a no-op, same as the old "state changed during cleanup" skip.
+        const { data: deletedRow } = await supabase
           .from("draft_applications")
-          .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_otp_only_no_formdata" })
+          .delete()
           .eq("id", draft.id)
           .is("payment_order_id", null)
           .eq("has_verified_payment", false)
           .is("step_data->formData", null)
-          .select("id")
+          .select("id, step_data")
           .maybeSingle()
-        if (!marked) { console.log(`[cleanup-drafts] skipped silent ${draft.id}: state changed during cleanup`); continue }
+        if (!deletedRow) { console.log(`[cleanup-drafts] skipped silent ${draft.id}: state changed during cleanup`); continue }
+        const paths = extractStoragePaths((deletedRow as { step_data?: Record<string, unknown> }).step_data)
+        if (paths.length > 0) {
+          const { error: storageError } = await supabase.storage.from("uploads").remove(paths)
+          if (storageError) console.error(`[cleanup-drafts] storage cleanup ${draft.id}:`, storageError.message)
+        }
         await logMembershipAuditEvent({
-          action: "draft_silent_expired_no_formdata",
+          action: "draft_hard_deleted_no_formdata",
           entityType: "draft_application",
           entityId: draft.id,
           newData: {
@@ -500,30 +524,32 @@ export async function GET(request: Request) {
             phone: (draft as { phone?: string | null }).phone ?? null,
             step: draft.current_step,
             created_at: draft.created_at,
-            reason: "Soft-deleted silently — applicant verified email but never selected a membership type or filled the form (no step_data.formData)",
+            reason: "Permanently deleted — no payment made, applicant verified email but never selected a membership type or filled the form (no step_data.formData)",
             step_data_snapshot: (draft as { step_data?: unknown }).step_data ?? null,
           },
           performedBy: "system",
         }, supabase)
-        summary.expired++
+        summary.hard_deleted++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] silent expire ${draft.id}:`, errMessage(err))
       }
     }
 
     // -----------------------------------------------------------------------
-    // Step 3 — Soft-delete unpaid drafts (48h idle, no payment)
-    // Issue 2 guarantee: only expire drafts that have already been reminded
-    // and given a 6h grace window. This prevents reminder + expiry firing in
-    // the same cron invocation for backlog drafts that are >48h on first
-    // sight. They get the reminder this run; expire on the next-day's run.
-    // Files in storage are KEPT for the 90-day audit window.
+    // Step 3 — Hard-delete unpaid drafts (24h idle, no payment)
+    // Issue 2 guarantee: only delete drafts that have already been reminded
+    // and given a 6h grace window. This prevents reminder + deletion firing
+    // in the same cron invocation for backlog drafts that are already >24h
+    // on first sight. They get the reminder this run; delete on the
+    // next-day's run. Row and uploaded documents are permanently removed —
+    // no retention window (2026-08-20 policy change; previously a 48h
+    // soft-delete with files kept 90 days).
     // -----------------------------------------------------------------------
     const { data: expiredDrafts } = await supabase
       .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, step_data")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", fortyEightHoursAgo)
+      .lt("updated_at", twentyFourHoursAgo)
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
@@ -531,7 +557,7 @@ export async function GET(request: Request) {
       .lt("reminder_sent_at", sixHoursAgo)
 
     for (const draft of expiredDrafts || []) {
-      // Safety: never expire-as-unpaid a draft that actually paid. The query
+      // Safety: never delete-as-unpaid a draft that actually paid. The query
       // filters on the draft's own (unsynced) payment columns and would
       // otherwise delete a paid applicant and email them "payment not
       // completed". membership_payments is the source of truth.
@@ -541,21 +567,26 @@ export async function GET(request: Request) {
       }
       if (dryRun) {
         const why = isExcludedEmail(draft.email)
-          ? `unpaid, ${hoursIdle(draft.updated_at)}h idle, excluded address (would soft-delete without emailing)`
+          ? `unpaid, ${hoursIdle(draft.updated_at)}h idle, excluded address (would hard-delete without emailing)`
           : `unpaid, ${hoursIdle(draft.updated_at)}h idle, reminder sent ≥6h ago`
-        planAction(draft, "soft_delete_unpaid", why)
+        planAction(draft, "hard_delete_unpaid", why)
         continue
       }
       try {
-        const { data: marked } = await supabase
+        const { data: deletedRow } = await supabase
           .from("draft_applications")
-          .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_unpaid_expired" })
+          .delete()
           .eq("id", draft.id)
           .is("payment_order_id", null)
           .eq("has_verified_payment", false)
-          .select("id")
+          .select("id, step_data")
           .maybeSingle()
-        if (!marked) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during expiry`); continue }
+        if (!deletedRow) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment arrived during deletion`); continue }
+        const paths = extractStoragePaths((deletedRow as { step_data?: Record<string, unknown> }).step_data)
+        if (paths.length > 0) {
+          const { error: storageError } = await supabase.storage.from("uploads").remove(paths)
+          if (storageError) console.error(`[cleanup-drafts] storage cleanup ${draft.id}:`, storageError.message)
+        }
         if (!isExcludedEmail(draft.email)) {
           const html = emailWrapper(
             "Application Expired",
@@ -580,34 +611,34 @@ export async function GET(request: Request) {
           })
         }
         await logMembershipAuditEvent({
-          action: "draft_expired",
+          action: "draft_hard_deleted_unpaid",
           entityType: "draft_application",
           entityId: draft.id,
           newData: {
             email: draft.email,
             step: draft.current_step,
-            reason: "Soft-deleted after 48h inactivity (files retained)",
+            reason: "Permanently deleted after 24h inactivity — no payment made",
             email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
           },
           performedBy: "system",
         }, supabase)
-        summary.expired++
+        summary.hard_deleted++
       } catch (err: unknown) {
         console.error(`[cleanup-drafts] expire ${draft.id}:`, errMessage(err))
       }
     }
 
     // -----------------------------------------------------------------------
-    // Step 4 — Paid-but-stuck drafts (48h idle, payment present)
-    //   - Razorpay paid/captured → status=payment_on_hold + admin alert (manual refund)
+    // Step 4 — Paid-but-stuck drafts (24h idle, payment attempted)
+    //   - Razorpay paid/captured → status=payment_on_hold + admin alert (manual refund) — NEVER deleted
     //   - Razorpay attempted → skip (may complete)
-    //   - Else → soft-delete (treat as unpaid)
+    //   - Else (order failed / never captured) → hard-delete (treat as unpaid)
     // -----------------------------------------------------------------------
     const { data: paidStuckDrafts } = await supabase
       .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, reminder_sent_at")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, reminder_sent_at, step_data")
       .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", fortyEightHoursAgo)
+      .lt("updated_at", twentyFourHoursAgo)
       .or("payment_order_id.not.is.null,has_verified_payment.eq.true")
       .is("deleted_at", null)
 
@@ -674,9 +705,9 @@ export async function GET(request: Request) {
               }
               if (dryRun) {
                 const why = isExcludedEmail(draft.email)
-                  ? `Razorpay status=${status}, excluded address (would soft-delete without emailing)`
+                  ? `Razorpay status=${status}, excluded address (would hard-delete without emailing)`
                   : `Razorpay status=${status}, treating as unpaid, reminder sent ≥6h ago`
-                planAction(draft, "soft_delete_payment_failed", why)
+                planAction(draft, "hard_delete_payment_failed", why)
                 continue
               }
               if (!isExcludedEmail(draft.email)) {
@@ -704,27 +735,32 @@ export async function GET(request: Request) {
                   console.error(`[cleanup-drafts] expiry email (paid-uncaptured) ${draft.email}:`, emailErr)
                 }
               }
-              const { data: marked } = await supabase
+              const { data: deletedRow } = await supabase
                 .from("draft_applications")
-                .update({ status: "expired", deleted_at: new Date().toISOString(), failure_reason: "applicant_unpaid_expired" })
+                .delete()
                 .eq("id", draft.id)
                 .eq("has_verified_payment", false)
-                .select("id")
+                .select("id, step_data")
                 .maybeSingle()
-              if (!marked) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment verified during expiry`); continue }
+              if (!deletedRow) { console.log(`[cleanup-drafts] skipped ${draft.id}: payment verified during deletion`); continue }
+              const paths = extractStoragePaths((deletedRow as { step_data?: Record<string, unknown> }).step_data)
+              if (paths.length > 0) {
+                const { error: storageError } = await supabase.storage.from("uploads").remove(paths)
+                if (storageError) console.error(`[cleanup-drafts] storage cleanup ${draft.id}:`, storageError.message)
+              }
               await logMembershipAuditEvent({
-                action: "draft_expired",
+                action: "draft_hard_deleted_unpaid",
                 entityType: "draft_application",
                 entityId: draft.id,
                 newData: {
                   email: draft.email,
                   step: draft.current_step,
-                  reason: "Soft-deleted after 48h inactivity — payment not captured (files retained)",
+                  reason: "Permanently deleted after 24h inactivity — Razorpay order never reached paid/captured",
                   email_skipped: isExcludedEmail(draft.email) ? "excluded address" : null,
                 },
                 performedBy: "system",
               }, supabase)
-              summary.expired++
+              summary.hard_deleted++
             }
           } else {
             // has_verified_payment but no order_id → mark on hold

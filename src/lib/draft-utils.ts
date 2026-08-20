@@ -62,23 +62,36 @@ export const STEP_LABELS: Record<number, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Extract Supabase Storage paths from step_data values.
- * Looks for URLs that contain `/storage/v1/object/` (the Supabase storage
- * URL pattern) and extracts the path after the bucket name.
+ * Extract Supabase Storage paths from step_data.uploads.*.fileUrl values.
+ *
+ * Handles both formats seen in prod: the legacy full signed/public URL
+ * (`/storage/v1/object/(sign|public)/uploads/<path>`, still present on
+ * older drafts) and the current bare object-path format (Phase B,
+ * src/lib/storage-url.ts — /api/ocr now returns just the path since the
+ * `uploads` bucket is slated to go private). The previous version of this
+ * function only matched the URL format via a blanket regex over the whole
+ * step_data JSON — a silent no-op for every draft uploaded since the Phase B
+ * switch, meaning deleteDraft() looked like it cleaned up storage but
+ * actually left every current-format document behind.
  */
-function extractStoragePaths(stepData: Record<string, unknown>): string[] {
+export function extractStoragePaths(stepData: Record<string, unknown> | null | undefined): string[] {
+  const uploads = stepData && typeof stepData === "object"
+    ? (stepData as { uploads?: Record<string, { fileUrl?: unknown }> }).uploads
+    : null
+  if (!uploads || typeof uploads !== "object") return []
+
   const paths: string[] = []
-  const json = JSON.stringify(stepData)
-
-  // Match Supabase storage URLs — signed or public — and pull out the
-  // bucket-relative path.  Pattern:
-  //   /storage/v1/object/(sign|public)/<bucket>/<path>
-  const regex = /\/storage\/v1\/object\/(?:sign|public)\/uploads\/([^?"]+)/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(json)) !== null) {
-    paths.push(decodeURIComponent(match[1]))
+  for (const entry of Object.values(uploads)) {
+    const fileUrl = entry?.fileUrl
+    if (typeof fileUrl !== "string" || !fileUrl) continue
+    const urlMatch = fileUrl.match(/\/storage\/v1\/object\/(?:sign|public)\/uploads\/([^?]+)/)
+    if (urlMatch) {
+      paths.push(decodeURIComponent(urlMatch[1]))
+    } else if (!/^https?:\/\//i.test(fileUrl)) {
+      // Bare storage object path — current format, use as-is.
+      paths.push(fileUrl)
+    }
   }
-
   return Array.from(new Set(paths)) // deduplicate
 }
 

@@ -187,8 +187,15 @@ export default function PendingPage() {
   )
 }
 
+const PAGE_SIZE = 100
+
 function PendingPageInner() {
   const [tab, setTab] = useState<TabFilter>("pending")
+  // /api/applications/list is paginated (offset/limit/total) but this page
+  // used to hardcode limit=100 with no way to reach rows beyond the first
+  // page — any tab exceeding 100 rows silently truncated with no indication
+  // beyond the "Showing X of Y" footnote. Wired up for real here.
+  const [page, setPage] = useState(0)
   const reduced = useReducedMotion()
   const [search, setSearch] = useState("")
   // Selected app (open in detail pane). Local state is the source of truth so a
@@ -246,9 +253,9 @@ function PendingPageInner() {
   const pendingAdvanceFromId = useRef<string | null>(null)
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["applications", tab],
+    queryKey: ["applications", tab, page],
     queryFn: async () => {
-      const res = await fetch(`/api/applications/list?status=${tab}&limit=100`)
+      const res = await fetch(`/api/applications/list?status=${tab}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
       return res.json()
     },
   })
@@ -339,26 +346,14 @@ function PendingPageInner() {
     },
   })
 
-  // Save internal note mutation (stores in application metadata)
-  const noteMutation = useMutation({
-    mutationFn: async ({ id, note }: { id: string; note: string }) => {
-      const res = await fetch("/api/applications/clarification", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applicationId: id, action: "internal_note", message: note }),
-      })
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data.status) {
-        toast.success("Internal note saved")
-        queryClient.invalidateQueries({ queryKey: ["applications"] })
-        setInternalNote("")
-      } else {
-        toast.error(data.message || "Failed to save note")
-      }
-    },
-  })
+  // Internal-note saving is disabled: the "internal_note" action on
+  // /api/applications/clarification writes to `internal_notes`, a column
+  // that does not exist on membership_applications (the real note-shaped
+  // columns are `admin_notes`, unused, and `review_notes`, which is the
+  // applicant-visible approve/reject/clarify message and would be wrong to
+  // reuse here — it'd either leak internal notes to the applicant or get
+  // clobbered by the next decision). Every save attempt 500s today. Dropped
+  // pending a real internal_notes jsonb column + migration.
 
   // Bulk approve
   const bulkApproveMutation = useMutation({
@@ -647,7 +642,7 @@ function PendingPageInner() {
           return (
             <button
               key={t.key}
-              onClick={() => { setTab(t.key); setSelectedIds(new Set()); setFocusIndex(-1); setExpandedId(null) }}
+              onClick={() => { setTab(t.key); setPage(0); setSelectedIds(new Set()); setFocusIndex(-1); setExpandedId(null) }}
               className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
                 isActive
                   ? style.activeClass + " shadow-sm"
@@ -1533,31 +1528,11 @@ function PendingPageInner() {
                           ))}
                         </div>
                       )}
-                      {/* Add new note */}
-                      <div className="flex gap-2">
-                        <Input
-                          value={internalNote}
-                          onChange={e => setInternalNote(e.target.value)}
-                          placeholder="Add an internal note (not sent to applicant)..."
-                          className="flex-1 h-9 text-sm"
-                          onKeyDown={e => {
-                            if (e.key === "Enter" && internalNote.trim()) {
-                              e.stopPropagation()
-                              noteMutation.mutate({ id: app.id, note: internalNote })
-                            }
-                          }}
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9"
-                          onClick={() => noteMutation.mutate({ id: app.id, note: internalNote })}
-                          disabled={!internalNote.trim() || noteMutation.isPending}
-                        >
-                          {noteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-                        </Button>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">Notes are private and not visible to the applicant.</p>
+                      {/* Adding notes is temporarily disabled — see comment near noteMutation's old definition */}
+                      <p className="text-xs text-muted-foreground italic">
+                        Internal notes aren&apos;t available yet. Use the reviewer message on approve/reject/
+                        request-clarification for anything the applicant should see.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1734,11 +1709,36 @@ function PendingPageInner() {
 
       </div>
 
-      {/* Total count */}
+      {/* Total count + pagination */}
       {data?.total > 0 && (
-        <p className="text-sm text-muted-foreground text-center pt-2">
-          Showing {applications.length} of {data.total} applications
-        </p>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <p className="text-sm text-muted-foreground">
+            Showing {page * PAGE_SIZE + 1}–{page * PAGE_SIZE + applications.length} of {data.total} applications
+          </p>
+          {data.total > PAGE_SIZE && (
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page === 0}
+                onClick={() => { setPage((p) => Math.max(0, p - 1)); setExpandedId(null) }}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground px-1">
+                Page {page + 1} of {Math.ceil(data.total / PAGE_SIZE)}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={(page + 1) * PAGE_SIZE >= data.total}
+                onClick={() => { setPage((p) => p + 1); setExpandedId(null) }}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </div>
       )}
         </motion.div>
       </AnimatePresence>

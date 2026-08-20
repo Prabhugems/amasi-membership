@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, adminReviewerId } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       .update({
         status: "rejected",
         reviewed_at: new Date().toISOString(),
+        reviewed_by: adminReviewerId(session),
         review_notes: reason,
         needs_manual_review: false,
         manual_review_reason: null,

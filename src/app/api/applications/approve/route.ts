@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { randomUUID } from "node:crypto"
 import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, adminReviewerId } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
@@ -240,6 +240,7 @@ export async function POST(request: NextRequest) {
         status: "approved",
         assigned_amasi_number: nextAmasiNumber,
         reviewed_at: new Date().toISOString(),
+        reviewed_by: adminReviewerId(session),
         review_notes: notes || "Manually approved by admin",
         member_id: memberId,
         // Approval supersedes any AI-flagged review state. Without this, the

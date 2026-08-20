@@ -94,6 +94,18 @@ export async function getAdminSession() {
   }
 }
 
+// `reviewed_by` on membership_applications is a uuid column referencing
+// admin_users.id. The JWT's `sub` claim is that id for DB-backed admins, but
+// the env-var-bypass admin signs `sub: "admin-1"` (not a valid uuid) — an
+// insert with that value would fail the column's type. Returns null rather
+// than throwing so callers can omit the field instead of erroring the whole
+// approve/reject/clarify request over an unrelated identity gap.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export function adminReviewerId(session: { sub?: unknown } | null | undefined): string | null {
+  const sub = session?.sub
+  return typeof sub === "string" && UUID_RE.test(sub) ? sub : null
+}
+
 export async function getMemberSession() {
   // Cookie is checked first so existing browser sessions are unaffected.
   // Bearer fallback exists for the React Native mobile client, which has no

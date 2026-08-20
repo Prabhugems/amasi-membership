@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { createAdminClient } from "@/lib/supabase"
-import { getAdminSession } from "@/lib/auth"
+import { getAdminSession, adminReviewerId } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (action !== "need_clarification" && action !== "ask_resubmit" && action !== "internal_note") {
+    if (action !== "need_clarification" && action !== "ask_resubmit") {
       return Response.json(
-        { status: false, message: "Action must be 'need_clarification', 'ask_resubmit', or 'internal_note'" },
+        { status: false, message: "Action must be 'need_clarification' or 'ask_resubmit'" },
         { status: 400 }
       )
     }
@@ -49,27 +49,6 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: false, message: `Cannot request clarification on an application with status "${app.status}"` }, { status: 400 })
     }
 
-    // Handle internal notes — no status change, no email
-    if (action === "internal_note") {
-      const existingNotes = Array.isArray(app.internal_notes) ? app.internal_notes : []
-      const newNote = { text: message, date: new Date().toISOString() }
-
-      const { error: noteError } = await supabase
-        .from("membership_applications")
-        .update({
-          internal_notes: [...existingNotes, newNote],
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", applicationId)
-
-      if (noteError) {
-        console.error("Internal note update error:", noteError)
-        return Response.json({ status: false, message: "Failed to save internal note" }, { status: 500 })
-      }
-
-      return Response.json({ status: true, message: "Internal note saved" })
-    }
-
     const newStatus = action === "need_clarification" ? "need_clarification" : "resubmit_requested"
 
     const { error: updateError } = await supabase
@@ -78,6 +57,7 @@ export async function POST(request: NextRequest) {
         status: newStatus,
         review_notes: message,
         reviewed_at: new Date().toISOString(),
+        reviewed_by: adminReviewerId(session),
         needs_manual_review: false,
         manual_review_reason: null,
         updated_at: new Date().toISOString(),
@@ -140,7 +120,7 @@ export async function POST(request: NextRequest) {
     await logAdminAction({
       adminEmail: (session?.email as string) || "unknown",
       adminName: (session?.name as string) || undefined,
-      action: action === "need_clarification" ? "request_clarification" : action === "ask_resubmit" ? "request_resubmit" : "add_internal_note",
+      action: action === "need_clarification" ? "request_clarification" : "request_resubmit",
       entityType: "application",
       entityId: applicationId,
       entityName: fullName,

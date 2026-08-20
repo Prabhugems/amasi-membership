@@ -27,32 +27,12 @@ import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { getAdminSession } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"
-import { buildApplicationRow } from "@/lib/build-application-row"
-import { scoreApplication, type ApprovalResult } from "@/lib/ai-approval"
 import { generateRefNumber } from "@/lib/reference-number"
 import { logAdminAction } from "@/lib/audit-log"
+import { promoteDraftToApplication } from "@/lib/promote-draft-to-application"
 
 function isPlaceholderEmail(e: string | null | undefined): boolean {
   return !e || e.endsWith("@razorpay-webhook.invalid")
-}
-
-// Mirrors the recovery scripts: if AI scoring can't run (deps/network), fall
-// back to a neutral result. The row is going to pending_review for manual
-// review either way, so scoring is informational, never gating.
-function fallbackApproval(): ApprovalResult {
-  return {
-    totalScore: 0,
-    autoApprove: false,
-    blockingReasons: ["scoring_skipped"],
-    checks: [],
-    flags: ["orphan_payment_promote: AI scoring skipped"],
-    nmcVerification: null,
-    nmcApiStatus: null,
-    nmcResponseTimeMs: null,
-    bypassedDocs: [],
-    lowConfidenceDocs: [],
-    mediumConfidenceDocs: [],
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -204,82 +184,38 @@ export async function POST(request: NextRequest) {
     if (canReconstruct) {
       // --- 4a. DRAFT MODE: reconstruct the full application (mirrors submit) ---
       mode = "draft"
-      let approval: ApprovalResult
-      try {
-        approval = await scoreApplication(formData!, uploads as any, true, supabase)
-      } catch (e) {
-        Sentry.captureException(e, {
-          level: "warning",
-          tags: { route: "admin/orphan-payments/promote", op: "scoring_failed" },
-        })
-        approval = fallbackApproval()
+      // Delegates to the shared reconstruction function — extracted 2026-08-20
+      // so the Complete & Submit action on payment_on_hold drafts can reuse
+      // this exact logic. See src/lib/promote-draft-to-application.ts and
+      // docs/superpowers/specs/2026-08-20-draft-rescue-design.md §1.
+      const result = await promoteDraftToApplication(
+        {
+          draft: draft!,
+          email: email!,
+          paymentId: paymentId!,
+          paymentRowId: pay.id,
+          actorReason: reason,
+          routeTag: "admin/orphan-payments/promote",
+        },
+        supabase,
+      )
+      if (!result.ok && result.code === "ALREADY_EXISTS_RACE") {
+        return Response.json(
+          { status: false, code: "ALREADY_EXISTS", message: result.message },
+          { status: 409 }
+        )
       }
-
-      const documentsUnreadable = approval.decision === "documents_unreadable"
-      const aiConfidence = documentsUnreadable
-        ? "documents_unreadable"
-        : approval.totalScore >= 80
-          ? "high"
-          : approval.totalScore >= 50
-            ? "medium"
-            : "low"
-      const applicationStatus = documentsUnreadable ? "documents_unreadable" : "pending_review"
-
-      // Finalize an early pending_payment skeleton in place if one exists; else INSERT.
-      const { data: pendingRow } = await supabase
-        .from("membership_applications")
-        .select("id, reference_number")
-        .eq("email", email!)
-        .eq("status", "pending_payment")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      referenceNumber = pendingRow?.reference_number || generateRefNumber()
-
-      const row = buildApplicationRow({
-        referenceNumber,
-        formData: formData!,
-        uploads: uploads as any,
-        paymentId: paymentId!,
-        emailVerified: true,
-        mobileVerified: false,
-        allAiVerified: false,
-        documentsUnreadable,
-        approval,
-        aiConfidence,
-        aiFlags: approval.flags,
-        hasPendingReview: true,
-        manualReviewReason: reason,
-        applicationStatus,
-      })
-
-      if (pendingRow) {
-        const { data: finalized, error: finalizeErr } = await supabase
-          .from("membership_applications")
-          .update({ ...row, updated_at: new Date().toISOString() })
-          .eq("id", pendingRow.id)
-          .eq("status", "pending_payment")
-          .select("id")
-          .maybeSingle()
-        if (finalizeErr) throw finalizeErr
-        if (!finalized) {
-          // Lost a race — already finalized by another path. Treat as success.
-          return Response.json(
-            { status: false, code: "ALREADY_EXISTS", message: "Application was just finalized elsewhere." },
-            { status: 409 }
-          )
-        }
-        appId = finalized.id
-      } else {
-        const { data: inserted, error: insertErr } = await supabase
-          .from("membership_applications")
-          .insert(row)
-          .select("id")
-          .single()
-        if (insertErr) throw insertErr
-        appId = inserted!.id
+      if (!result.ok && result.code === "LINK_FAILED") {
+        return Response.json(
+          { status: false, code: "LINK_FAILED", applicationId: result.applicationId, message: result.message },
+          { status: 500 }
+        )
       }
+      if (!result.ok) {
+        throw new Error("Unhandled promoteDraftToApplication failure code")
+      }
+      appId = result.applicationId
+      referenceNumber = result.referenceNumber
     } else {
       // --- 4b. SKELETON MODE: minimal flagged row for manual completion ---
       mode = "skeleton"
@@ -330,56 +266,60 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: false, message: "Failed to create application" }, { status: 500 })
   }
 
-  // --- 5. Link the orphan payment to the new application ---
-  const { error: linkErr } = await supabase
-    .from("membership_payments")
-    .update({ application_id: appId })
-    .eq("id", pay.id)
-    .is("application_id", null)
-  if (linkErr) {
-    Sentry.captureException(linkErr, {
-      level: "error",
-      tags: { route: "admin/orphan-payments/promote", op: "link_failed" },
-      extra: { appId, paymentRowId },
-    })
-    // The application exists but the payment didn't link — surface loudly so it
-    // doesn't silently re-appear as an orphan. Admin can retry safely
-    // (idempotency now resolves to the just-created application).
-    return Response.json(
-      {
-        status: false,
-        code: "LINK_FAILED",
-        applicationId: appId,
-        message: "Application created but payment link failed. Please retry.",
-      },
-      { status: 500 }
-    )
-  }
-
-  // --- 6. Soft-complete the draft so it leaves the incomplete pile ---
-  if (draft) {
-    const { error: draftErr } = await supabase
-      .from("draft_applications")
-      .update({
-        status: "completed",
-        failure_reason: null,
-        deleted_at: new Date().toISOString(),
-        step_data: {
-          ...stepData,
-          payment_id: paymentId,
-          recovered_at: new Date().toISOString(),
-          recovered_application_id: appId,
+  // Skeleton mode only — draft mode already linked the payment and
+  // soft-completed the draft inside promoteDraftToApplication() above.
+  if (mode === "skeleton") {
+    // --- 5. Link the orphan payment to the new application ---
+    const { error: linkErr } = await supabase
+      .from("membership_payments")
+      .update({ application_id: appId })
+      .eq("id", pay.id)
+      .is("application_id", null)
+    if (linkErr) {
+      Sentry.captureException(linkErr, {
+        level: "error",
+        tags: { route: "admin/orphan-payments/promote", op: "link_failed" },
+        extra: { appId, paymentRowId },
+      })
+      // The application exists but the payment didn't link — surface loudly so it
+      // doesn't silently re-appear as an orphan. Admin can retry safely
+      // (idempotency now resolves to the just-created application).
+      return Response.json(
+        {
+          status: false,
+          code: "LINK_FAILED",
+          applicationId: appId,
+          message: "Application created but payment link failed. Please retry.",
         },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", draft.id)
-    if (draftErr) {
-      // Non-fatal: the application + payment are already correct. Log and move on.
-      Sentry.captureException(draftErr, {
-        level: "warning",
-        tags: { route: "admin/orphan-payments/promote", op: "draft_soft_complete_failed" },
-        extra: { draftId: draft.id, appId },
-      })
+        { status: 500 }
+      )
+    }
+
+    // --- 6. Soft-complete the draft so it leaves the incomplete pile ---
+    if (draft) {
+      const { error: draftErr } = await supabase
+        .from("draft_applications")
+        .update({
+          status: "completed",
+          failure_reason: null,
+          deleted_at: new Date().toISOString(),
+          step_data: {
+            ...stepData,
+            payment_id: paymentId,
+            recovered_at: new Date().toISOString(),
+            recovered_application_id: appId,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", draft.id)
+      if (draftErr) {
+        // Non-fatal: the application + payment are already correct. Log and move on.
+        Sentry.captureException(draftErr, {
+          level: "warning",
+          tags: { route: "admin/orphan-payments/promote", op: "draft_soft_complete_failed" },
+          extra: { draftId: draft.id, appId },
+        })
+      }
     }
   }
 

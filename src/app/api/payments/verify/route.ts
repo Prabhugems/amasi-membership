@@ -80,7 +80,16 @@ export async function POST(request: NextRequest) {
       .update(signatureBody)
       .digest("hex")
 
-    if (expectedSignature !== razorpay_signature) {
+    // Constant-time compare to avoid leaking the secret via response-time
+    // side channels — same pattern as webhooks/razorpay/route.ts. Length
+    // check first so timingSafeEqual never throws on malformed input (a
+    // razorpay_signature that isn't valid hex, or the wrong length).
+    const expectedBuf = Buffer.from(expectedSignature, "hex")
+    const signatureBuf = Buffer.from(razorpay_signature, "hex")
+    if (
+      expectedBuf.length !== signatureBuf.length ||
+      !crypto.timingSafeEqual(expectedBuf, signatureBuf)
+    ) {
       console.error("Payment signature mismatch")
       return Response.json({ status: false, message: "Payment verification failed" }, { status: 400 })
     }

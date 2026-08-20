@@ -42,7 +42,7 @@ function fallbackApproval(): ApprovalResult {
     autoApprove: false,
     blockingReasons: ["scoring_skipped"],
     checks: [],
-    flags: ["promote_draft: AI scoring skipped"],
+    flags: ["orphan_payment_promote: AI scoring skipped"],
     nmcVerification: null,
     nmcApiStatus: null,
     nmcResponseTimeMs: null,

@@ -165,6 +165,7 @@ describe("promoteDraftToApplication", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rowArgs = (state.buildApplicationRowMock.mock.calls as unknown[][])[0][0] as any
     expect(rowArgs.approval).toMatchObject({ totalScore: 0, autoApprove: false, blockingReasons: ["scoring_skipped"] })
+    expect(rowArgs.approval.flags).toEqual(["orphan_payment_promote: AI scoring skipped"])
   })
 
   it("routes documents_unreadable decisions to applicationStatus 'documents_unreadable'", async () => {

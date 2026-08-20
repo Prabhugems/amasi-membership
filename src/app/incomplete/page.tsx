@@ -17,7 +17,7 @@ import { formatDate } from "@/lib/utils"
 import {
   Search, Loader2, Inbox, Eye, Trash2, Send, Clock,
   AlertTriangle, CreditCard, RotateCcw, FileX, PauseCircle,
-  XCircle, AlertCircle, Mail, MessageCircle, Pencil,
+  XCircle, AlertCircle, Mail, MessageCircle, Pencil, CheckCircle2,
 } from "lucide-react"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -252,6 +252,7 @@ function IncompletePageInner() {
   const [refundDialogDraft, setRefundDialogDraft] = useState<IncompleteDraft | null>(null)
   const [deleteDialogDraft, setDeleteDialogDraft] = useState<IncompleteDraft | null>(null)
   const [unexpireDialogDraft, setUnexpireDialogDraft] = useState<IncompleteDraft | null>(null)
+  const [completeDialogDraft, setCompleteDialogDraft] = useState<IncompleteDraft | null>(null)
   const [editDialogDraft, setEditDialogDraft] = useState<IncompleteDraft | null>(null)
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null)
   const [pendingResumeId, setPendingResumeId] = useState<string | null>(null)
@@ -447,6 +448,35 @@ function IncompletePageInner() {
     },
   })
 
+  // Complete & Submit — calls /api/admin/drafts/[id]/complete-and-submit.
+  // Promotes a payment_on_hold draft into a pending_review application via
+  // the shared promoteDraftToApplication() logic (same as Orphan Payments'
+  // "Move to pending action" button, triggered from the draft side instead
+  // of the payment side).
+  const completeAndSubmitMutation = useMutation({
+    mutationFn: async (draftId: string) => {
+      const res = await fetch(`/api/admin/drafts/${draftId}/complete-and-submit`, { method: "POST" })
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; referenceNumber?: string; applicationId?: string }
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || "Failed to complete and submit")
+      }
+      return data as { ok: true; applicationId: string; referenceNumber: string }
+    },
+    onSuccess: (data) => {
+      toast.success(`Submitted for review — reference ${data.referenceNumber}`)
+      queryClient.invalidateQueries({ queryKey: ["incomplete-drafts"] })
+      queryClient.invalidateQueries({ queryKey: ["incomplete-counts"] })
+      // /pending's query key — refreshes if the admin navigates there next
+      // in this same tab. Does NOT reach a second tab already open on
+      // /pending; that tab needs its own refresh.
+      queryClient.invalidateQueries({ queryKey: ["applications"] })
+      setCompleteDialogDraft(null)
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to complete and submit")
+    },
+  })
+
   // ─── Filter by search + stage ──────────────────────────────────────────
   const drafts = (draftsData?.drafts || []).filter((draft: IncompleteDraft) => {
     if (stage !== "all" && draft.current_step !== stage) return false
@@ -576,6 +606,17 @@ function IncompletePageInner() {
       return (
         <div className="flex items-center gap-1.5">
           {editBtn}
+          {adminRole === "super_admin" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs font-medium text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-400/30 hover:bg-teal-50 dark:hover:bg-teal-500/15 gap-1.5"
+              onClick={() => setCompleteDialogDraft(draft)}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              Complete & Submit
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -1150,6 +1191,31 @@ function IncompletePageInner() {
         onConfirm={() => unexpireDialogDraft && unexpireMutation.mutate(unexpireDialogDraft.id)}
         isPending={unexpireMutation.isPending}
       />
+
+      {/* ─── Complete & Submit Confirmation Dialog ─────────────────────── */}
+      <ConfirmDialog
+        open={!!completeDialogDraft}
+        onOpenChange={(o) => { if (!o) setCompleteDialogDraft(null) }}
+        title="Complete & submit this application?"
+        confirmLabel="Complete & Submit"
+        onConfirm={() => completeDialogDraft && completeAndSubmitMutation.mutate(completeDialogDraft.id)}
+        isPending={completeAndSubmitMutation.isPending}
+      >
+        {completeDialogDraft && (
+          <div className="space-y-3">
+            <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+              <p><span className="font-medium text-muted-foreground">Applicant:</span> {draftDisplayName(completeDialogDraft)}</p>
+              <p><span className="font-medium text-muted-foreground">Email:</span> {completeDialogDraft.email}</p>
+              <p><span className="font-medium text-muted-foreground">Membership type:</span> {completeDialogDraft.membership_type}</p>
+            </div>
+            <p>
+              This submits the application for manual review. It will never be
+              auto-approved — a staff member still has to review and approve
+              it in the Pending queue before {draftDisplayName(completeDialogDraft)} becomes a member.
+            </p>
+          </div>
+        )}
+      </ConfirmDialog>
 
       {/* ─── Edit Draft Fields Dialog (Phase 4a) ───────────────────────── */}
       {/* key prop forces a remount when the selected draft changes so the

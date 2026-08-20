@@ -233,8 +233,34 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Read the file back from Supabase Storage and extract from THAT copy,
+    // not the original in-memory request buffer. Storage is the durable
+    // record — everything downstream (the reviewer queue, the member's
+    // final doc URL) reads from it, not from this request — so extraction
+    // should run against provably the same bytes that were actually saved,
+    // not whatever this request happened to still be holding in memory.
+    // Falls back to the original buffer (with a Sentry warning) if the
+    // read-back itself fails, so a storage hiccup immediately after a
+    // successful upload doesn't ALSO block the applicant on top of it.
+    let extractionBuffer = buffer
+    {
+      const { data: storedFile, error: downloadError } = await supabase.storage
+        .from("uploads")
+        .download(fileUrl)
+      if (downloadError || !storedFile) {
+        console.error("[ocr] storage read-back failed, extracting from original upload buffer:", downloadError?.message)
+        Sentry.captureMessage("ocr_storage_readback_failed", {
+          level: "warning",
+          tags: { flow: "ocr_upload", stage: "readback" },
+          extra: { fileUrl, docType, error: downloadError?.message },
+        })
+      } else {
+        extractionBuffer = Buffer.from(await storedFile.arrayBuffer())
+      }
+    }
+
     // Run extraction via shared library
-    const result = await extractDocument({ buffer, fileName: file.name, docType })
+    const result = await extractDocument({ buffer: extractionBuffer, fileName: file.name, docType })
 
     // Extraction returned isValid:false — route to manual review WITH the
     // file. Two sub-cases distinguished by extractDocument's engineError flag:
@@ -250,6 +276,11 @@ export async function POST(request: NextRequest) {
     // misled. See src/lib/document-keys.ts MANUAL_REVIEW_REASON_CODES.
     if (!result.isValid) {
       const reason = manualReviewReasonForExtractionFailure(result.engineError)
+      const manualReviewMessage = result.rejectionReason || (
+        reason === "ocr_service_error"
+          ? "We hit a snag reading this document. Our team will review it."
+          : "Could not read this clearly. Our team will review it."
+      )
       void recordStepEvent({
         email: (session.email as string) || "",
         eventType: "doc_upload",
@@ -262,17 +293,39 @@ export async function POST(request: NextRequest) {
           manual_review_reason: reason,
         },
       })
+      // ── Server-side draft write for the manual-review-bypass entry ──
+      // Previously this branch was the one outcome that did NOT call
+      // persistOcrUploadToDraft (only "stored" and "extracted" did), even
+      // though the client immediately marks this slot status:"uploaded",
+      // bypass:true and lets the applicant continue — the whole point being
+      // "OCR couldn't confirm it, so a human decides" (validateRequiredDocuments
+      // accepts a bypassed entry as satisfying the requirement). Server-side
+      // persistence for this branch depended entirely on the client's own
+      // later save-draft call; a dropped connection, closed tab, or crash
+      // between the OCR response and that autosave meant the bypass marker —
+      // and the document itself — never reliably reached the draft a
+      // reviewer looks at. Mirrors the client's own entry shape exactly so
+      // both agree once the client's save-draft does also fire.
+      await persistOcrUploadToDraft({
+        supabase,
+        email: (session.email as string) || "",
+        docKey: rawDocType,
+        entry: {
+          status: "uploaded",
+          fileUrl,
+          extracted: result.extracted,
+          message: manualReviewMessage,
+          bypass: true,
+          bypassReason: reason,
+        },
+      })
       return Response.json({
         outcome: "manual_review_required",
         reason,
         success: false,                    // legacy
         isIrrelevant: true,                // legacy
         extracted: result.extracted,       // legacy (partial / empty)
-        message: result.rejectionReason || (
-          reason === "ocr_service_error"
-            ? "We hit a snag reading this document. Our team will review it."
-            : "Could not read this clearly. Our team will review it."
-        ),
+        message: manualReviewMessage,
         docType,
         fileUrl,
       })

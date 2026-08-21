@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { escapeHtml } from "@/lib/html-escape"
 import { logMembershipAuditEvent } from "@/lib/audit-log"
@@ -79,8 +78,6 @@ export type CleanupDraftsAction = {
 export interface CleanupDraftsSummary {
   dry_run: boolean
   marked_stale: number
-  reminders_sent: number
-  reminders_sent_5h: number
   expired: number
   hard_deleted: number
   payment_holds: number
@@ -116,8 +113,6 @@ export async function runCleanupDrafts(
   const summary: CleanupDraftsSummary = {
     dry_run: dryRun,
     marked_stale: 0,
-    reminders_sent: 0,
-    reminders_sent_5h: 0,
     expired: 0,
     hard_deleted: 0,
     payment_holds: 0,
@@ -255,204 +250,30 @@ export async function runCleanupDrafts(
     }
 
     // -----------------------------------------------------------------------
-    // Step 1b — 5h-from-updated_at reminder (early-stall, all incomplete drafts)
-    //   2026-05-26: complement to the 18h reminder (Step 2). Targets drafts
-    //   idle 5h+ that haven't been reminded yet. Unlike Step 2 it does NOT
-    //   require step_data.formData — deliberately includes OTP-only drafts
-    //   (verified email, never selected type / filled form). Per design
-    //   reversal of the prior "no cold-call spam" policy.
-    // -----------------------------------------------------------------------
-    const fiveHoursAgo = new Date(Date.now() - 5 * 3600000).toISOString()
-    const { data: earlyReminderDrafts } = await supabase
-      .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
-      .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", fiveHoursAgo)
-      .is("reminder_sent_at", null)
-      .is("deleted_at", null)
-
-    for (const draft of earlyReminderDrafts || []) {
-      if (dryRun) {
-        const why = isExcludedEmail(draft.email)
-          ? `excluded address; would mark reminder_sent_at without emailing`
-          : `${hoursIdle(draft.updated_at)}h idle, no prior reminder (5h branch)`
-        planAction(draft, "send_reminder_5h", why)
-        continue
-      }
-      if (isExcludedEmail(draft.email)) {
-        await supabase
-          .from("draft_applications")
-          .update({ reminder_sent_at: new Date().toISOString() })
-          .eq("id", draft.id)
-        await logMembershipAuditEvent({
-          action: "draft_reminder_skipped_excluded",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, branch: "5h", reason: "excluded test/internal address" },
-          performedBy: "system",
-        }, supabase)
-        continue
-      }
-      const html = emailWrapper(
-        "Complete Your Application",
-        `
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-        </p>
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
-        </p>
-        <div style="margin:20px 0;text-align:center;">
-          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
-        </div>
-        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-          If you no longer wish to apply, your application will be removed after further inactivity.
-        </p>
-        `,
-      )
-      try {
-        await resend!.emails.send({
-          from: fromEmail,
-          to: draft.email,
-          subject: "Complete your AMASI membership application",
-          html,
-        })
-        await supabase
-          .from("draft_applications")
-          .update({ reminder_sent_at: new Date().toISOString() })
-          .eq("id", draft.id)
-        await logMembershipAuditEvent({
-          action: "draft_reminder_sent",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, branch: "5h" },
-          performedBy: "system",
-        }, supabase)
-        summary.reminders_sent_5h++
-      } catch (err: unknown) {
-        console.error(`[cleanup-drafts] reminder-5h email ${draft.email}:`, errMessage(err))
-        Sentry.captureException(err, {
-          tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email-5h" },
-          extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
-        })
-        await logMembershipAuditEvent({
-          action: "draft_reminder_failed",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, branch: "5h", error: errMessage(err) },
-          performedBy: "system",
-        }, supabase).catch(() => { /* audit-log write failure must not mask the original */ })
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // Step 2 — Second reminder at 18h-from-updated_at
-    //   Phase 2 (2026-05-26): repositioned as a SECOND nudge. Fires for
-    //   18h-idle engaged drafts (formData present) whose 5h reminder is now
-    //   ≥13h old, OR which escaped the 5h branch entirely (excluded-email
-    //   bypass, pre-Phase-1 backlog). Cohort restriction stays — OTP-only
-    //   drafts get exactly one nudge at 5h, then silent cleanup in Step 3a.
-    // -----------------------------------------------------------------------
-    const eighteenHoursAgo = new Date(Date.now() - 18 * 3600000).toISOString()
-    const thirteenHoursAgo = new Date(Date.now() - 13 * 3600000).toISOString()
-    const { data: reminderDrafts } = await supabase
-      .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment")
-      .in("status", ["in_progress", "stuck"])
-      .lt("updated_at", eighteenHoursAgo)
-      .or(`reminder_sent_at.is.null,reminder_sent_at.lt.${thirteenHoursAgo}`)
-      .is("deleted_at", null)
-      .not("step_data->formData", "is", null)
-
-    for (const draft of reminderDrafts || []) {
-      if (dryRun) {
-        const why = isExcludedEmail(draft.email)
-          ? `excluded address; would mark reminder_sent_at without emailing`
-          : `${hoursIdle(draft.updated_at)}h idle, 18h second-nudge branch`
-        planAction(draft, "send_reminder_18h", why)
-        continue
-      }
-      // Skip the email send for excluded addresses (test/internal). Mark
-      // reminder_sent_at so the row drops out of future picks; no send needed.
-      if (isExcludedEmail(draft.email)) {
-        await supabase
-          .from("draft_applications")
-          .update({ reminder_sent_at: new Date().toISOString() })
-          .eq("id", draft.id)
-        await logMembershipAuditEvent({
-          action: "draft_reminder_skipped_excluded",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, reason: "excluded test/internal address" },
-          performedBy: "system",
-        }, supabase)
-        continue
-      }
-      const html = emailWrapper(
-        "Complete Your Application",
-        `
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Your AMASI membership application is incomplete — it's paused at <strong>${escapeHtml(stepLabel(draft.current_step))}</strong>.
-        </p>
-        <p style="font-size:14px;color:#374151;margin:0 0 12px;">
-          Pick up where you left off using the link below. If you've already verified your email, you'll be taken straight to the next step.
-        </p>
-        <div style="margin:20px 0;text-align:center;">
-          <a href="${escapeHtml(baseUrl)}/apply" style="display:inline-block;background:#0d9488;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Resume Application</a>
-        </div>
-        <p style="font-size:12px;color:#6b7280;margin:12px 0 0;">
-          If you no longer wish to apply, your application will be removed soon.
-        </p>
-        `,
-      )
-      // Send-then-update. Setting reminder_sent_at only after a successful
-      // send means transient Resend failures get re-picked next run (still
-      // capped by the broader retry budget upstream). The Sentry capture
-      // gives loud visibility for what used to be silent loss.
-      try {
-        await resend!.emails.send({
-          from: fromEmail,
-          to: draft.email,
-          subject: "Complete your AMASI membership application",
-          html,
-        })
-        await supabase
-          .from("draft_applications")
-          .update({ reminder_sent_at: new Date().toISOString() })
-          .eq("id", draft.id)
-        await logMembershipAuditEvent({
-          action: "draft_reminder_sent",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, branch: "18h" },
-          performedBy: "system",
-        }, supabase)
-        summary.reminders_sent++
-      } catch (err: unknown) {
-        console.error(`[cleanup-drafts] reminder email ${draft.email}:`, errMessage(err))
-        Sentry.captureException(err, {
-          tags: { component: "cron", cron: "cleanup-drafts", op: "reminder-email" },
-          extra: { draft_id: draft.id, email: draft.email, step: draft.current_step },
-        })
-        await logMembershipAuditEvent({
-          action: "draft_reminder_failed",
-          entityType: "draft_application",
-          entityId: draft.id,
-          newData: { email: draft.email, step: draft.current_step, branch: "18h", error: errMessage(err) },
-          performedBy: "system",
-        }, supabase).catch(() => { /* audit-log write failure must not mask the original */ })
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // Cutoffs used by Step 3a, Step 3, Step 4 below.
+    // Cutoff used by Step 3a, Step 3, Step 4 below.
     // 24h (was 48h until 2026-08-20): no payment made → deleted 24h after
-    // going idle. Lines up exactly with the 18h second reminder (Step 2) +
-    // the existing 6h grace window below — an applicant who's been idle
-    // 18h gets one more nudge, then 6h of runway before deletion.
+    // going idle.
+    //
+    // 2026-08-21: removed the 5h/18h "complete your application" nudge
+    // reminders entirely (explicit instruction — sending unsolicited nudges
+    // to applicants who haven't finished reads as bothering people, not
+    // helping them). The only email that survives is the 24h hard-delete's
+    // "Application Cancelled" notice below, since that's reporting a real
+    // action taken, not asking for anything. Deletion eligibility below no
+    // longer depends on reminder_sent_at at all — it never fires anymore,
+    // so gating deletion on "reminder sent ≥6h ago" would have permanently
+    // stopped every future draft from ever being cleaned up. `updated_at
+    // < 24h idle` is now the sole age gate, same as it always was for
+    // marking a draft eligible in the first place.
+    //
+    // This also happens to fix a real production bug: the cron was timing
+    // out at 60s on every run (Vercel Runtime Timeout, confirmed via
+    // production logs, recurring since at least 2026-06-18) because the
+    // reminder loops sent emails to the whole backlog sequentially before
+    // ever reaching this hard-delete step. Removing them frees up the
+    // budget for deletion to actually run.
     // -----------------------------------------------------------------------
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 3600000).toISOString()
-    const sixHoursAgo = new Date(Date.now() - 6 * 3600000).toISOString()
 
     // -----------------------------------------------------------------------
     // Step 3a — Silent hard-delete for OTP-only drafts (no formData)
@@ -529,13 +350,11 @@ export async function runCleanupDrafts(
 
     // -----------------------------------------------------------------------
     // Step 3 — Hard-delete unpaid drafts (24h idle, no payment)
-    // Issue 2 guarantee: only delete drafts that have already been reminded
-    // and given a 6h grace window. This prevents reminder + deletion firing
-    // in the same cron invocation for backlog drafts that are already >24h
-    // on first sight. They get the reminder this run; delete on the
-    // next-day's run. Row and uploaded documents are permanently removed —
-    // no retention window (2026-08-20 policy change; previously a 48h
-    // soft-delete with files kept 90 days).
+    // Row and uploaded documents are permanently removed — no retention
+    // window (2026-08-20 policy change; previously a 48h soft-delete with
+    // files kept 90 days). No reminder-based grace window (removed
+    // 2026-08-21 alongside the nudge-email removal above) — `updated_at
+    // < 24h idle` is the only age gate now.
     // -----------------------------------------------------------------------
     const { data: expiredDrafts } = await supabase
       .from("draft_applications")
@@ -545,8 +364,6 @@ export async function runCleanupDrafts(
       .eq("has_verified_payment", false)
       .is("payment_order_id", null)
       .is("deleted_at", null)
-      .not("reminder_sent_at", "is", null)
-      .lt("reminder_sent_at", sixHoursAgo)
 
     for (const draft of expiredDrafts || []) {
       // Safety: never delete-as-unpaid a draft that actually paid. The query
@@ -560,7 +377,7 @@ export async function runCleanupDrafts(
       if (dryRun) {
         const why = isExcludedEmail(draft.email)
           ? `unpaid, ${hoursIdle(draft.updated_at)}h idle, excluded address (would hard-delete without emailing)`
-          : `unpaid, ${hoursIdle(draft.updated_at)}h idle, reminder sent ≥6h ago`
+          : `unpaid, ${hoursIdle(draft.updated_at)}h idle`
         planAction(draft, "hard_delete_unpaid", why)
         continue
       }
@@ -630,7 +447,7 @@ export async function runCleanupDrafts(
     // -----------------------------------------------------------------------
     const { data: paidStuckDrafts } = await supabase
       .from("draft_applications")
-      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, reminder_sent_at, step_data")
+      .select("id, email, current_step, status, updated_at, payment_order_id, payment_id, has_verified_payment, created_at, step_data")
       .in("status", ["in_progress", "stuck"])
       .lt("updated_at", twentyFourHoursAgo)
       .or("payment_order_id.not.is.null,has_verified_payment.eq.true")
@@ -690,17 +507,13 @@ export async function runCleanupDrafts(
               if (dryRun) planAction(draft, "skip_payment_attempted", "Razorpay order in attempted state, may complete")
               continue
             } else {
-              // Same Issue-2 guard as Step 3: only expire if reminder was sent ≥6h ago
-              const r = (draft as { reminder_sent_at?: string | null }).reminder_sent_at
-              const remindedLongEnough = r && new Date(r).getTime() < Date.now() - 6 * 3600000
-              if (!remindedLongEnough) {
-                if (dryRun) planAction(draft, "skip_no_reminder_grace", `Razorpay status=${status} but no reminder ≥6h ago`)
-                continue
-              }
+              // No reminder-based grace window (removed 2026-08-21 alongside
+              // the nudge-email removal) — the outer query's 24h-idle filter
+              // is already the age gate.
               if (dryRun) {
                 const why = isExcludedEmail(draft.email)
                   ? `Razorpay status=${status}, excluded address (would hard-delete without emailing)`
-                  : `Razorpay status=${status}, treating as unpaid, reminder sent ≥6h ago`
+                  : `Razorpay status=${status}, treating as unpaid`
                 planAction(draft, "hard_delete_payment_failed", why)
                 continue
               }

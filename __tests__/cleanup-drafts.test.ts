@@ -19,13 +19,20 @@
  *   - dryRun: no delete, no email, no storage removal — only a planned
  *     action recorded.
  *
- * Mock strategy for draft_applications: the six SELECT queries this job
- * issues against it happen in a fixed, known order per run (Step 1, 1b, 2,
- * 3a, 3, 4, [4b if paidNoAppEmails non-empty], 5) — tests keep
- * paidNoAppEmails empty (membership_payments returns []) so 4b never fires,
- * leaving exactly 6 draft_applications selects. A queue is shifted once per
- * select call. Mutations (update/delete) are resolved by looking up the id
- * passed to .eq("id", ...) in a per-test result map — default succeeds.
+ * 2026-08-21: the 5h/18h nudge-reminder steps (formerly Step 1b/Step 2)
+ * were removed entirely — sending unsolicited "complete your application"
+ * emails to abandoned drafts was an explicit instruction to stop. That also
+ * fixed a real production bug: those loops sent reminders to the whole
+ * backlog sequentially, timing the cron out at 60s on every run before it
+ * ever reached the hard-delete step below.
+ *
+ * Mock strategy for draft_applications: the SELECT queries this job issues
+ * against it happen in a fixed, known order per run (Step 1, 3a, 3, 4,
+ * [4b if paidNoAppEmails non-empty], 5) — tests keep paidNoAppEmails empty
+ * (membership_payments returns []) so 4b never fires, leaving exactly 5
+ * draft_applications selects. A queue is shifted once per select call.
+ * Mutations (update/delete) are resolved by looking up the id passed to
+ * .eq("id", ...) in a per-test result map — default succeeds.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
@@ -167,22 +174,21 @@ function draftRow(overrides: Record<string, unknown> = {}) {
     payment_order_id: null,
     payment_id: null,
     has_verified_payment: false,
-    reminder_sent_at: new Date(Date.now() - 10 * 3600000).toISOString(), // sent 10h ago (>6h grace)
     step_data: { formData: { email: "applicant@example.com" }, uploads: { profile: { status: "uploaded", fileUrl: "photo/abc.jpg" } } },
     ...overrides,
   }
 }
 
-/** Queue: [Step1, Step1b, Step2, Step3a, Step3, Step4, Step5] all empty by default. */
-function emptySixSelects(): unknown[][] {
-  return [[], [], [], [], [], [], []]
+/** Queue: [Step1, Step3a, Step3, Step4, Step5] all empty by default. */
+function emptySelects(): unknown[][] {
+  return [[], [], [], [], []]
 }
 
 beforeEach(() => {
   sendMock.mockClear()
   auditMock.mockClear()
   removeMock.mockClear()
-  state.draftSelectQueue = emptySixSelects()
+  state.draftSelectQueue = emptySelects()
   state.deleteResults = new Map()
   state.updateSelectResults = new Map()
   state.paidRows = []
@@ -194,8 +200,8 @@ beforeEach(() => {
 describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formData)", () => {
   it("deletes the row, cleans up storage, logs the audit event, sends the cancellation email, increments hard_deleted", async () => {
     const draft = draftRow()
-    const queue = emptySixSelects()
-    queue[4] = [draft] // Step 3's select slot
+    const queue = emptySelects()
+    queue[2] = [draft] // Step 3's select slot
     state.draftSelectQueue = queue
     state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })
 
@@ -217,8 +223,8 @@ describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formDat
 
   it("never deletes a draft with a real captured payment (isPaidNoApp), even though its own columns look unpaid", async () => {
     const draft = draftRow({ email: "secretly-paid@example.com" })
-    const queue = emptySixSelects()
-    queue[4] = [draft]
+    const queue = emptySelects()
+    queue[2] = [draft]
     state.draftSelectQueue = queue
     // membership_payments has a paid row for this email, and no application/member exists yet.
     state.paidRows = [{ member_email: "secretly-paid@example.com" }]
@@ -237,8 +243,8 @@ describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formDat
 
   it("respects the race guard — if the conditional delete matches no row (payment arrived mid-run), it's skipped entirely", async () => {
     const draft = draftRow()
-    const queue = emptySixSelects()
-    queue[4] = [draft]
+    const queue = emptySelects()
+    queue[2] = [draft]
     state.draftSelectQueue = queue
     // Deliberately do NOT register a state.deleteResults entry — lookup returns
     // undefined → the mock resolves { data: null }, same as Supabase
@@ -253,8 +259,8 @@ describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formDat
 
   it("test/internal addresses are still deleted for real, but never emailed", async () => {
     const draft = draftRow({ email: "test@example.com" })
-    const queue = emptySixSelects()
-    queue[4] = [draft]
+    const queue = emptySelects()
+    queue[2] = [draft]
     state.draftSelectQueue = queue
     state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })
 
@@ -267,8 +273,8 @@ describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formDat
 
   it("dryRun: true — no delete, no email, no storage removal; records a planned action instead", async () => {
     const draft = draftRow()
-    const queue = emptySixSelects()
-    queue[4] = [draft]
+    const queue = emptySelects()
+    queue[2] = [draft]
     state.draftSelectQueue = queue
     state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })
 
@@ -286,8 +292,8 @@ describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formDat
 describe("runCleanupDrafts — Step 3a silent delete (OTP-only, no formData)", () => {
   it("deletes silently — no email is ever sent for this branch", async () => {
     const draft = draftRow({ step_data: {} }) // no formData at all
-    const queue = emptySixSelects()
-    queue[3] = [draft] // Step 3a's select slot
+    const queue = emptySelects()
+    queue[1] = [draft] // Step 3a's select slot
     state.draftSelectQueue = queue
     state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })
 
@@ -303,8 +309,8 @@ describe("runCleanupDrafts — Step 3a silent delete (OTP-only, no formData)", (
 
   it("payment guard applies here too — a paid OTP-only draft is never silently deleted", async () => {
     const draft = draftRow({ step_data: {}, email: "paid-otp-only@example.com" })
-    const queue = emptySixSelects()
-    queue[3] = [draft]
+    const queue = emptySelects()
+    queue[1] = [draft]
     state.draftSelectQueue = queue
     state.paidRows = [{ member_email: "paid-otp-only@example.com" }]
     state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })

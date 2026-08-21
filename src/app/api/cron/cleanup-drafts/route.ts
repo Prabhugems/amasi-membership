@@ -1,7 +1,12 @@
 import { runCleanupDrafts } from "@/lib/cleanup-drafts"
 
-// Iterates stuck drafts with per-draft Razorpay SDK calls.
-export const maxDuration = 60
+// Iterates stuck drafts with per-draft Razorpay SDK calls. Was 60 — bumped
+// 2026-08-21 after production logs showed the job timing out on every run
+// since at least 2026-06-18 (Vercel Runtime Timeout Error, confirmed via
+// get_runtime_errors), which meant Step 3's hard-delete never executed.
+// Removing the 5h/18h nudge-reminder loops (src/lib/cleanup-drafts.ts)
+// should free up most of that budget on its own; this is extra headroom.
+export const maxDuration = 300
 
 // ---------------------------------------------------------------------------
 // GET /api/cron/cleanup-drafts[?dryRun=true]

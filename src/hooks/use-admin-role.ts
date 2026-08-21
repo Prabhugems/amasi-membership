@@ -29,15 +29,20 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-// Only network-level failures or an unparseable response are retried — a
-// successful response (even an "authenticated: false" one) is a real,
-// final answer and resolves immediately.
+// Retried: network-level failures, an unparseable response, and a 5xx
+// (the route's own internal errors are surfaced as 500 specifically so
+// this can tell them apart from a real answer — see api/auth/me/route.ts).
+// NOT retried: a 4xx response, including 401 "not authenticated" — that's
+// a real, final answer and resolves immediately.
 // Exported only for direct testing (__tests__/use-admin-role-retry.test.ts)
 // — not part of the hook's public API, which stays useAdminRole/
 // useAdminRoleState.
 export async function fetchWithRetry(attempt = 0): Promise<AdminRoleState> {
   try {
     const r = await fetch("/api/auth/me")
+    if (r.status >= 500) {
+      throw new Error(`/api/auth/me returned ${r.status}`)
+    }
     const data = await r.json()
     const role =
       data?.authenticated && data?.user?.adminRole ? data.user.adminRole : null

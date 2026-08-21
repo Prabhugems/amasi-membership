@@ -10,6 +10,14 @@
  * directly (exported for this purpose) rather than rendering the hook —
  * no React Testing Library in this project's test setup, and the retry
  * logic is plain async code with no React state involved.
+ *
+ * 2026-08-21 follow-up (audit finding): the first version of this fix only
+ * retried network-level failures. But api/auth/me/route.ts's own catch
+ * block used to return a clean 401 {authenticated:false} on ITS internal
+ * errors too — indistinguishable from a genuine "not logged in" response,
+ * so that failure mode was never retried at all. The route now returns 500
+ * on its own errors specifically so this can tell the two apart; the tests
+ * below pin that distinction (retry on 5xx, not on 401).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { fetchWithRetry } from "@/hooks/use-admin-role"
@@ -27,8 +35,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function jsonResponse(body: unknown) {
-  return { json: async () => body }
+function jsonResponse(body: unknown, status = 200) {
+  return { status, json: async () => body }
 }
 
 describe("fetchWithRetry", () => {
@@ -86,5 +94,27 @@ describe("fetchWithRetry", () => {
     // 1 initial attempt + 3 retries = 4 total calls, matching MAX_RETRIES = 3.
     expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(result).toEqual({ resolved: true, adminRole: null })
+  })
+
+  it("retries a 500 (the route's own internal error) and succeeds on the next attempt", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: "Session check failed" }, 500))
+      .mockResolvedValueOnce(jsonResponse({ authenticated: true, user: { adminRole: "super_admin" } }, 200))
+
+    const promise = fetchWithRetry()
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result).toEqual({ resolved: true, adminRole: "super_admin" })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("does NOT retry a 401 — a real 'not authenticated' answer resolves immediately, even though it's an error status", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ authenticated: false }, 401))
+
+    const result = await fetchWithRetry()
+
+    expect(result).toEqual({ resolved: true, adminRole: null })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

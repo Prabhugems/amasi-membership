@@ -129,7 +129,6 @@ const PUBLIC_API_ROUTES = [
   "/api/members/upload",
   "/api/nmc",
   "/api/webhooks/",
-  "/api/zoho/callback",
   "/api/member/refresh-token",
   // Member profile endpoint — auth chain (getMemberSession + active-member
   // check) is inside the handler. See route.ts comment.

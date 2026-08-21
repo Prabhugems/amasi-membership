@@ -53,8 +53,17 @@ const state = vi.hoisted(() => ({
   existingApps: [] as { email: string; status: string }[],
   existingMembers: [] as { email: string }[],
   adminUsers: [] as { email: string }[],
+  // Step 4's Razorpay order lookup — resolved per test.
+  razorpayOrderFetch: vi.fn(async () => ({ status: "created" })),
 }))
 const { sendMock, auditMock, removeMock } = state
+
+vi.mock("razorpay", () => ({
+  default: class {
+    orders = { fetch: state.razorpayOrderFetch }
+    payments = { fetch: vi.fn(async () => ({ status: "created" })) }
+  },
+}))
 
 vi.mock("@sentry/nextjs", () => ({
   captureException: vi.fn(),
@@ -159,6 +168,8 @@ vi.mock("@/lib/supabase", () => ({
 
 process.env.RESEND_API_KEY = "test_resend_key_not_real"
 process.env.NEXT_PUBLIC_APP_URL = "https://membership.test"
+process.env.RAZORPAY_KEY_ID = "test_razorpay_key_id"
+process.env.RAZORPAY_KEY_SECRET = "test_razorpay_key_secret"
 
 import { runCleanupDrafts } from "@/lib/cleanup-drafts"
 
@@ -195,6 +206,8 @@ beforeEach(() => {
   state.existingApps = []
   state.existingMembers = []
   state.adminUsers = []
+  state.razorpayOrderFetch.mockClear()
+  state.razorpayOrderFetch.mockResolvedValue({ status: "created" })
 })
 
 describe("runCleanupDrafts — Step 3 hard-delete (unpaid, 24h idle, has formData)", () => {
@@ -319,5 +332,66 @@ describe("runCleanupDrafts — Step 3a silent delete (OTP-only, no formData)", (
 
     expect(summary.hard_deleted).toBe(0)
     expect(removeMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("runCleanupDrafts — Step 4 payment guard (2026-08-21 audit finding)", () => {
+  // Step 4's "else" branch (Razorpay order not paid/captured/attempted)
+  // treats the draft as unpaid and hard-deletes it. Its own Razorpay lookup
+  // keys on payment_order_id — the FIRST order attempted. A failed first
+  // order followed by a successful retry leaves this column pointing at a
+  // dead order while a real payment sits in membership_payments under a
+  // different order id. Steps 3/3a already guard on isPaidNoApp(); this
+  // branch never did until this fix, and used to be shielded almost
+  // entirely by the reminder-grace gate removed in the same commit that
+  // fixed the cron timeout.
+  it("never deletes a draft whose email has a real captured payment, even when its own payment_order_id points at a failed order", async () => {
+    const draft = draftRow({
+      email: "retried-and-paid@example.com",
+      payment_order_id: "order_first_attempt_failed",
+      status: "stuck",
+    })
+    const queue = emptySelects()
+    queue[3] = [draft] // Step 4's select slot
+    state.draftSelectQueue = queue
+    state.razorpayOrderFetch.mockResolvedValue({ status: "failed" })
+    // The successful retry's payment lives here under a DIFFERENT order —
+    // this is what isPaidNoApp() sees; the draft's own payment_order_id
+    // above never matches it.
+    state.paidRows = [{ member_email: "retried-and-paid@example.com" }]
+    state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data }) // would succeed if attempted
+
+    const summary = await runCleanupDrafts({ dryRun: false })
+
+    expect(summary.hard_deleted).toBe(0)
+    expect(removeMock).not.toHaveBeenCalled()
+    expect(sendMock).not.toHaveBeenCalled()
+    expect(auditMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: draft.id }),
+      expect.anything(),
+    )
+  })
+
+  it("still hard-deletes a genuinely unpaid draft with a failed order (no matching membership_payments row)", async () => {
+    const draft = draftRow({
+      email: "genuinely-never-paid@example.com",
+      payment_order_id: "order_failed_for_real",
+      status: "stuck",
+    })
+    const queue = emptySelects()
+    queue[3] = [draft]
+    state.draftSelectQueue = queue
+    state.razorpayOrderFetch.mockResolvedValue({ status: "failed" })
+    state.paidRows = [] // no captured payment anywhere for this email
+    state.deleteResults.set(draft.id, { id: draft.id, step_data: draft.step_data })
+
+    const summary = await runCleanupDrafts({ dryRun: false })
+
+    expect(summary.hard_deleted).toBe(1)
+    expect(sendMock).toHaveBeenCalledTimes(1)
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "draft_hard_deleted_unpaid", entityId: draft.id }),
+      expect.anything(),
+    )
   })
 })

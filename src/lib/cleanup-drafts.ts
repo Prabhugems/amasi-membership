@@ -507,6 +507,19 @@ export async function runCleanupDrafts(
               if (dryRun) planAction(draft, "skip_payment_attempted", "Razorpay order in attempted state, may complete")
               continue
             } else {
+              // Safety: never delete-as-unpaid a draft that actually paid.
+              // This branch's own Razorpay lookup keys on the draft's
+              // payment_order_id, which is only the FIRST order attempted —
+              // a failed order followed by a successful retry leaves this
+              // column pointing at the dead order while a real payment sits
+              // in membership_payments under a different order id. Steps 3
+              // and 3a already guard on this; this branch never did, and
+              // used to be shielded almost entirely by the reminder-grace
+              // gate removed 2026-08-21 above. Matches Steps 3/3a exactly.
+              if (isPaidNoApp(draft.email)) {
+                if (dryRun) planAction(draft, "skip_paid_no_submission", "captured payment in membership_payments under a different order — not unpaid; left for admin")
+                continue
+              }
               // No reminder-based grace window (removed 2026-08-21 alongside
               // the nudge-email removal) — the outer query's 24h-idle filter
               // is already the age gate.

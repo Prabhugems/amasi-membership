@@ -5,7 +5,11 @@ const env = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const getEnv = (k) => { const re = new RegExp(k + '=["\']?([^"\'\\n]+)'); const m = env.match(re); return m?.[1]?.trim(); };
 
 const supabase = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"));
-const listKey = "3z182b75ecd10e4ec2630141e948ca189d5eda94234653c0666c907acbcaee053b";
+const listKey = getEnv("ZOHO_CAMPAIGNS_LIST_KEY");
+if (!listKey) {
+  console.error("ZOHO_CAMPAIGNS_LIST_KEY is not set in .env.local");
+  process.exit(1);
+}
 
 // Get token
 const { data: row } = await supabase.from("zoho_tokens").select("*").eq("id", "default").single();

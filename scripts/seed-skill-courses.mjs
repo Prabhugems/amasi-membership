@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 // Seed skill_courses (FMAS) from the AMASICON Airtable base.
 //
-// Source: base appzvNGDFoceUXroM, table FMAS (tblytNgOfdvqgRd3L).
-// Each row has: Name (e.g. "114 FMAS Course Nagpur"), Place, Convenor Name,
+// Source: base app7TElm0QUruBlZr, table FMAS (tblytNgOfdvqgRd3L).
+// Each row has: Name (e.g. "127 FMAS Bhopal"), Place, Convenor Name,
 // COURSE VENUE. The leading 1-3 digits of Name encode the course number,
 // which matches member_credentials.skill_course_id.
+//
+// IMPORTANT: AMASICON duplicates the whole "Master-FMAS" Airtable base for
+// each year's convocation cycle (its tables/fields keep the same IDs across
+// duplicates, only the base ID and field values change). This constant must
+// be repointed to the current year's base before each convocation's run —
+// appzvNGDFoceUXroM was 2025 Jaipur; app7TElm0QUruBlZr is 2026 Kolkata.
 //
 // Year is derived after seeding by joining onto member_credentials
 // (each credential carries the convocation year).
@@ -25,7 +31,7 @@ for (const line of envText.split("\n")) {
 
 const DRY_RUN = process.argv.includes("--dry-run")
 
-const AIRTABLE_BASE_ID = "appzvNGDFoceUXroM"
+const AIRTABLE_BASE_ID = "app7TElm0QUruBlZr"
 const AIRTABLE_FMAS_TABLE = "tblytNgOfdvqgRd3L"
 const AIRTABLE_PAT = process.env.AIRTABLE_PAT
 

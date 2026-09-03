@@ -59,6 +59,17 @@ export async function GET(request: NextRequest) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })
     }
 
+    let courseName: string | null = null
+    if (credential.skillCourseId !== null) {
+      const { data: course } = await db
+        .from("skill_courses")
+        .select("name")
+        .eq("id", credential.skillCourseId)
+        .eq("credential_type", credential.credentialType)
+        .maybeSingle()
+      courseName = course?.name ?? null
+    }
+
     // PII (email) intentionally omitted from this public endpoint — see Phase 3b.
     return Response.json({
       status: true,
@@ -66,6 +77,7 @@ export async function GET(request: NextRequest) {
         type: credential.credentialType,
         year: credential.year,
         skillCourseId: credential.skillCourseId,
+        courseName,
         amasiNumber: member.amasi_number,
         name: member.name,
         templateUrl: template.templatePath,

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "year is required" }, { status: 400 })
   }
 
-  const eligibleCount = await countEligibleFmasCertEmails("FMAS", year)
+  const eligibleCount = await countEligibleFmasCertEmails("MMAS", year)
   return Response.json({ status: true, eligible_count: eligibleCount })
 }
 
@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
   const actorEmail = typeof admin.email === "string" ? admin.email : "admin@amasi.org"
 
   try {
-    const result = await sendNextFmasCertEmailBatch(actorEmail, { credentialType: "FMAS", year, batchSize })
+    const result = await sendNextFmasCertEmailBatch(actorEmail, { credentialType: "MMAS", year, batchSize })
     return Response.json({ status: true, ...result })
   } catch (err) {
-    console.error("[admin email-cert-bulk]", err)
+    console.error("[admin mmas email-cert-bulk]", err)
     return Response.json(
       { status: false, message: err instanceof Error ? err.message : "Failed" },
       { status: 500 }

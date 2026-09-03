@@ -70,6 +70,7 @@ const sections: NavSection[] = [
       { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "FMAS Holders", href: "/admin/fmas", icon: Award },
+      { name: "MMAS Holders", href: "/admin/mmas", icon: Award },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Campaigns", href: "/campaigns", icon: Send },

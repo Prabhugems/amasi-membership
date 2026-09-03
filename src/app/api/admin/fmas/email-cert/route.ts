@@ -2,7 +2,7 @@ import { Resend } from "resend"
 import { getAdminSession } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"
 import { logAdminAction } from "@/lib/audit-log"
-import { FMAS_CERT_EMAIL_SUBJECT, buildFmasCertEmailHtml } from "@/lib/fmas-cert-email"
+import { certEmailSubject, certPageUrl, buildCertEmailHtml } from "@/lib/fmas-cert-email"
 
 interface Body {
   amasi_number: number
@@ -43,8 +43,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Member has no email on file" }, { status: 400 })
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
-  const certUrl = `${baseUrl}/member/fmas-certificate?id=${member.amasi_number}`
+  const certUrl = certPageUrl("FMAS", member.amasi_number)
   const adminEmail =
     typeof admin.email === "string" ? admin.email : "admin@amasi.org"
 
@@ -53,8 +52,9 @@ export async function POST(req: Request) {
     await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
       to: member.email,
-      subject: FMAS_CERT_EMAIL_SUBJECT,
-      html: buildFmasCertEmailHtml({
+      subject: certEmailSubject("FMAS"),
+      html: buildCertEmailHtml({
+        credentialType: "FMAS",
         name: member.name ?? "Doctor",
         certUrl,
         message: body.message,

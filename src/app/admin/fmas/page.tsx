@@ -28,8 +28,16 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "sonner"
 import Link from "next/link"
+
+interface BulkEmailProgress {
+  sent: number
+  failed: number
+  failedDetails: { amasi_number: number; email: string; reason: string }[]
+  done: boolean
+}
 
 interface FmasRow {
   amasi_number: number
@@ -346,7 +354,7 @@ function DetailSheet({
       const res = await fetch("/api/admin/fmas/email-cert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amasi_number: row.amasi_number }),
+        body: JSON.stringify({ amasi_number: row.amasi_number, year: row.year }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? "Failed to send")
@@ -821,6 +829,53 @@ export default function AdminFmasPage() {
   const [selected, setSelected] = useState<FmasRow | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
+  const [bulkEmailOpen, setBulkEmailOpen] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<BulkEmailProgress | null>(null)
+
+  const eligibleQuery = useQuery<{ eligible_count: number }>({
+    queryKey: ["admin-fmas-bulk-eligible", year],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/fmas/email-cert-bulk?year=${encodeURIComponent(year)}`)
+      if (!res.ok) throw new Error("Failed to load eligible count")
+      return res.json()
+    },
+    enabled: bulkEmailOpen && !!year && !bulkProgress,
+  })
+
+  const runBulkSend = useCallback(async () => {
+    if (!year) return
+    setBulkSending(true)
+    setBulkProgress({ sent: 0, failed: 0, failedDetails: [], done: false })
+    try {
+      let remaining = 1
+      while (remaining > 0) {
+        const res = await fetch("/api/admin/fmas/email-cert-bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ year: Number(year) }),
+        })
+        const json = await res.json()
+        if (!res.ok || !json.status) {
+          throw new Error(json.message || json.error || "Bulk send failed")
+        }
+        remaining = json.remaining
+        setBulkProgress((prev) => ({
+          sent: (prev?.sent ?? 0) + json.sent,
+          failed: (prev?.failed ?? 0) + json.failed,
+          failedDetails: [...(prev?.failedDetails ?? []), ...json.failedDetails].slice(0, 50),
+          done: remaining === 0,
+        }))
+        if (json.sent === 0 && json.failed === 0 && json.totalEligible === 0) break
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bulk send failed")
+    } finally {
+      setBulkSending(false)
+      setBulkProgress((prev) => (prev ? { ...prev, done: true } : prev))
+    }
+  }, [year])
+
   const { data, isLoading, isError } = useQuery<FmasApiResponse>({
     queryKey: ["admin-fmas-list"],
     queryFn: async () => {
@@ -909,7 +964,7 @@ export default function AdminFmasPage() {
               </div>
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight">FMAS Holders</h1>
               <p className="text-muted-foreground mt-1.5 text-sm">
-                Foundations of Minimal Access Surgery
+                Fellowship in Minimal Access Surgery
                 <span className="hidden sm:inline">
                   {" · "}Press{" "}
                   <kbd className="px-1.5 py-0.5 rounded border bg-white/70 dark:bg-slate-900/70 text-[11px] font-mono">⌘K</kbd>{" "}
@@ -918,20 +973,35 @@ export default function AdminFmasPage() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            disabled={filtered.length === 0}
-            className="gap-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-            {filtered.length > 0 && (
-              <Badge variant="outline" className="ml-1 tabular-nums bg-white/70 dark:bg-slate-900/70">
-                {filtered.length.toLocaleString("en-IN")}
-              </Badge>
+          <div className="flex items-center gap-2">
+            {year && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setBulkProgress(null)
+                  setBulkEmailOpen(true)
+                }}
+                className="gap-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur"
+              >
+                <Send className="h-4 w-4" />
+                Email {year} certificates
+              </Button>
             )}
-          </Button>
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={filtered.length === 0}
+              className="gap-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+              {filtered.length > 0 && (
+                <Badge variant="outline" className="ml-1 tabular-nums bg-white/70 dark:bg-slate-900/70">
+                  {filtered.length.toLocaleString("en-IN")}
+                </Badge>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -1269,6 +1339,51 @@ export default function AdminFmasPage() {
           onClose={() => setSelected(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={bulkEmailOpen}
+        onOpenChange={(o) => {
+          if (!bulkSending) setBulkEmailOpen(o)
+        }}
+        title={`Email FMAS ${year} certificates`}
+        confirmLabel={bulkProgress?.done ? "Close" : bulkSending ? "Sending…" : "Send emails"}
+        isPending={bulkSending}
+        onConfirm={() => {
+          if (bulkProgress?.done) {
+            setBulkEmailOpen(false)
+            return
+          }
+          runBulkSend()
+        }}
+      >
+        {!bulkProgress && (
+          <p>
+            {eligibleQuery.isLoading
+              ? "Checking who still needs one…"
+              : `This will email the certificate to ${(eligibleQuery.data?.eligible_count ?? 0).toLocaleString("en-IN")} candidate(s) for ${year} who haven't been emailed yet. Already-emailed candidates are skipped automatically.`}
+          </p>
+        )}
+        {bulkProgress && (
+          <div className="space-y-2">
+            <p>
+              Sent <span className="font-semibold text-foreground">{bulkProgress.sent}</span>
+              {" · "}
+              Failed <span className="font-semibold text-foreground">{bulkProgress.failed}</span>
+              {!bulkProgress.done && " · sending…"}
+            </p>
+            {bulkProgress.done && <p className="font-medium text-foreground">Done.</p>}
+            {bulkProgress.failedDetails.length > 0 && (
+              <ul className="text-xs max-h-32 overflow-y-auto space-y-0.5 border rounded-md p-2">
+                {bulkProgress.failedDetails.map((f) => (
+                  <li key={f.amasi_number}>
+                    #{f.amasi_number} {f.email} — {f.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

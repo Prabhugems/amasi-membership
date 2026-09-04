@@ -3,6 +3,7 @@
 // (checked here, not re-verified — verifyMouOtp already marked it
 // `verified: true` when they completed the OTP step in the form).
 import { NextRequest } from "next/server"
+import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { createApplication, getRoleAssignment } from "@/lib/mou/supabase-helpers"
 import { createApprovalToken } from "@/lib/mou/approval-token"
@@ -114,31 +115,71 @@ export async function POST(request: NextRequest) {
 
   const application = await createApplication(body)
 
-  await sendApplicantConfirmation(application)
-
-  const secretary = await getRoleAssignment("hon_secretary")
-  if (secretary) {
-    const token = await createApprovalToken(application.id, "hon_secretary", true)
-    const magicLinkUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
-    await sendSecretaryApprovalRequest(application, typeConfig.label, secretary.email, magicLinkUrl)
+  // The application row is committed at this point — everything below is
+  // notification/magic-link delivery, a secondary concern. A missing
+  // RESEND_API_KEY, a Resend network blip, or a failed token insert must
+  // never turn a genuinely-created application into a 500 for the applicant
+  // (who would then likely resubmit, or just give up, while a real orphaned
+  // row sits in the DB that nobody was told about). Each step below is
+  // isolated in its own try/catch so one failure (e.g. the secretary email)
+  // doesn't also skip independent ones (e.g. the president FYI) — failures
+  // are captured to Sentry for follow-up, matching the same failure-isolation
+  // principle already used for the auto-create-event step in decide/route.ts.
+  try {
+    await sendApplicantConfirmation(application)
+  } catch (err) {
+    console.error(`[mou-applications] applicant confirmation email failed for application ${application.id}:`, err)
+    Sentry.captureException(err, {
+      tags: { component: "mou-applications", op: "send-applicant-confirmation" },
+      extra: { applicationId: application.id },
+    })
   }
 
-  const president = await getRoleAssignment("president")
-  if (president) {
-    const { createApprovalToken: mkToken } = await import("@/lib/mou/approval-token")
-    const token = await mkToken(application.id, "president", false)
-    const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
-    await sendFyiNotification(application, typeConfig.label, president.email, "president", viewUrl)
+  try {
+    const secretary = await getRoleAssignment("hon_secretary")
+    if (secretary) {
+      const token = await createApprovalToken(application.id, "hon_secretary", true)
+      const magicLinkUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
+      await sendSecretaryApprovalRequest(application, typeConfig.label, secretary.email, magicLinkUrl)
+    }
+  } catch (err) {
+    console.error(`[mou-applications] Hon. Secretary notification failed for application ${application.id}:`, err)
+    Sentry.captureException(err, {
+      tags: { component: "mou-applications", op: "notify-secretary" },
+      extra: { applicationId: application.id },
+    })
+  }
+
+  try {
+    const president = await getRoleAssignment("president")
+    if (president) {
+      const token = await createApprovalToken(application.id, "president", false)
+      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
+      await sendFyiNotification(application, typeConfig.label, president.email, "president", viewUrl)
+    }
+  } catch (err) {
+    console.error(`[mou-applications] President FYI notification failed for application ${application.id}:`, err)
+    Sentry.captureException(err, {
+      tags: { component: "mou-applications", op: "notify-president" },
+      extra: { applicationId: application.id },
+    })
   }
 
   if (typeConfig.fields.includes("zone") && body.zone) {
-    const zoneRole = `zone_chair_${body.zone.toLowerCase()}`
-    const zoneChair = await getRoleAssignment(zoneRole)
-    if (zoneChair) {
-      const { createApprovalToken: mkToken } = await import("@/lib/mou/approval-token")
-      const token = await mkToken(application.id, zoneRole, false)
-      const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
-      await sendFyiNotification(application, typeConfig.label, zoneChair.email, zoneRole, viewUrl)
+    try {
+      const zoneRole = `zone_chair_${body.zone.toLowerCase()}`
+      const zoneChair = await getRoleAssignment(zoneRole)
+      if (zoneChair) {
+        const token = await createApprovalToken(application.id, zoneRole, false)
+        const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
+        await sendFyiNotification(application, typeConfig.label, zoneChair.email, zoneRole, viewUrl)
+      }
+    } catch (err) {
+      console.error(`[mou-applications] zone chair FYI notification failed for application ${application.id}:`, err)
+      Sentry.captureException(err, {
+        tags: { component: "mou-applications", op: "notify-zone-chair" },
+        extra: { applicationId: application.id, zone: body.zone },
+      })
     }
   }
 

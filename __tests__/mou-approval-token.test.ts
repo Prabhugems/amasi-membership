@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const insertMock = vi.fn().mockResolvedValue({ error: null })
 const singleMock = vi.fn()
@@ -14,7 +14,16 @@ vi.mock("@/lib/supabase", () => ({
   }),
 }))
 
-import { createApprovalToken, verifyApprovalToken } from "@/lib/mou/approval-token"
+vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
+
+import { createApprovalToken, verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
+import * as Sentry from "@sentry/nextjs"
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  insertMock.mockResolvedValue({ error: null })
+  updateEqMock.mockResolvedValue({ error: null })
+})
 
 describe("createApprovalToken", () => {
   it("inserts a hashed token and returns the raw token to the caller", async () => {
@@ -24,6 +33,25 @@ describe("createApprovalToken", () => {
     const inserted = insertMock.mock.calls[0][0]
     expect(inserted.application_id).toBe("app-1")
     expect(inserted.token_hash).not.toBe(raw) // never store the raw token
+  })
+
+  it("throws and captures to Sentry when the Supabase insert reports an error", async () => {
+    insertMock.mockResolvedValueOnce({ error: { message: "insert failed" } })
+    await expect(createApprovalToken("app-1", "hon_secretary", true)).rejects.toThrow()
+    expect(Sentry.captureException).toHaveBeenCalled()
+  })
+})
+
+describe("markTokenUsed", () => {
+  it("does not throw and captures to Sentry when the Supabase update reports an error", async () => {
+    updateEqMock.mockResolvedValueOnce({ error: { message: "update failed" } })
+    await expect(markTokenUsed("some-raw-token", "approved")).resolves.not.toThrow()
+    expect(Sentry.captureException).toHaveBeenCalled()
+  })
+
+  it("does not capture to Sentry when the update succeeds", async () => {
+    await markTokenUsed("some-raw-token", "approved")
+    expect(Sentry.captureException).not.toHaveBeenCalled()
   })
 })
 

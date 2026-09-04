@@ -165,4 +165,37 @@ describe("generateMouPdf", () => {
     expect(text).toContain("AMASI South Zone Event")
     expect(text).toContain("Kerala Update")
   })
+
+  describe("Party 2 caption per Article-family type", () => {
+    it("labels Party 2 as PROGRAMME ORGANIZER for slcp (not NEXTGEN ORGANIZER)", async () => {
+      const buffer = await generateMouPdf(slcpApplication, "AMASI Safe Laparoscopic Cholecystectomy")
+      const text = extractPdfText(buffer)
+      expect(text).toContain("PROGRAMME ORGANIZER")
+      expect(text).not.toContain("NEXTGEN ORGANIZER")
+    })
+
+    it("labels Party 2 as NEXTGEN ORGANIZER for nextgen (not PROGRAMME ORGANIZER)", async () => {
+      const nextgenApplication = baseApplication({ application_type_id: "nextgen" })
+      const buffer = await generateMouPdf(nextgenApplication, "AMASI NextGen")
+      const text = extractPdfText(buffer)
+      expect(text).toContain("NEXTGEN ORGANIZER")
+      expect(text).not.toContain("PROGRAMME ORGANIZER")
+    })
+
+    it("labels Party 2 as PROGRAMME ORGANIZER for meet_the_master", async () => {
+      const mtmApplication = baseApplication({ application_type_id: "meet_the_master" })
+      const buffer = await generateMouPdf(mtmApplication, "AMASI Meet the Master")
+      const text = extractPdfText(buffer)
+      expect(text).toContain("PROGRAMME ORGANIZER")
+      expect(text).not.toContain("NEXTGEN ORGANIZER")
+    })
+
+    it("labels Party 2 as PROGRAMME ORGANIZER for zonal_event", async () => {
+      const zonalApplication = baseApplication({ application_type_id: "zonal_event" })
+      const buffer = await generateMouPdf(zonalApplication, "Zonal Event")
+      const text = extractPdfText(buffer)
+      expect(text).toContain("PROGRAMME ORGANIZER")
+      expect(text).not.toContain("NEXTGEN ORGANIZER")
+    })
+  })
 })

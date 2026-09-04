@@ -31,9 +31,13 @@ vi.mock("@/lib/mou/notify", () => ({
   sendSecretaryApprovalRequest: vi.fn(),
   sendFyiNotification: vi.fn(),
 }))
+vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
 
 import { POST } from "@/app/api/mou/applications/route"
 import { createApplication, getRoleAssignment } from "@/lib/mou/supabase-helpers"
+import { createApprovalToken } from "@/lib/mou/approval-token"
+import { sendApplicantConfirmation, sendSecretaryApprovalRequest } from "@/lib/mou/notify"
+import * as Sentry from "@sentry/nextjs"
 
 const validBody = {
   application_type_id: "fmas",
@@ -108,5 +112,54 @@ describe("POST /api/mou/applications", () => {
     // Legitimate fields still pass through.
     expect(calledWith.organizer_name).toBe("Dr. Test")
     expect(calledWith.email).toBe("organizer@example.com")
+  })
+
+  it("still returns 200 with the applicationId when the applicant confirmation email fails", async () => {
+    vi.mocked(sendApplicantConfirmation).mockRejectedValueOnce(new Error("RESEND_API_KEY not configured"))
+    const req = new Request("http://test/api/mou/applications", {
+      method: "POST",
+      body: JSON.stringify(validBody),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe(true)
+    expect(body.applicationId).toBe("app-1")
+    expect(Sentry.captureException).toHaveBeenCalled()
+  })
+
+  it("still returns 200 with the applicationId when the Hon. Secretary token/notification fails (Resend network blip)", async () => {
+    vi.mocked(createApprovalToken).mockRejectedValueOnce(new Error("network blip"))
+    const req = new Request("http://test/api/mou/applications", {
+      method: "POST",
+      body: JSON.stringify(validBody),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe(true)
+    expect(body.applicationId).toBe("app-1")
+    expect(Sentry.captureException).toHaveBeenCalled()
+  })
+
+  it("still notifies the president even when the secretary notification failed", async () => {
+    vi.mocked(sendSecretaryApprovalRequest).mockRejectedValueOnce(new Error("secretary email failed"))
+    vi.mocked(getRoleAssignment).mockImplementation(async (role: string) => {
+      if (role === "hon_secretary") return { name: "Dr. Biswarup Bose", email: "sec@example.com", phone: null }
+      if (role === "president") return { name: "Dr. President", email: "president@example.com", phone: null }
+      return null
+    })
+    const req = new Request("http://test/api/mou/applications", {
+      method: "POST",
+      body: JSON.stringify(validBody),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    // createApprovalToken called once for secretary (which failed inside the
+    // try block) and once for president (independent, still ran).
+    expect(createApprovalToken).toHaveBeenCalledWith("app-1", "president", false)
   })
 })

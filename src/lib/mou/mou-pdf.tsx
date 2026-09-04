@@ -297,6 +297,7 @@ interface ArticleVars {
   facultyTerms: string[]
   eligibilityTerms: string[]
   eventNoun: string
+  party2Label: string
   placeholderNote?: string
 }
 
@@ -372,6 +373,7 @@ function getArticleVars(application: AcademicEventApplication): ArticleVars {
         ],
         eligibilityTerms: SLCP_ELIGIBILITY_TERMS,
         eventNoun: "programme",
+        party2Label: "PROGRAMME ORGANIZER",
       }
     case "nextgen":
       return {
@@ -414,6 +416,7 @@ function getArticleVars(application: AcademicEventApplication): ArticleVars {
           "Commitment to AMASI standards",
         ],
         eventNoun: "training event",
+        party2Label: "NEXTGEN ORGANIZER",
       }
     case "meet_the_master":
       return {
@@ -428,6 +431,7 @@ function getArticleVars(application: AcademicEventApplication): ArticleVars {
         facultyTerms: ["[TBD]"],
         eligibilityTerms: SLCP_ELIGIBILITY_TERMS,
         eventNoun: "programme",
+        party2Label: "PROGRAMME ORGANIZER",
         placeholderNote:
           "Programme structure, registration fees, and faculty terms below are placeholders pending confirmation with the AMASI Secretary. Party responsibilities and eligibility below are provisionally reused from the SLCP programme terms as the closest sibling template — confirm before go-live.",
       }
@@ -444,6 +448,7 @@ function getArticleVars(application: AcademicEventApplication): ArticleVars {
         facultyTerms: ["[TBD — zonal events are also notified to the zone's Chairperson per the approval workflow]"],
         eligibilityTerms: SLCP_ELIGIBILITY_TERMS,
         eventNoun: "event",
+        party2Label: "PROGRAMME ORGANIZER",
         placeholderNote:
           "Programme structure, registration fees, and faculty terms below are placeholders pending confirmation with the AMASI Secretary and the zone's Chairperson. Party responsibilities and eligibility below are provisionally reused from the SLCP programme terms as the closest sibling template — confirm before go-live.",
       }
@@ -468,7 +473,7 @@ function renderArticleMou(application: AcademicEventApplication) {
         <Text style={styles.smallLabel}>Party 1: ASSOCIATION OF MINIMAL ACCESS SURGEONS OF INDIA (AMASI)</Text>
         <Text style={styles.paragraph}>45 A Pankaja Mill Road, Ramanathapuram, Coimbatore, Tamil Nadu 641045, India</Text>
 
-        <Text style={styles.smallLabel}>Party 2: PROGRAMME ORGANIZER / NEXTGEN ORGANIZER</Text>
+        <Text style={styles.smallLabel}>Party 2: {vars.party2Label}</Text>
         <Text style={styles.paragraph}>
           {application.organizer_name} — {application.phone_number} — {application.email}
         </Text>

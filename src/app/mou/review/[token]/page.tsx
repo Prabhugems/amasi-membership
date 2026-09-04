@@ -26,6 +26,12 @@ interface Remark {
 
 type DecisionAction = "approved" | "rejected" | "changes_requested"
 
+const DECISION_LABELS: Record<DecisionAction, string> = {
+  approved: "Approved",
+  rejected: "Rejected",
+  changes_requested: "Changes requested",
+}
+
 function formatDate(s: string | null): string {
   if (!s) return "—"
   const d = new Date(s)
@@ -54,6 +60,13 @@ export default function MouReviewPage() {
   const [remarks, setRemarks] = useState<Remark[]>([])
   const [canDecide, setCanDecide] = useState(false)
   const [role, setRole] = useState<string>("")
+  // Set once a decision POST succeeds. The token is burned by that same
+  // request, so re-fetching afterward (GET /api/mou/review/[token]) would
+  // correctly — but confusingly — come back as "This link has already been
+  // used to make a decision." Once this is set, the page renders a terminal
+  // success view instead of reloading/re-verifying the token.
+  const [decidedAction, setDecidedAction] = useState<DecisionAction | null>(null)
+  const [decidedAt, setDecidedAt] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!token) return
@@ -142,14 +155,19 @@ export default function MouReviewPage() {
         toast.success("Decision saved")
         setPendingAction(null)
         setDecisionNotes("")
-        await load()
+        // Do NOT reload/re-verify the token here — the decide POST that just
+        // succeeded burned it, so a subsequent GET would correctly report
+        // "already used" and render as an error state right after a success
+        // toast. Show a terminal success view instead.
+        setDecidedAction(action)
+        setDecidedAt(new Date().toISOString())
       } catch {
         toast.error("Could not save the decision. Please try again.")
       } finally {
         setDeciding(false)
       }
     },
-    [decisionNotes, token, load]
+    [decisionNotes, token]
   )
 
   return (
@@ -160,14 +178,31 @@ export default function MouReviewPage() {
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground">Review application</h1>
         </div>
 
-        {loading && (
+        {decidedAction && (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted">
+                <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">Decision recorded</p>
+              <p className="text-sm text-muted-foreground">
+                {DECISION_LABELS[decidedAction]}{decidedAt ? ` on ${formatDate(decidedAt)}` : ""}.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                This link has now been used and cannot be used again. You can close this page.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!decidedAction && loading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading…
           </div>
         )}
 
-        {!loading && loadError && (
+        {!decidedAction && !loading && loadError && (
           <Card>
             <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted">
@@ -178,7 +213,7 @@ export default function MouReviewPage() {
           </Card>
         )}
 
-        {!loading && application && (
+        {!decidedAction && !loading && application && (
           <div className="space-y-6">
             <Card>
               <CardHeader>

@@ -17,7 +17,13 @@ vi.mock("@/lib/whatsapp", () => ({
   sendTemplate: sendTemplateMock,
 }))
 
-import { sendApplicantConfirmation, sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
+import {
+  sendApplicantConfirmation,
+  sendOutcomeEmail,
+  sendWhatsAppNudge,
+  sendSecretaryApprovalRequest,
+  sendFyiNotification,
+} from "@/lib/mou/notify"
 import type { AcademicEventApplication } from "@/lib/mou/types"
 
 const app: AcademicEventApplication = {
@@ -56,15 +62,96 @@ describe("sendOutcomeEmail", () => {
     sendMock.mockClear()
   })
 
-  it("HTML-escapes rejection_reason before interpolating it into the outbound email", async () => {
-    const rejected = { ...app, rejection_reason: `<script>alert("x")</script> & "quoted" 'reason'` }
-    await sendOutcomeEmail(rejected, "FMAS Course", "rejected")
+  it("HTML-escapes the rejection reason passed explicitly before interpolating it into the outbound email", async () => {
+    await sendOutcomeEmail(app, "FMAS Course", "rejected", `<script>alert("x")</script> & "quoted" 'reason'`)
     const html = sendMock.mock.calls[0][0].html as string
     expect(html).not.toContain("<script>")
     expect(html).toContain("&lt;script&gt;")
     expect(html).toContain("&amp;")
     expect(html).toContain("&quot;quoted&quot;")
     expect(html).toContain("&#39;reason&#39;")
+  })
+
+  it("uses the explicit rejectionReason parameter, not application.rejection_reason", async () => {
+    // application.rejection_reason may be stale (fetched before the DB
+    // write persisted the decision) — sendOutcomeEmail must ignore it and
+    // use only what's passed in explicitly.
+    const staleApplication = { ...app, rejection_reason: "STALE — should not appear in the email" }
+    await sendOutcomeEmail(staleApplication, "FMAS Course", "rejected", "the real, current reason")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("STALE")
+    expect(html).toContain("the real, current reason")
+  })
+
+  it("omits the reason sentence when no rejectionReason is passed", async () => {
+    await sendOutcomeEmail(app, "FMAS Course", "rejected")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("Reason:")
+  })
+
+  it("includes a 'what happens next' contact line and the status-page link on rejection", async () => {
+    await sendOutcomeEmail(app, "FMAS Course", "rejected", "not eligible")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain("amasi.india@gmail.com")
+    expect(html).toContain(`/mou/status/${app.id}`)
+  })
+
+  it("includes a 'what happens next' contact line and the status-page link on changes_requested", async () => {
+    await sendOutcomeEmail(app, "FMAS Course", "changes_requested", "please fix X")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain("amasi.india@gmail.com")
+    expect(html).toContain(`/mou/status/${app.id}`)
+  })
+
+  it("includes the status-page link on approval too", async () => {
+    await sendOutcomeEmail(app, "FMAS Course", "approved")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain(`/mou/status/${app.id}`)
+  })
+
+  it("HTML-escapes organizer_name", async () => {
+    const malicious = { ...app, organizer_name: `<img src=x onerror=alert(1)>` }
+    await sendOutcomeEmail(malicious, "FMAS Course", "approved")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("<img src=x")
+    expect(html).toContain("&lt;img")
+  })
+})
+
+describe("HTML-injection guard on applicant-supplied fields across all outbound emails", () => {
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "test-key"
+    sendMock.mockClear()
+  })
+
+  it("escapes organizer_name and primary_institution in sendApplicantConfirmation", async () => {
+    const malicious = { ...app, organizer_name: `<script>alert(1)</script>` }
+    await sendApplicantConfirmation(malicious)
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("<script>alert(1)</script>")
+    expect(html).toContain("&lt;script&gt;")
+  })
+
+  it("escapes organizer_name and primary_institution in sendSecretaryApprovalRequest", async () => {
+    const malicious = {
+      ...app,
+      organizer_name: `<a href="evil.com">click</a>`,
+      primary_institution: `<script>alert(2)</script>`,
+    }
+    await sendSecretaryApprovalRequest(malicious, "FMAS Course", "sec@example.com", "https://example.com/link")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain(`<a href="evil.com">click</a>`)
+    expect(html).not.toContain("<script>alert(2)</script>")
+    expect(html).toContain("&lt;a href=&quot;evil.com&quot;&gt;click&lt;/a&gt;")
+    expect(html).toContain("&lt;script&gt;")
+  })
+
+  it("escapes organizer_name in sendFyiNotification", async () => {
+    const malicious = { ...app, organizer_name: `<script>alert(3)</script>` }
+    await sendFyiNotification(malicious, "FMAS Course", "president@example.com", "president", "https://example.com/link")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("<script>alert(3)</script>")
+    expect(html).toContain("&lt;script&gt;")
   })
 })
 

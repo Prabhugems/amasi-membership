@@ -40,6 +40,7 @@ vi.mock("@/lib/supabase", () => ({
 import { POST as decidePOST } from "@/app/api/mou/review/[token]/decide/route"
 import { verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
 import { getApplicationById, updateApplicationStatus } from "@/lib/mou/supabase-helpers"
+import { sendOutcomeEmail } from "@/lib/mou/notify"
 import * as Sentry from "@sentry/nextjs"
 
 const decidableToken = { ok: true as const, row: { id: "t1", application_id: "app-1", role: "hon_secretary", can_decide: true } }
@@ -107,6 +108,30 @@ describe("POST /api/mou/review/[token]/decide", () => {
 
     expect(res.status).toBe(500)
     expect(markTokenUsed).not.toHaveBeenCalled()
+  })
+
+  it("passes the actual notes text (not the stale pre-update application object) to sendOutcomeEmail on rejection", async () => {
+    vi.mocked(verifyApprovalToken).mockResolvedValue(decidableToken)
+    // Deliberately stale: rejection_reason on the fetched application is
+    // null (as it always is — the object is fetched before the DB write),
+    // simulating the real bug scenario.
+    vi.mocked(getApplicationById).mockResolvedValue({ ...baseApplication, rejection_reason: null })
+
+    const req = new Request("http://test", {
+      method: "POST",
+      body: JSON.stringify({ action: "rejected", notes: "does not meet eligibility criteria" }),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await decidePOST(req as any, { params: Promise.resolve({ token: "raw" }) })
+
+    expect(res.status).toBe(200)
+    expect(sendOutcomeEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "app-1" }),
+      "FMAS Course",
+      "rejected",
+      "does not meet eligibility criteria",
+      undefined,
+    )
   })
 
   it("creates an event in the shared events table and links it via created_event_id on approval", async () => {

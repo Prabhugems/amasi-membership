@@ -159,7 +159,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   await markTokenUsed(token, action)
-  await sendOutcomeEmail(application, typeLabel, action, mouBuffer)
+  // Pass safeNotes explicitly rather than reading application.rejection_reason
+  // — `application` was fetched before updateApplicationStatus persisted the
+  // decision above, so its rejection_reason is stale (null, unless a prior
+  // decision already set it). safeNotes is the actual value just written to
+  // the DB.
+  await sendOutcomeEmail(application, typeLabel, action, action !== "approved" ? safeNotes : null, mouBuffer)
   await sendWhatsAppNudge(application, action)
 
   return Response.json({ status: true })

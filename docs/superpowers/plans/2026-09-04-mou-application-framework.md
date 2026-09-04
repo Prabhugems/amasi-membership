@@ -861,6 +861,20 @@ export function isMouEventTypeConfig(config: EventTypeUiConfig | MouEventTypeCon
 }
 ```
 
+**Plan-review ruling (added before implementation, not part of the original draft):** `typeSpecificFields` keys split into two groups — some ALSO have a real column from Task 1's migration (`amasi_year_of_joining`, `designation`, `institution_type`, `joint_programme`, `proposed_registration_fee`, `programme_outline` — plus `faculty`/`partner_associations`/the two `conditional-upload` `_url` fields, which are handled separately since their key already equals the column name). Everything else in `typeSpecificFields` (rural's `venue_setting`/`expected_beneficiaries`/`target_population`/`expected_surgeries`/`financial_assistance_requested`/`nearest_airport*`/`facilities`; workshop's `event_subtype`/`expected_delegates`/`faculty_travel_mode`/`organised_by_state_chapter`/`small_state_exception_requested`/`small_state_faculty_count`/`email_circular_requested`/`facilities`) has NO column of its own — Task 1's `type_specific_data` column is where those live, per Task 1's own column comment. Task 5 and Task 10 both need to know which bucket a key falls in; rather than hardcode that set twice (drift risk), export it once here:
+
+```typescript
+// Keys in a MouEventTypeConfig's typeSpecificFields that ALSO have a real
+// column on academic_event_applications (from sql/040) — everything else
+// in typeSpecificFields belongs only in type_specific_data. Single source
+// of truth for Task 5 (route.ts, writing) and Task 10 (admin page,
+// reading) so the two never drift apart on which bucket a key is in.
+export const SHARED_TYPE_SPECIFIC_COLUMN_KEYS = new Set([
+  "amasi_year_of_joining", "designation", "institution_type", "joint_programme",
+  "proposed_registration_fee", "programme_outline",
+])
+```
+
 - [ ] **Step 10: Run tests to verify they pass**
 
 Run: `npx vitest run __tests__/mou-event-type-config.test.ts`
@@ -1303,6 +1317,34 @@ Add these tests to the existing `describe("POST /api/mou/applications", ...)` bl
     )
   })
 
+  it("buckets type-specific-only fields into type_specific_data, keeps shared-column fields at the top level (plan-review fix)", async () => {
+    const { EVENT_TYPE_CONFIG } = await import("@/lib/mou/event-type-config")
+    const rural = EVENT_TYPE_CONFIG.rural_program as import("@/lib/mou/event-type-config").MouEventTypeConfig
+    const futureDate = (() => { const d = new Date(); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10) })()
+    const ruralBody = {
+      ...validBody, application_type_id: "rural_program", preferred_date_1: futureDate,
+      applicant_amasi_number: "12345",
+      venue_type: "Hospital", venue_name: "X", venue_address: "Y", venue_city: "Z", venue_state: "Tamil Nadu", venue_zip: "600001", venue_country: "India",
+      venue_setting: "Rural", institution_type: "own", joint_programme: false,
+      expected_beneficiaries: 40, financial_assistance_requested: true,
+      faculty: [{ name: "Dr. A", amasi_membership_number: "123", speciality: null, is_amasi_member: true }],
+      agreements: Object.fromEntries(rural.agreements.map((a) => [a.clauseRef, new Date().toISOString()])),
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(ruralBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await POST(req as any)
+    const insertedBody = vi.mocked(createApplication).mock.calls[0][0]
+    // venue_setting/expected_beneficiaries/financial_assistance_requested have
+    // NO column of their own — they must land in type_specific_data.
+    expect(insertedBody.type_specific_data).toMatchObject({
+      venue_setting: "Rural", expected_beneficiaries: 40, financial_assistance_requested: true, _v: 1,
+    })
+    // institution_type DOES have a real column — it must NOT be duplicated
+    // inside type_specific_data.
+    expect(insertedBody.institution_type).toBe("own")
+    expect((insertedBody.type_specific_data as Record<string, unknown>).institution_type).toBeUndefined()
+  })
+
   it("returns 500 (not a silent swallow) when createMouSignature fails for a mou-framework type", async () => {
     const { createMouSignature } = await import("@/lib/mou/mou-signature")
     vi.mocked(createMouSignature).mockRejectedValueOnce(new Error("insert failed"))
@@ -1336,18 +1378,18 @@ Add these tests to the existing `describe("POST /api/mou/applications", ...)` bl
 - [ ] **Step 3: Run tests to verify the new ones fail**
 
 Run: `npx vitest run __tests__/mou-api-applications.test.ts`
-Expected: FAIL on the 3 new tests (route doesn't call the validator/signature functions yet).
+Expected: FAIL on the 4 new tests (route doesn't call the validator/signature functions, and doesn't bucket type_specific_data, yet).
 
 - [ ] **Step 4: Wire `src/app/api/mou/applications/route.ts`**
 
 Add imports:
 ```typescript
-import { isMouEventTypeConfig } from "@/lib/mou/event-type-config"
+import { isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_KEYS } from "@/lib/mou/event-type-config"
 import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
 import { computeMouHash, createMouSignature } from "@/lib/mou/mou-signature"
 ```
 
-Extend `pickApplicationInput` to also pass through the new shared columns (add to the returned object):
+Extend `pickApplicationInput` to also pass through the new shared columns (add to the returned object). Note `type_specific_data` is deliberately NOT one of these — the client sends every type-specific field flat (matching `typeSpecificValues`' shape from Task 8), never a pre-bundled nested object, so `type_specific_data` is assembled server-side below, not picked from `raw`:
 ```typescript
     amasi_year_of_joining: raw.amasi_year_of_joining,
     designation: raw.designation,
@@ -1360,7 +1402,6 @@ Extend `pickApplicationInput` to also pass through the new shared columns (add t
     brief_institution_url: raw.brief_institution_url,
     faculty: raw.faculty,
     agreements: raw.agreements,
-    type_specific_data: raw.type_specific_data,
 ```
 
 After the existing `if (typeConfig.fields.includes("zone") && !body.zone) { ... }` block and before the OTP check, add:
@@ -1369,6 +1410,20 @@ After the existing `if (typeConfig.fields.includes("zone") && !body.zone) { ... 
   if (isMouEventTypeConfig(typeConfig)) {
     const validationError = validateTypeSpecificFields(typeConfig, rawBody)
     if (validationError) return Response.json({ status: false, message: validationError }, { status: 400 })
+  }
+```
+
+Right after that block (still before the OTP check — `type_specific_data` must be on `body` before `createApplication(body)` runs), assemble `type_specific_data` from every `typeSpecificFields` key that has NO real column of its own (everything not in `SHARED_TYPE_SPECIFIC_COLUMN_KEYS` and not a `faculty-rows`/`association-rows`/`conditional-upload` field, which are already carried through by the `pickApplicationInput` list above):
+
+```typescript
+  if (isMouEventTypeConfig(typeConfig)) {
+    const typeSpecificData: Record<string, unknown> = { _v: 1 }
+    for (const field of typeConfig.typeSpecificFields) {
+      if (field.kind === "faculty-rows" || field.kind === "association-rows" || field.kind === "conditional-upload") continue
+      if (SHARED_TYPE_SPECIFIC_COLUMN_KEYS.has(field.key)) continue
+      typeSpecificData[field.key] = rawBody[field.key]
+    }
+    body.type_specific_data = typeSpecificData
   }
 ```
 
@@ -1441,7 +1496,7 @@ export async function sendApplicantConfirmation(application: AcademicEventApplic
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `npx vitest run __tests__/mou-api-applications.test.ts`
-Expected: PASS (all tests, including the 3 new ones and the original ones from before this task)
+Expected: PASS (all tests, including the 4 new ones and the original ones from before this task)
 
 - [ ] **Step 7: Run full type-check, lint, and the whole suite**
 
@@ -2622,10 +2677,10 @@ interface DetailResponse {
 
 Add the import:
 ```typescript
-import { isMouEventTypeConfig, type TypeSpecificFieldDef } from "@/lib/mou/event-type-config"
+import { isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_KEYS, type TypeSpecificFieldDef } from "@/lib/mou/event-type-config"
 ```
 
-Inside `DetailDialog`, after `const remarks = data?.remarks ?? []`, add:
+Inside `DetailDialog`, after `const remarks = data?.remarks ?? []`, add. Per the plan-review ruling in Task 3/Task 5: a `typeSpecificFields` key that's in `SHARED_TYPE_SPECIFIC_COLUMN_KEYS` lives on the application row directly (`app.amasi_year_of_joining`, not `app.type_specific_data.amasi_year_of_joining`) — reading every key from `type_specific_data` unconditionally (as an earlier draft of this task did) would silently show those 6 fields as blank, since Task 5 never writes them there:
 ```typescript
   const hasSignature = data?.hasSignature ?? null
   const typeConfig = app ? getEventTypeConfig(app.application_type_id) : null
@@ -2633,15 +2688,17 @@ Inside `DetailDialog`, after `const remarks = data?.remarks ?? []`, add:
 
   function typeSpecificValue(field: TypeSpecificFieldDef): string | null {
     if (!app) return null
-    const data = app.type_specific_data as Record<string, unknown>
+    const typeSpecificData = app.type_specific_data as Record<string, unknown>
     if (field.kind === "facilities-group") {
-      const group = (data.facilities ?? {}) as Record<string, unknown>
+      const group = (typeSpecificData.facilities ?? {}) as Record<string, unknown>
       return field.items
         .filter((i) => group[i.key])
         .map((i) => (i.kind === "checkbox" ? i.label : `${i.label}: ${group[i.key]}`))
         .join(" · ") || null
     }
-    const value = data[field.key]
+    const value = SHARED_TYPE_SPECIFIC_COLUMN_KEYS.has(field.key)
+      ? (app as unknown as Record<string, unknown>)[field.key]
+      : typeSpecificData[field.key]
     if (value === undefined || value === null || value === "") return null
     return typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
   }

@@ -108,6 +108,23 @@ function eventLabel(app: AcademicEventApplication): string {
   return app.event_name || getEventTypeConfig(app.application_type_id)?.label || app.application_type_id
 }
 
+// The faculty/association/conditional-upload URLs rendered below (Fix 7)
+// come from applicant-supplied application data — consent_letter_url,
+// consent_guest_institution_url, brief_institution_url — which the write
+// path (pickApplicationInput in the applications route) does not validate
+// as a same-origin storage URL, only as a string. An href of the form
+// "javascript:..." would execute in the admin's authenticated session the
+// moment they click it here, so only ever render http(s) links.
+function isSafeHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string" || !value) return false
+  try {
+    const u = new URL(value)
+    return u.protocol === "https:" || u.protocol === "http:"
+  } catch {
+    return false
+  }
+}
+
 function Stat({
   label,
   value,
@@ -168,9 +185,15 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const typeConfig = app ? getEventTypeConfig(app.application_type_id) : null
   const isMouFramework = !!typeConfig && isMouEventTypeConfig(typeConfig)
 
+  // The migration adding type_specific_data (sql/040) has not been applied
+  // to any database yet, so existing rows (and any pre-migration DB state)
+  // won't have this column — app.type_specific_data can be undefined, not
+  // just an empty object. Fall back to {} everywhere it's read rather than
+  // dereferencing it directly at each site.
+  const typeSpecificData = (app?.type_specific_data ?? {}) as Record<string, unknown>
+
   function typeSpecificValue(field: TypeSpecificFieldDef): string | null {
     if (!app) return null
-    const typeSpecificData = app.type_specific_data as Record<string, unknown>
     if (field.kind === "facilities-group") {
       const group = (typeSpecificData.facilities ?? {}) as Record<string, unknown>
       return field.items
@@ -294,15 +317,88 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                         return value ? <Field key={f.key} label={f.kind === "facilities-group" ? "Facilities" : f.label} value={value} /> : null
                       })}
                   </div>
+
+                  {/* faculty-rows/association-rows/conditional-upload are
+                      deliberately excluded from the generic grid above (they
+                      aren't simple scalar values) but must still be shown
+                      somewhere — an admin reviewing an application couldn't
+                      otherwise see who the faculty are, which associations
+                      are involved, or open the uploaded documents. */}
+                  {app.faculty && app.faculty.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">
+                        Faculty
+                      </div>
+                      <div className="space-y-1.5">
+                        {app.faculty.map((f, i) => (
+                          <div key={i} className="text-sm border rounded-md p-2">
+                            <span className="font-medium">{f.name}</span>
+                            {f.amasi_membership_number && (
+                              <span className="text-muted-foreground"> · AMASI #{f.amasi_membership_number}</span>
+                            )}
+                            {f.speciality && <span className="text-muted-foreground"> · {f.speciality}</span>}
+                            <span className="text-muted-foreground"> · {f.is_amasi_member ? "AMASI member" : "Non-member"}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {app.partner_associations && app.partner_associations.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">
+                        Partner associations
+                      </div>
+                      <div className="space-y-1.5">
+                        {app.partner_associations.map((a, i) => (
+                          <div key={i} className="text-sm border rounded-md p-2 flex items-center justify-between gap-2">
+                            <span className="font-medium">{a.name}</span>
+                            {isSafeHttpUrl(a.consent_letter_url) && (
+                              <a
+                                href={a.consent_letter_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                Consent letter
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {typeConfig.typeSpecificFields
+                    .filter((f): f is Extract<TypeSpecificFieldDef, { kind: "conditional-upload" }> => f.kind === "conditional-upload")
+                    .map((f) => {
+                      const url = (app as unknown as Record<string, unknown>)[`${f.docType}_url`]
+                      if (!isSafeHttpUrl(url)) return null
+                      return (
+                        <div key={f.key} className="mt-3">
+                          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">
+                            {f.label}
+                          </div>
+                          <Button asChild variant="outline" size="sm" className="gap-1.5">
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-3.5 w-3.5" />
+                              Open document
+                            </a>
+                          </Button>
+                        </div>
+                      )
+                    })}
+
                   {/* Prominent flags per the design spec's admin-view section */}
-                  {app.application_type_id === "rural_program" && (app.type_specific_data as Record<string, unknown>).financial_assistance_requested === true && (
+                  {app.application_type_id === "rural_program" && typeSpecificData.financial_assistance_requested === true && (
                     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
                       Financial assistance requested (up to ₹1,00,000)
                     </div>
                   )}
-                  {app.application_type_id === "workshop" && (app.type_specific_data as Record<string, unknown>).small_state_exception_requested === true && (
+                  {app.application_type_id === "workshop" && typeSpecificData.small_state_exception_requested === true && (
                     <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
-                      Small-state faculty transport requested (clause 17) — this costs AMASI money. State: {String((app.type_specific_data as Record<string, unknown>).venue_state ?? app.venue_state)}, faculty count: {String((app.type_specific_data as Record<string, unknown>).small_state_faculty_count ?? "—")}
+                      Small-state faculty transport requested (clause 17) — this costs AMASI money. State: {String(typeSpecificData.venue_state ?? app.venue_state)}, faculty count: {String(typeSpecificData.small_state_faculty_count ?? "—")}
                     </div>
                   )}
                   {hasSignature === false && (

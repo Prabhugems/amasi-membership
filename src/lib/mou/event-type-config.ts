@@ -10,6 +10,12 @@ export interface EventTypeUiConfig {
   label: string
   description: string
   fields: MouFieldKey[]
+  // True only for types whose MOU legal text still has [TBD] placeholder
+  // terms (financial/participant details) pending real content from the
+  // AMASI Secretary — see mou-template-article.md in the SDD workspace.
+  // Hides the type from the /mou landing page and its application route
+  // until this is cleared.
+  pendingContent?: boolean
 }
 
 // Common to every type regardless of this list: organizer_name, email,
@@ -50,10 +56,12 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig> = {
   meet_the_master: {
     id: "meet_the_master", label: "Meet the Master", description: "A Day with a Master hosting application",
     fields: ["event_name", "expected_participants", "live_surgery_demo"],
+    pendingContent: true,
   },
   zonal_event: {
     id: "zonal_event", label: "Zonal Event", description: "A zone-specific AMASI event",
     fields: ["event_name", "zone", "expected_participants"],
+    pendingContent: true,
   },
 }
 

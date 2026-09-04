@@ -16,7 +16,10 @@ const STATIC_DOCUMENTS: { label: string; href: string; kind: "docx" | "pdf" }[] 
 ]
 
 export default function MouLandingPage() {
-  const eventTypes = Object.values(EVENT_TYPE_CONFIG)
+  // Types with placeholder [TBD] MOU terms stay hidden here until real
+  // content is confirmed with the AMASI Secretary — see pendingContent
+  // on EventTypeUiConfig.
+  const eventTypes = Object.values(EVENT_TYPE_CONFIG).filter((type) => !type.pendingContent)
 
   return (
     <div className="min-h-screen bg-background">

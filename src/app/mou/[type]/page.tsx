@@ -35,7 +35,18 @@ export default async function MouApplicationTypePage({
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{typeConfig.description}</p>
         </div>
 
-        <ApplicationForm typeId={typeConfig.id} />
+        {typeConfig.pendingContent ? (
+          <div className="rounded-md border border-border bg-card p-6 text-sm text-muted-foreground">
+            Applications for {typeConfig.label} aren&apos;t open yet — the MOU terms for this event type are
+            still being finalized with the AMASI Secretary. Please check back soon, or contact{" "}
+            <a href="mailto:amasi.india@gmail.com" className="text-primary hover:underline">
+              amasi.india@gmail.com
+            </a>{" "}
+            in the meantime.
+          </div>
+        ) : (
+          <ApplicationForm typeId={typeConfig.id} />
+        )}
       </div>
     </div>
   )

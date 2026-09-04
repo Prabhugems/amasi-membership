@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
+// Hoisted so the mock factory below and the tests can share the same
+// function reference — needed to override the upload outcome per-test
+// (default success; individual tests override with mockResolvedValueOnce).
+const { uploadMock } = vi.hoisted(() => ({
+  uploadMock: vi.fn().mockResolvedValue({ data: { path: "x" }, error: null }),
+}))
+
 vi.mock("@/lib/mou/approval-token", () => ({
   verifyApprovalToken: vi.fn(),
   markTokenUsed: vi.fn(),
@@ -11,11 +18,27 @@ vi.mock("@/lib/mou/supabase-helpers", () => ({
 }))
 vi.mock("@/lib/mou/mou-pdf", () => ({ generateMouPdf: vi.fn().mockResolvedValue(Buffer.from("%PDF-fake")) }))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
-vi.mock("@/lib/supabase", () => ({ createAdminClient: () => ({ storage: { from: () => ({ upload: vi.fn().mockResolvedValue({ data: { path: "x" }, error: null }), getPublicUrl: () => ({ data: { publicUrl: "https://example.com/mou.pdf" } }) }) } }) }))
+vi.mock("@/lib/supabase", () => ({
+  createAdminClient: () => ({
+    storage: {
+      from: () => ({
+        upload: uploadMock,
+        getPublicUrl: () => ({ data: { publicUrl: "https://example.com/mou.pdf" } }),
+      }),
+    },
+  }),
+}))
 
 import { POST as decidePOST } from "@/app/api/mou/review/[token]/decide/route"
-import { verifyApprovalToken } from "@/lib/mou/approval-token"
+import { verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
 import { getApplicationById, updateApplicationStatus } from "@/lib/mou/supabase-helpers"
+
+const decidableToken = { ok: true as const, row: { id: "t1", application_id: "app-1", role: "hon_secretary", can_decide: true } }
+const baseApplication = {
+  id: "app-1", application_type_id: "fmas", organizer_name: "Dr. Test", email: "o@example.com",
+  phone_number: "9999999999", mou_version: 0,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any
 
 describe("POST /api/mou/review/[token]/decide", () => {
   beforeEach(() => vi.clearAllMocks())
@@ -48,5 +71,32 @@ describe("POST /api/mou/review/[token]/decide", () => {
     const res = await decidePOST(req as any, { params: Promise.resolve({ token: "raw" }) })
     expect(res.status).toBe(200)
     expect(updateApplicationStatus).toHaveBeenCalledWith("app-1", "approved", expect.objectContaining({ reviewed_by: "hon_secretary" }))
+  })
+
+  it("returns 500 and does not persist or burn the token when the MOU upload fails", async () => {
+    vi.mocked(verifyApprovalToken).mockResolvedValue(decidableToken)
+    vi.mocked(getApplicationById).mockResolvedValue(baseApplication)
+    uploadMock.mockResolvedValueOnce({ data: null, error: { message: "storage down" } })
+
+    const req = new Request("http://test", { method: "POST", body: JSON.stringify({ action: "approved" }) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await decidePOST(req as any, { params: Promise.resolve({ token: "raw" }) })
+
+    expect(res.status).toBe(500)
+    expect(updateApplicationStatus).not.toHaveBeenCalled()
+    expect(markTokenUsed).not.toHaveBeenCalled()
+  })
+
+  it("returns 500 and does not burn the token when persisting the decision throws", async () => {
+    vi.mocked(verifyApprovalToken).mockResolvedValue(decidableToken)
+    vi.mocked(getApplicationById).mockResolvedValue(baseApplication)
+    vi.mocked(updateApplicationStatus).mockRejectedValueOnce(new Error("db unreachable"))
+
+    const req = new Request("http://test", { method: "POST", body: JSON.stringify({ action: "rejected", notes: "not eligible" }) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await decidePOST(req as any, { params: Promise.resolve({ token: "raw" }) })
+
+    expect(res.status).toBe(500)
+    expect(markTokenUsed).not.toHaveBeenCalled()
   })
 })

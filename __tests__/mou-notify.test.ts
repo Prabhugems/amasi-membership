@@ -17,7 +17,7 @@ vi.mock("@/lib/whatsapp", () => ({
   sendTemplate: sendTemplateMock,
 }))
 
-import { sendApplicantConfirmation, sendWhatsAppNudge } from "@/lib/mou/notify"
+import { sendApplicantConfirmation, sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
 import type { AcademicEventApplication } from "@/lib/mou/types"
 
 const app: AcademicEventApplication = {
@@ -47,6 +47,24 @@ describe("sendApplicantConfirmation", () => {
     await sendApplicantConfirmation(app)
     expect(sendMock).toHaveBeenCalledTimes(1)
     expect(sendMock.mock.calls[0][0].to).toBe("organizer@example.com")
+  })
+})
+
+describe("sendOutcomeEmail", () => {
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "test-key"
+    sendMock.mockClear()
+  })
+
+  it("HTML-escapes rejection_reason before interpolating it into the outbound email", async () => {
+    const rejected = { ...app, rejection_reason: `<script>alert("x")</script> & "quoted" 'reason'` }
+    await sendOutcomeEmail(rejected, "FMAS Course", "rejected")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).not.toContain("<script>")
+    expect(html).toContain("&lt;script&gt;")
+    expect(html).toContain("&amp;")
+    expect(html).toContain("&quot;quoted&quot;")
+    expect(html).toContain("&#39;reason&#39;")
   })
 })
 

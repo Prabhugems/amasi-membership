@@ -8,12 +8,24 @@ import { getEventTypeConfig } from "@/lib/mou/event-type-config"
 import { createAdminClient } from "@/lib/supabase"
 
 const VALID_ACTIONS = ["approved", "rejected", "changes_requested"] as const
+// notes becomes rejection_reason, which sendOutcomeEmail (src/lib/mou/notify.ts)
+// interpolates into an outbound HTML email — cap it so one decider can't
+// send an absurdly long email body, independent of the HTML-escaping done
+// on the notify.ts side.
+const MAX_NOTES_LENGTH = 500
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const { action, notes } = await request.json()
   if (!VALID_ACTIONS.includes(action)) {
     return Response.json({ status: false, message: "Invalid action" }, { status: 400 })
+  }
+  let safeNotes: string | null = null
+  if (notes !== undefined && notes !== null) {
+    if (typeof notes !== "string") {
+      return Response.json({ status: false, message: "Invalid notes" }, { status: 400 })
+    }
+    safeNotes = notes.trim().slice(0, MAX_NOTES_LENGTH)
   }
 
   // Re-verify the token fresh, right here, right before the state-changing
@@ -63,7 +75,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await updateApplicationStatus(application.id, action, {
       reviewed_by: verified.row.role,
       reviewed_at: new Date().toISOString(),
-      rejection_reason: action !== "approved" ? notes : null,
+      rejection_reason: action !== "approved" ? safeNotes : null,
       ...(mouUrl ? { mou_generated_url: mouUrl, mou_version: application.mou_version + 1 } : {}),
     })
   } catch {

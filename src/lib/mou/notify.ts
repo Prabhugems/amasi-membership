@@ -10,6 +10,19 @@ function getResend() {
 
 const FROM = "AMASI <noreply@amasi.org>"
 
+// rejection_reason is free text supplied by whoever holds a decide-capable
+// magic-link token (the Hon. Secretary) and is interpolated straight into
+// an outbound HTML email below. Escape it so it can't break out of the
+// surrounding markup (e.g. inject a <script> or rewrite the visible link).
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export async function sendApplicantConfirmation(application: AcademicEventApplication): Promise<void> {
   await getResend().emails.send({
     from: FROM,
@@ -65,10 +78,11 @@ export async function sendOutcomeEmail(
     rejected: `Your ${typeLabel} application was not approved`,
     changes_requested: `Changes requested on your ${typeLabel} application`,
   }
+  const safeRejectionReason = application.rejection_reason ? escapeHtml(application.rejection_reason) : null
   const bodyByOutcome = {
     approved: `<p>Congratulations — your application has been approved. The signed MOU is attached.</p>`,
-    rejected: `<p>Your application was not approved.${application.rejection_reason ? ` Reason: ${application.rejection_reason}` : ""}</p>`,
-    changes_requested: `<p>The Hon. Secretary has requested changes.${application.rejection_reason ? ` Details: ${application.rejection_reason}` : ""}</p>`,
+    rejected: `<p>Your application was not approved.${safeRejectionReason ? ` Reason: ${safeRejectionReason}` : ""}</p>`,
+    changes_requested: `<p>The Hon. Secretary has requested changes.${safeRejectionReason ? ` Details: ${safeRejectionReason}` : ""}</p>`,
   }
   await getResend().emails.send({
     from: FROM,

@@ -561,7 +561,7 @@ interface NumberedClauseTemplate {
   clauses: string[]
 }
 
-const WORKSHOP_CLAUSES: string[] = [
+export const WORKSHOP_CLAUSES: string[] = [
   "ASSOCIATION OF MINIMAL ACCESS SURGEONS OF INDIA hereinafter called AMASI being the First Party and ORGANISING COMMITTEE OF WORKSHOP/CME/CONFERENCE hereafter called OC being the second party, we the first party and the second party hereby enter in MOU as per the following details.",
   "Executive Committee of AMASI (EC) shall be the authority to represent the first party. Honorary Secretary of AMASI shall carry out all instruction of the Executive Committee of AMASI and is the authorized signatory of the first party.",
   "The authorities to present the second party shall be office bearers of Organizing Committee of the workshop/CME/conference. Organizing Secretary of the workshop/CME/conference shall act on the advice of the Organizing Committee. He is authorized to sign for the second party. The Organizing Committee is responsible for the proper conduction of the workshop/CME/conference.",
@@ -590,7 +590,7 @@ const WORKSHOP_CLAUSES: string[] = [
   "This Memorandum of Understanding has to be signed by the Organizing Secretary of the workshop/CME/conference on behalf of the Second party. Hony. Secretary of AMASI has to sign on behalf of the First party. If the Organizing Secretary of selected workshop/CME/conference fails to sign the Memorandum of Understanding at least 15 days prior to the event, invitation stands cancelled and Second Party shall not use the logo or name of the first party for any such event.",
 ]
 
-const RURAL_PROGRAM_CLAUSES: string[] = [
+export const RURAL_PROGRAM_CLAUSES: string[] = [
   "ASSOCIATION OF MINIMAL ACCESS SURGEONS OF INDIA hereinafter called AMASI being the First Party and ORGANISING COMMITTEE OF RURAL SURGICAL CAMP hereafter called OC being the second party, we the first party and the second party hereby enter in MOU as per the following details.",
   "Executive Committee of AMASI (EC) shall be the authority to represent the first party. Honorary Secretary of AMASI shall carry out all instruction of the Executive Committee of AMASI and is the authorized signatory of the first party.",
   "The authorities to present the second party shall be office bearers of Organizing Committee of the rural surgical camp. Organizing Secretary of the rural surgical camp shall act on the advice of the Organizing Committee. He is authorized to sign for the second party. The Organizing Committee is responsible for the proper conduction of the rural surgical camp.",

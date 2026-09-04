@@ -90,6 +90,14 @@ const PUBLIC_ROUTES = [
   "/application/user-member-application-fmas-certificate-mobile",
   "/application/user-member-application-receipt",
   "/application/user-member-application-invoice",
+  // Academic Event MOU Workflow (Task 11): public applicant/reviewer-facing
+  // pages. /mou (landing), /mou/[type] (application form), /mou/status/[id]
+  // (applicant status view), /mou/review/[token] (magic-link reviewer view —
+  // token itself is the auth, verified server-side per request). Without this
+  // entry every one of these pages 307-redirects anonymous visitors to
+  // /login, same failure mode the API allowlist above (Task 8/9) already
+  // guards against for the underlying /api/mou/* routes.
+  "/mou",
 ]
 
 const PUBLIC_API_ROUTES = [

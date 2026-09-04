@@ -19,7 +19,11 @@ vi.mock("@/lib/mou/supabase-helpers", () => ({
   updateApplicationStatus: vi.fn(),
   createRemark: vi.fn(),
 }))
-vi.mock("@/lib/mou/mou-pdf", () => ({ generateMouPdf: vi.fn().mockResolvedValue(Buffer.from("%PDF-fake")) }))
+vi.mock("@/lib/mou/mou-pdf", () => ({
+  generateMouPdf: vi.fn().mockResolvedValue(Buffer.from("%PDF-fake")),
+  RURAL_PROGRAM_CLAUSES: [],
+  WORKSHOP_CLAUSES: [],
+}))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
 vi.mock("@/lib/supabase", () => ({

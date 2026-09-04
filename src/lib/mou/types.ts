@@ -40,6 +40,18 @@ export interface AcademicEventApplication {
   authority_confirm: boolean
   committee_member_photo_url: string | null
   institution_photo_url: string | null
+  amasi_year_of_joining: number | null
+  designation: string | null
+  proposed_registration_fee: number | null
+  programme_outline: string | null
+  institution_type: "own" | "guest" | "private" | null
+  joint_programme: boolean
+  partner_associations: { name: string; consent_letter_url: string | null }[]
+  consent_guest_institution_url: string | null
+  brief_institution_url: string | null
+  faculty: { name: string; amasi_membership_number: string | null; speciality: string | null; is_amasi_member: boolean }[]
+  agreements: Record<string, string> | null
+  type_specific_data: Record<string, unknown>
   mou_generated_url: string | null
   mou_version: number
   created_event_id: string | null
@@ -83,4 +95,33 @@ export interface NewApplicationInput {
   authority_confirm: boolean
   committee_member_photo_url?: string
   institution_photo_url?: string
+  amasi_year_of_joining?: number
+  designation?: string
+  proposed_registration_fee?: number
+  programme_outline?: string
+  institution_type?: "own" | "guest" | "private"
+  joint_programme?: boolean
+  partner_associations?: { name: string; consent_letter_url: string | null }[]
+  consent_guest_institution_url?: string
+  brief_institution_url?: string
+  faculty?: { name: string; amasi_membership_number: string | null; speciality: string | null; is_amasi_member: boolean }[]
+  agreements?: Record<string, string>
+  type_specific_data?: Record<string, unknown>
+}
+
+export interface MouSignature {
+  id: string
+  application_id: string
+  mou_version: number
+  mou_sha256: string
+  signatory_name: string
+  signatory_email: string
+  signatory_amasi_number: string | null
+  otp_verified_at: string
+  accepted_at: string
+  ip_address: string
+  user_agent: string | null
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
 }

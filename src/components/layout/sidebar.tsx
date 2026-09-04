@@ -71,6 +71,7 @@ const sections: NavSection[] = [
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "FMAS Holders", href: "/admin/fmas", icon: Award },
       { name: "MMAS Holders", href: "/admin/mmas", icon: Award },
+      { name: "MOU Applications", href: "/admin/mou-applications", icon: ScrollText },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Campaigns", href: "/campaigns", icon: Send },
@@ -83,6 +84,7 @@ const sections: NavSection[] = [
     label: "Membership",
     items: [
       { name: "Apply", href: "/apply", icon: UserPlus },
+      { name: "MOU / Academic Events", href: "/mou", icon: FileSearch },
       { name: "Track Status", href: "/apply/status", icon: FileSearch },
       { name: "Know Your Membership", href: "/membership", icon: Search },
       { name: "Member Directory", href: "/directory", icon: Users },

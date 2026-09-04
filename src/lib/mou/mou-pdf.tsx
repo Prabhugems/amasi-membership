@@ -1,6 +1,6 @@
 import React from "react"
 import { Document, Page, Text, View, StyleSheet, renderToBuffer, type DocumentProps } from "@react-pdf/renderer"
-import type { AcademicEventApplication, ApplicationTypeId } from "./types"
+import type { AcademicEventApplication, ApplicationTypeId, MouSignature } from "./types"
 
 const styles = StyleSheet.create({
   page: { padding: 40, paddingBottom: 56, fontSize: 10, fontFamily: "Helvetica", lineHeight: 1.4 },
@@ -633,7 +633,7 @@ function getNumberedClauseTemplate(typeId: ApplicationTypeId): NumberedClauseTem
   }
 }
 
-function renderNumberedClauseMou(application: AcademicEventApplication) {
+function renderNumberedClauseMou(application: AcademicEventApplication, signature: MouSignature | null) {
   const template = getNumberedClauseTemplate(application.application_type_id)
 
   return (
@@ -660,6 +660,20 @@ function renderNumberedClauseMou(application: AcademicEventApplication) {
           <Text style={styles.signatureLine}>
             Signed: {application.organizer_name} (Organizing Secretary of {template.roleLabel})
           </Text>
+          {signature && (
+            <>
+              <Text style={[styles.signatureLine, { marginTop: 10, fontSize: 8.5, color: "#555" }]}>
+                Electronic signature record — {signature.signatory_name} ({signature.signatory_email}), accepted{" "}
+                {formatDate(signature.accepted_at)} from IP {signature.ip_address}. Document hash:{" "}
+                {signature.mou_sha256.slice(0, 16)}…
+              </Text>
+              {signature.approved_by && signature.approved_at && (
+                <Text style={[styles.signatureLine, { fontSize: 8.5, color: "#555" }]}>
+                  Counter-signed by {signature.approved_by} ({formatDate(signature.approved_at)}) on behalf of AMASI.
+                </Text>
+              )}
+            </>
+          )}
         </View>
 
         <Footer application={application} />
@@ -676,7 +690,11 @@ const COLLEGE_OF_MAS_TYPES: ApplicationTypeId[] = ["fmas", "mmas", "dmas"]
 const ARTICLE_TYPES: ApplicationTypeId[] = ["slcp", "nextgen", "meet_the_master", "zonal_event"]
 const NUMBERED_CLAUSE_TYPES: ApplicationTypeId[] = ["workshop", "rural_program"]
 
-export async function generateMouPdf(application: AcademicEventApplication, typeLabel: string): Promise<Buffer> {
+export async function generateMouPdf(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  signature?: MouSignature | null
+): Promise<Buffer> {
   let doc: React.ReactElement<DocumentProps>
 
   if (COLLEGE_OF_MAS_TYPES.includes(application.application_type_id)) {
@@ -684,7 +702,7 @@ export async function generateMouPdf(application: AcademicEventApplication, type
   } else if (ARTICLE_TYPES.includes(application.application_type_id)) {
     doc = renderArticleMou(application)
   } else if (NUMBERED_CLAUSE_TYPES.includes(application.application_type_id)) {
-    doc = renderNumberedClauseMou(application)
+    doc = renderNumberedClauseMou(application, signature ?? null)
   } else {
     throw new Error(`generateMouPdf: unsupported application_type_id "${application.application_type_id}"`)
   }

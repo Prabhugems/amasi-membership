@@ -4,9 +4,10 @@ import { verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
 import { getApplicationById, updateApplicationStatus } from "@/lib/mou/supabase-helpers"
 import { generateMouPdf } from "@/lib/mou/mou-pdf"
 import { sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
-import { getEventTypeConfig } from "@/lib/mou/event-type-config"
+import { getEventTypeConfig, isMouEventTypeConfig } from "@/lib/mou/event-type-config"
+import { markCounterSigned } from "@/lib/mou/mou-signature"
 import { createAdminClient } from "@/lib/supabase"
-import type { ApplicationTypeId } from "@/lib/mou/types"
+import type { ApplicationTypeId, MouSignature } from "@/lib/mou/types"
 
 const VALID_ACTIONS = ["approved", "rejected", "changes_requested"] as const
 // notes becomes rejection_reason, which sendOutcomeEmail (src/lib/mou/notify.ts)
@@ -83,20 +84,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let mouBuffer: Buffer | undefined
   let createdEventId: string | undefined
   if (action === "approved") {
-    mouBuffer = await generateMouPdf(application, typeLabel)
     const supabase = createAdminClient()
-    const fileName = `mou/${application.id}-v${application.mou_version + 1}.pdf`
-    const { error: uploadError } = await supabase.storage
-      .from("uploads")
-      .upload(fileName, mouBuffer, { contentType: "application/pdf", upsert: true })
-    // If the PDF didn't actually land in storage, stop here: don't persist
-    // an "approved" status pointing at a URL that 404s, and don't burn the
-    // token — the Hon. Secretary should be able to retry the decision.
-    if (uploadError) {
-      return Response.json({ status: false, message: "Failed to generate MOU document. Please try again." }, { status: 500 })
-    }
-    const { data: publicUrlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
-    mouUrl = publicUrlData.publicUrl
 
     // Auto-create the real event in the shared `events` table — the same
     // Supabase database amasi-faculty-management's own dashboard reads
@@ -138,6 +126,48 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         extra: { applicationId: application.id },
       })
     }
+
+    // Counter-sign the MOU on behalf of AMASI — only the two mou-framework
+    // event types (rural_program / workshop) have a mou_signatures row to
+    // counter-sign; every other type's typeConfig fails isMouEventTypeConfig
+    // and this is a no-op for them. Not conditional on the event auto-create
+    // above succeeding — that's a best-effort side effect, this isn't.
+    //
+    // This MUST run before the signature lookup directly below: the PDF
+    // generated later in this same request needs to see the counter-
+    // signature that was just written here, not a stale pre-approval copy.
+    // Reordering these two would leave the PDF's counter-signature block
+    // permanently empty even on a real approval — see Task 9 plan notes.
+    if (typeConfig && isMouEventTypeConfig(typeConfig)) {
+      await markCounterSigned(application.id, typeConfig.mouVersion, verified.row.role)
+    }
+
+    // Fetch the (now possibly counter-signed, per above) signature record
+    // to embed in the generated PDF below.
+    let signatureRecord: MouSignature | null = null
+    if (typeConfig && isMouEventTypeConfig(typeConfig)) {
+      const { data } = await supabase
+        .from("mou_signatures")
+        .select("*")
+        .eq("application_id", application.id)
+        .eq("mou_version", typeConfig.mouVersion)
+        .maybeSingle()
+      signatureRecord = data
+    }
+
+    mouBuffer = await generateMouPdf(application, typeLabel, signatureRecord)
+    const fileName = `mou/${application.id}-v${application.mou_version + 1}.pdf`
+    const { error: uploadError } = await supabase.storage
+      .from("uploads")
+      .upload(fileName, mouBuffer, { contentType: "application/pdf", upsert: true })
+    // If the PDF didn't actually land in storage, stop here: don't persist
+    // an "approved" status pointing at a URL that 404s, and don't burn the
+    // token — the Hon. Secretary should be able to retry the decision.
+    if (uploadError) {
+      return Response.json({ status: false, message: "Failed to generate MOU document. Please try again." }, { status: 500 })
+    }
+    const { data: publicUrlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
+    mouUrl = publicUrlData.publicUrl
   }
 
   // markTokenUsed (and the outbound notifications) must only fire once the

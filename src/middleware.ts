@@ -216,6 +216,12 @@ const PUBLIC_API_ROUTES = [
   "/api/mou/member-lookup",
   "/api/mou/applications",
   "/api/mou/applications/",
+  // Task 9: magic-link review/decide (token in the URL path, verified
+  // inside each handler via verifyApprovalToken before any read or write)
+  // and the remarks endpoint (token in ?token=, also verified in-handler
+  // and checked against the :id in the path). The remarks path already
+  // matches the "/api/mou/applications/" entry above.
+  "/api/mou/review/",
 ]
 
 // Known-dead legacy paths. Confirmed server-side to map to no real flow:

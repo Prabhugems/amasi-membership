@@ -49,6 +49,7 @@ const validBody = {
 
 describe("POST /api/mou/applications", () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(createApplication).mockResolvedValue({ id: "app-1", ...validBody } as any)
     vi.mocked(getRoleAssignment).mockResolvedValue({ name: "Dr. Biswarup Bose", email: "sec@example.com", phone: null })
@@ -76,5 +77,36 @@ describe("POST /api/mou/applications", () => {
     expect(body.status).toBe(true)
     expect(body.applicationId).toBe("app-1")
     expect(createApplication).toHaveBeenCalledTimes(1)
+  })
+
+  it("strips forbidden fields (applicant_member_id, status, reviewed_by, id) before calling createApplication", async () => {
+    const maliciousBody = {
+      ...validBody,
+      applicant_member_id: "victim-member-uuid",
+      status: "approved",
+      reviewed_by: "attacker-controlled",
+      reviewed_at: "2020-01-01T00:00:00.000Z",
+      admin_notes: "injected",
+      id: "attacker-chosen-id",
+    }
+    const req = new Request("http://test/api/mou/applications", {
+      method: "POST",
+      body: JSON.stringify(maliciousBody),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+
+    expect(createApplication).toHaveBeenCalledTimes(1)
+    const calledWith = vi.mocked(createApplication).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(calledWith.applicant_member_id).toBeUndefined()
+    expect(calledWith.status).toBeUndefined()
+    expect(calledWith.reviewed_by).toBeUndefined()
+    expect(calledWith.reviewed_at).toBeUndefined()
+    expect(calledWith.admin_notes).toBeUndefined()
+    expect(calledWith.id).toBeUndefined()
+    // Legitimate fields still pass through.
+    expect(calledWith.organizer_name).toBe("Dr. Test")
+    expect(calledWith.email).toBe("organizer@example.com")
   })
 })

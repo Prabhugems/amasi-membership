@@ -20,9 +20,28 @@ const REQUIRED_FIELDS = [
 // untrusted JSON, not a validated NewApplicationInput — casting it and
 // passing it straight to createApplication would let a caller smuggle
 // extra keys (status, reviewed_by, reviewed_at, admin_notes, id,
-// applicant_member_id, mou_generated_url, ...) straight into the insert,
-// since createApplication spreads its input directly into the row. Picking
-// fields here, rather than trusting the raw payload, is the fix.
+// mou_generated_url, ...) straight into the insert, since createApplication
+// spreads its input directly into the row. Picking fields here, rather than
+// trusting the raw payload, is the fix.
+//
+// applicant_member_id is deliberately NOT in this allowlist. It's a FK into
+// `members`, and GET /api/mou/member-lookup is public/unauthenticated — a
+// caller can look up ANY member's real members.id by their public
+// amasi_number, then (having only proven control of an email address via
+// OTP, not any link to that member record) POST that id here to permanently
+// link a submission to a victim's real member account. There is no
+// legitimate need for the client to send this field: Task 11's frontend
+// only prefills display fields (name/institution) from the lookup, never
+// round-trips member.id back into the POST body. If member-linking is
+// wanted later it must be derived server-side (e.g. looking up the
+// OTP-verified body.email against members), never trusted from the client.
+//
+// applicant_amasi_number stays in the allowlist — unlike applicant_member_id
+// it is a free-text string column (see src/lib/mou/types.ts), not a FK, and
+// nothing downstream (mou-pdf.tsx, notify.ts) treats it as a verified
+// membership claim; it's purely a self-declared field the applicant already
+// controls via any legitimate form field, so allowing it here adds no new
+// trust boundary.
 function pickApplicationInput(raw: Record<string, unknown>): NewApplicationInput {
   return {
     application_type_id: raw.application_type_id,
@@ -30,7 +49,6 @@ function pickApplicationInput(raw: Record<string, unknown>): NewApplicationInput
     email: raw.email,
     phone_number: raw.phone_number,
     applicant_amasi_number: raw.applicant_amasi_number,
-    applicant_member_id: raw.applicant_member_id,
     primary_institution: raw.primary_institution,
     event_name: raw.event_name,
     expected_participants: raw.expected_participants,

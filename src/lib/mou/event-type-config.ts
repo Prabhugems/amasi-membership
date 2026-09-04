@@ -87,7 +87,7 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
   },
   workshop: {
     id: "workshop", label: "Workshop / CME / Conference", description: "AMASI workshop, CME, or conference hosting application (other than AMASICON)",
-    fields: ["event_name", "expected_participants", "live_surgery_demo", "zone"],
+    fields: ["amasi_membership_number", "event_name", "expected_participants", "live_surgery_demo", "zone"],
     mouClauses: WORKSHOP_CLAUSES,
     mouTitle: "MEMORANDUM OF UNDERSTANDING FOR WORKSHOP/CME/CONFERENCE (OTHER THAN AMASICON)",
     mouVersion: 1,

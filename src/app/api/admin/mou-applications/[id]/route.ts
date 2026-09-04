@@ -3,6 +3,7 @@ import { NextRequest } from "next/server"
 import { getAdminSession } from "@/lib/auth"
 import { getApplicationById } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
+import { isMouEventTypeConfig, getEventTypeConfig } from "@/lib/mou/event-type-config"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getAdminSession()
@@ -19,5 +20,17 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .eq("application_id", id)
     .order("created_at", { ascending: true })
 
-  return Response.json({ status: true, application, remarks: remarks ?? [] })
+  const typeConfig = getEventTypeConfig(application.application_type_id)
+  let hasSignature: boolean | null = null
+  if (typeConfig && isMouEventTypeConfig(typeConfig)) {
+    const { data: signature } = await supabase
+      .from("mou_signatures")
+      .select("id")
+      .eq("application_id", id)
+      .eq("mou_version", typeConfig.mouVersion)
+      .maybeSingle()
+    hasSignature = !!signature
+  }
+
+  return Response.json({ status: true, application, remarks: remarks ?? [], hasSignature })
 }

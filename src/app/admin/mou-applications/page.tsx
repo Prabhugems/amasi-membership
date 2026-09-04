@@ -20,7 +20,13 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { StatusBadge } from "@/components/mou/status-badge"
-import { EVENT_TYPE_CONFIG, getEventTypeConfig } from "@/lib/mou/event-type-config"
+import {
+  EVENT_TYPE_CONFIG,
+  getEventTypeConfig,
+  isMouEventTypeConfig,
+  SHARED_TYPE_SPECIFIC_COLUMN_KEYS,
+  type TypeSpecificFieldDef,
+} from "@/lib/mou/event-type-config"
 import type { AcademicEventApplication, ApplicationStatus, ApplicationTypeId } from "@/lib/mou/types"
 import { cn } from "@/lib/utils"
 
@@ -55,6 +61,7 @@ interface DetailResponse {
   status: boolean
   application: AcademicEventApplication
   remarks: Remark[]
+  hasSignature: boolean | null
 }
 
 const STATUSES: ApplicationStatus[] = [
@@ -157,6 +164,27 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const app = data?.application
   const remarks = data?.remarks ?? []
 
+  const hasSignature = data?.hasSignature ?? null
+  const typeConfig = app ? getEventTypeConfig(app.application_type_id) : null
+  const isMouFramework = !!typeConfig && isMouEventTypeConfig(typeConfig)
+
+  function typeSpecificValue(field: TypeSpecificFieldDef): string | null {
+    if (!app) return null
+    const typeSpecificData = app.type_specific_data as Record<string, unknown>
+    if (field.kind === "facilities-group") {
+      const group = (typeSpecificData.facilities ?? {}) as Record<string, unknown>
+      return field.items
+        .filter((i) => group[i.key])
+        .map((i) => (i.kind === "checkbox" ? i.label : `${i.label}: ${group[i.key]}`))
+        .join(" · ") || null
+    }
+    const value = SHARED_TYPE_SPECIFIC_COLUMN_KEYS.has(field.key)
+      ? (app as unknown as Record<string, unknown>)[field.key]
+      : typeSpecificData[field.key]
+    if (value === undefined || value === null || value === "") return null
+    return typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
+  }
+
   const facilities = app
     ? [
         app.auditorium_hall_a && "Auditorium — Hall A",
@@ -252,6 +280,38 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   )}
                 </div>
               </div>
+
+              {isMouFramework && typeConfig && "typeSpecificFields" in typeConfig && (
+                <div>
+                  <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+                    {typeConfig.label} details
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {typeConfig.typeSpecificFields
+                      .filter((f) => f.kind !== "faculty-rows" && f.kind !== "association-rows" && f.kind !== "conditional-upload")
+                      .map((f) => {
+                        const value = typeSpecificValue(f)
+                        return value ? <Field key={f.key} label={f.kind === "facilities-group" ? "Facilities" : f.label} value={value} /> : null
+                      })}
+                  </div>
+                  {/* Prominent flags per the design spec's admin-view section */}
+                  {app.application_type_id === "rural_program" && (app.type_specific_data as Record<string, unknown>).financial_assistance_requested === true && (
+                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
+                      Financial assistance requested (up to ₹1,00,000)
+                    </div>
+                  )}
+                  {app.application_type_id === "workshop" && (app.type_specific_data as Record<string, unknown>).small_state_exception_requested === true && (
+                    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
+                      Small-state faculty transport requested (clause 17) — this costs AMASI money. State: {String((app.type_specific_data as Record<string, unknown>).venue_state ?? app.venue_state)}, faculty count: {String((app.type_specific_data as Record<string, unknown>).small_state_faculty_count ?? "—")}
+                    </div>
+                  )}
+                  {hasSignature === false && (
+                    <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-sm text-destructive">
+                      Anomaly: no matching electronic-signature record found for this application.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {app.status === "approved" && (
                 <div>

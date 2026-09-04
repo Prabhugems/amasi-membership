@@ -47,7 +47,12 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig> = {
   },
   rural_program: {
     id: "rural_program", label: "Rural Surgery Camp", description: "Rural Surgery Camp hosting application",
-    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo", "zone"],
+    // No auditorium_facilities here — the actual MOU text (see
+    // RURAL_PROGRAM_CLAUSES in mou-pdf.tsx) only requires "a hospital
+    // located in a rural setting," not lecture-hall/AV/endotrainer
+    // facilities. Those belong to the skill-course types (FMAS/MMAS/DMAS/
+    // SLCP), which this originally copied by mistake.
+    fields: ["amasi_membership_number", "committee_member_photo", "institution_photo", "zone"],
   },
   nextgen: {
     id: "nextgen", label: "NextGen Organizer", description: "AMASI NextGen: Nurturing the Future hosting application",

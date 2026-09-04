@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -11,7 +11,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
-import { getEventTypeConfig } from "@/lib/mou/event-type-config"
+import { getEventTypeConfig, isMouEventTypeConfig } from "@/lib/mou/event-type-config"
+import { MouScrollPanel, isScrolledToEnd } from "@/components/mou/mou-scroll-panel"
+import { TypeSpecificSection, defaultTypeSpecificValues } from "@/components/mou/type-specific-section"
 import { INDIAN_STATES, STATE_TO_ZONE } from "@/lib/membership-types"
 import type { ApplicationTypeId } from "@/lib/mou/types"
 
@@ -198,6 +200,29 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
   const fields = useMemo(() => new Set(typeConfig?.fields ?? []), [typeConfig])
 
   const [form, setForm] = useState<FormState>(INITIAL_STATE)
+  const isMouFramework = !!typeConfig && isMouEventTypeConfig(typeConfig)
+  const [typeSpecificValues, setTypeSpecificValues] = useState<Record<string, unknown>>(() =>
+    typeConfig && isMouEventTypeConfig(typeConfig) ? defaultTypeSpecificValues(typeConfig.typeSpecificFields) : {}
+  )
+  const setTypeSpecificValue = useCallback((key: string, value: unknown) => {
+    setTypeSpecificValues((prev) => ({ ...prev, [key]: value }))
+  }, [])
+  const [agreements, setAgreements] = useState<Record<string, string>>({})
+  const [scrolledToEnd, setScrolledToEnd] = useState(false)
+  const [amasicWarningDismissed, setAmasicWarningDismissed] = useState(false)
+  const [uploadingKeys, setUploadingKeys] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!typeConfig || !isMouEventTypeConfig(typeConfig) || !typeConfig.smallStateException) return
+    const { states } = typeConfig.smallStateException
+    const currentState = form.venue_state
+    const requested = typeSpecificValues.small_state_exception_requested
+    if (requested && currentState && !states.includes(currentState)) {
+      setTypeSpecificValues((prev) => ({ ...prev, small_state_exception_requested: false, small_state_faculty_count: "" }))
+      toast.info(`Small-state faculty transport (clause 17) is not available for ${currentState} — request cleared.`)
+    }
+  }, [form.venue_state, typeSpecificValues.small_state_exception_requested, typeConfig])
+
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }, [])
@@ -384,7 +409,57 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
     [form.email, set]
   )
 
+  const uploadTypeSpecificFile = useCallback(
+    async (docTypeKey: string, file: File) => {
+      // docTypeKey is either a bare docType ("consent_guest_institution",
+      // "brief_institution") or "consent_partner_association:<index>" for a
+      // repeatable association row — see type-specific-section.tsx.
+      const [docType, indexStr] = docTypeKey.split(":")
+      setUploadingKeys((prev) => new Set(prev).add(docTypeKey))
+      try {
+        const fd = new FormData()
+        fd.append("file", file)
+        fd.append("docType", docType)
+        fd.append("email", form.email.trim())
+        const res = await fetch("/api/mou/applications/upload", { method: "POST", body: fd })
+        const data = await res.json()
+        if (!data.status) {
+          toast.error(data.message || "Upload failed")
+          return
+        }
+        if (indexStr !== undefined) {
+          const index = Number(indexStr)
+          setTypeSpecificValues((prev) => {
+            const rows = [...((prev.partner_associations ?? []) as Array<{ name: string; consent_letter_url: string | null }>)]
+            if (rows[index]) rows[index] = { ...rows[index], consent_letter_url: data.url }
+            return { ...prev, partner_associations: rows }
+          })
+        } else {
+          setTypeSpecificValues((prev) => ({ ...prev, [`${docType}_url`]: data.url }))
+        }
+        toast.success("File uploaded")
+      } catch {
+        toast.error("Upload failed. Please try again.")
+      } finally {
+        setUploadingKeys((prev) => {
+          const next = new Set(prev)
+          next.delete(docTypeKey)
+          return next
+        })
+      }
+    },
+    [form.email]
+  )
+
   const [submitting, setSubmitting] = useState(false)
+
+  const mouFrameworkReady =
+    !isMouFramework ||
+    (!!typeConfig &&
+      isMouEventTypeConfig(typeConfig) &&
+      form.applicant_amasi_number.trim() !== "" &&
+      scrolledToEnd &&
+      typeConfig.agreements.every((a) => !!agreements[a.clauseRef]))
 
   const requiredFieldsFilled =
     form.organizer_name.trim() &&
@@ -395,11 +470,25 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
     (!fields.has("zone") || form.zone) &&
     form.agree_terms &&
     form.certify_accurate &&
-    form.authority_confirm
+    form.authority_confirm &&
+    mouFrameworkReady
 
   const canSubmit = !!requiredFieldsFilled && emailVerified && !submitting
 
   const handleSubmit = useCallback(async () => {
+    if (
+      typeConfig &&
+      isMouEventTypeConfig(typeConfig) &&
+      typeConfig.eventSubtypeWarning &&
+      !amasicWarningDismissed &&
+      form.event_name.toUpperCase().includes("AMASICON")
+    ) {
+      const confirmed = window.confirm(
+        `${typeConfig.eventSubtypeWarning} Continue submitting this application anyway?`
+      )
+      if (!confirmed) return
+      setAmasicWarningDismissed(true)
+    }
     if (!canSubmit) return
     setSubmitting(true)
     try {
@@ -442,6 +531,10 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
       if (fields.has("institution_photo") && form.institution_photo_url) {
         payload.institution_photo_url = form.institution_photo_url
       }
+      if (isMouFramework) {
+        Object.assign(payload, typeSpecificValues)
+        payload.agreements = agreements
+      }
 
       const res = await fetch("/api/mou/applications", {
         method: "POST",
@@ -459,7 +552,7 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
     } finally {
       setSubmitting(false)
     }
-  }, [canSubmit, form, typeId, fields, router])
+  }, [canSubmit, form, typeId, fields, router, typeConfig, amasicWarningDismissed, isMouFramework, typeSpecificValues, agreements])
 
   return (
     <div className="space-y-6">
@@ -491,12 +584,12 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Organizer name" required value={form.organizer_name} onChange={(v) => set("organizer_name", v)} />
+            <Field label={(isMouFramework && typeConfig.organizerNameLabel) || "Organizer name"} required value={form.organizer_name} onChange={(v) => set("organizer_name", v)} />
             <Field label="Primary institution" required value={form.primary_institution} onChange={(v) => set("primary_institution", v)} />
             <Field label="Email" required type="email" value={form.email} onChange={(v) => { set("email", v); setEmailVerified(false); setOtpSentTo(null) }} />
             <Field label="Phone number" required type="tel" value={form.phone_number} onChange={(v) => set("phone_number", v)} />
             {fields.has("amasi_membership_number") && (
-              <Field label="AMASI membership number" value={form.applicant_amasi_number} onChange={(v) => set("applicant_amasi_number", v)} />
+              <Field label="AMASI membership number" required={isMouFramework} value={form.applicant_amasi_number} onChange={(v) => set("applicant_amasi_number", v)} />
             )}
           </div>
 
@@ -578,7 +671,7 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Venue</CardTitle>
-          <CardDescription>Optional — fill in if already finalized.</CardDescription>
+          <CardDescription>{isMouFramework && typeConfig.requiresVenue ? "Required." : "Optional — fill in if already finalized."}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -661,16 +754,93 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-semibold">Agreements</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <CheckboxField label="I agree to the AMASI terms and conditions for hosting this event." checked={form.agree_terms} onChange={(v) => set("agree_terms", v)} />
-          <CheckboxField label="I certify that all information provided in this application is accurate." checked={form.certify_accurate} onChange={(v) => set("certify_accurate", v)} />
-          <CheckboxField label="I confirm I have the authority to submit this application on behalf of my institution." checked={form.authority_confirm} onChange={(v) => set("authority_confirm", v)} />
-        </CardContent>
-      </Card>
+      {isMouFramework ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">Additional details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TypeSpecificSection
+                fields={typeConfig.typeSpecificFields}
+                values={typeSpecificValues}
+                onChange={setTypeSpecificValue}
+                onUpload={uploadTypeSpecificFile}
+                uploadingKeys={uploadingKeys}
+                emailVerified={emailVerified}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">Memorandum of Understanding</CardTitle>
+              <CardDescription>Read the full MOU below, then accept each declaration.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <MouScrollPanel
+                clauses={typeConfig.mouClauses}
+                title={typeConfig.mouTitle}
+                scrolledToEnd={scrolledToEnd}
+                onScrolledToEnd={() => setScrolledToEnd(true)}
+              />
+              <div className="space-y-3">
+                {typeConfig.agreements.map((a) => (
+                  <label
+                    key={a.clauseRef}
+                    className={cn("flex items-start gap-2 text-sm", scrolledToEnd ? "cursor-pointer" : "opacity-50")}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!scrolledToEnd}
+                      checked={!!agreements[a.clauseRef]}
+                      onChange={(e) =>
+                        setAgreements((prev) => {
+                          const next = { ...prev }
+                          if (e.target.checked) next[a.clauseRef] = new Date().toISOString()
+                          else delete next[a.clauseRef]
+                          return next
+                        })
+                      }
+                      className="mt-0.5 h-4 w-4 rounded border-input"
+                    />
+                    <span>{a.text}</span>
+                  </label>
+                ))}
+                <label className={cn("flex items-start gap-2 text-sm", scrolledToEnd ? "cursor-pointer" : "opacity-50")}>
+                  <input
+                    type="checkbox"
+                    disabled={!scrolledToEnd}
+                    checked={form.agree_terms && form.certify_accurate && form.authority_confirm}
+                    onChange={(e) => {
+                      set("agree_terms", e.target.checked)
+                      set("certify_accurate", e.target.checked)
+                      set("authority_confirm", e.target.checked)
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-input"
+                  />
+                  <span>
+                    I have read the Memorandum of Understanding in full and agree to it on behalf of the organising
+                    committee. I understand that accepting it here, with my OTP-verified email address, is my
+                    electronic signature on this MOU and has the same effect as signing it by hand.
+                  </span>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold">Agreements</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <CheckboxField label="I agree to the AMASI terms and conditions for hosting this event." checked={form.agree_terms} onChange={(v) => set("agree_terms", v)} />
+            <CheckboxField label="I certify that all information provided in this application is accurate." checked={form.certify_accurate} onChange={(v) => set("certify_accurate", v)} />
+            <CheckboxField label="I confirm I have the authority to submit this application on behalf of my institution." checked={form.authority_confirm} onChange={(v) => set("authority_confirm", v)} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-end">
         <Button type="button" size="lg" onClick={handleSubmit} disabled={!canSubmit}>

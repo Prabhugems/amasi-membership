@@ -208,6 +208,14 @@ const PUBLIC_API_ROUTES = [
   // the route returns the legacy "nothing to do" envelope. Our own reminder
   // job runs at /api/cron/bulk-draft-reminders.
   "/api/incomplete_application",
+  // Academic Event MOU workflow (Task 8): public applicant-facing routes.
+  // Each handler does its own IP rate limit (and, for /applications, an
+  // OTP-verified check) — see src/app/api/mou/**/route.ts.
+  "/api/mou/otp/send",
+  "/api/mou/otp/verify",
+  "/api/mou/member-lookup",
+  "/api/mou/applications",
+  "/api/mou/applications/",
 ]
 
 // Known-dead legacy paths. Confirmed server-side to map to no real flow:

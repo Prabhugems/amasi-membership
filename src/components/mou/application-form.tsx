@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { getEventTypeConfig } from "@/lib/mou/event-type-config"
+import { INDIAN_STATES, STATE_TO_ZONE } from "@/lib/membership-types"
 import type { ApplicationTypeId } from "@/lib/mou/types"
 
 type Zone = "" | "North" | "South" | "East" | "West" | "Central"
@@ -201,6 +202,43 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }, [])
 
+  // Venue postal code → city/state/zone, via the same /api/pincode lookup
+  // and STATE_TO_ZONE map the main /apply form already uses (see
+  // src/app/apply/page.tsx). STATE_TO_ZONE values carry a " Zone" suffix
+  // ("South Zone"); the MOU zone column/enum uses the short form
+  // ("South"), so that suffix is stripped here. Never overwrites a field
+  // the applicant already filled in by hand.
+  const [lookingUpPincode, setLookingUpPincode] = useState(false)
+
+  const lookupPincode = useCallback(async (pin: string) => {
+    setLookingUpPincode(true)
+    try {
+      const res = await fetch(`/api/pincode?pin=${pin}`)
+      const data = await res.json()
+      if (!data.status) return
+      setForm((prev) => {
+        const next = { ...prev }
+        if (!prev.venue_city && data.city) next.venue_city = data.city
+        if (data.state) {
+          const matchedState = INDIAN_STATES.find((s) => s.toLowerCase() === String(data.state).toLowerCase())
+          if (matchedState) {
+            if (!prev.venue_state) next.venue_state = matchedState
+            if (fields.has("zone") && !prev.zone) {
+              const zoneLabel = STATE_TO_ZONE[matchedState]
+              if (zoneLabel) next.zone = zoneLabel.replace(" Zone", "") as Zone
+            }
+          }
+        }
+        return next
+      })
+    } catch {
+      // Postal code lookup is a convenience — silently leave the fields
+      // for manual entry if it fails.
+    } finally {
+      setLookingUpPincode(false)
+    }
+  }, [fields])
+
   // (a) Membership lookup — a match prefills display fields but never locks
   // the form; the applicant can still edit anything it filled in.
   const [lookupQuery, setLookupQuery] = useState("")
@@ -225,20 +263,34 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
         setLookupMessage("No matching member found — you can still fill the form manually.")
         return
       }
-      setForm((prev) => ({
-        ...prev,
-        organizer_name: prev.organizer_name || data.member.name || "",
-        email: prev.email || data.member.email || "",
-        phone_number: prev.phone_number || String(data.member.phone ?? ""),
-        applicant_amasi_number: prev.applicant_amasi_number || String(data.member.amasi_number ?? ""),
-      }))
+      setForm((prev) => {
+        const next = {
+          ...prev,
+          organizer_name: prev.organizer_name || data.member.name || "",
+          email: prev.email || data.member.email || "",
+          phone_number: prev.phone_number || String(data.member.phone ?? ""),
+          applicant_amasi_number: prev.applicant_amasi_number || String(data.member.amasi_number ?? ""),
+        }
+        // Smart-fill zone straight from the member's registered state —
+        // instant, no need to wait for a venue postal code. Same
+        // STATE_TO_ZONE map and "never overwrite a manual edit" rule as
+        // lookupPincode below.
+        if (fields.has("zone") && !prev.zone && data.member.state) {
+          const matchedState = INDIAN_STATES.find((s) => s.toLowerCase() === String(data.member.state).toLowerCase())
+          if (matchedState) {
+            const zoneLabel = STATE_TO_ZONE[matchedState]
+            if (zoneLabel) next.zone = zoneLabel.replace(" Zone", "") as Zone
+          }
+        }
+        return next
+      })
       setLookupMessage(`Matched: ${data.member.name} (AMASI #${data.member.amasi_number}). Fields prefilled — edit anything that needs updating.`)
     } catch {
       setLookupMessage("Lookup failed. Please try again or fill the form manually.")
     } finally {
       setLookingUp(false)
     }
-  }, [lookupQuery])
+  }, [lookupQuery, fields])
 
   // (e)/(f) OTP verification, gated to the current email field.
   const [otpSentTo, setOtpSentTo] = useState<string | null>(null)
@@ -535,7 +587,24 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
             <Field label="Address" value={form.venue_address} onChange={(v) => set("venue_address", v)} />
             <Field label="City" value={form.venue_city} onChange={(v) => set("venue_city", v)} />
             <Field label="State" value={form.venue_state} onChange={(v) => set("venue_state", v)} />
-            <Field label="ZIP / PIN" value={form.venue_zip} onChange={(v) => set("venue_zip", v)} />
+            <div>
+              <Label className="text-xs">Postal code</Label>
+              <Input
+                value={form.venue_zip}
+                onChange={(e) => {
+                  const v = e.target.value
+                  set("venue_zip", v)
+                  if (/^\d{6}$/.test(v.trim())) lookupPincode(v.trim())
+                }}
+                className="mt-1"
+              />
+              {lookingUpPincode && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Looking up city, state &amp; zone…
+                </p>
+              )}
+            </div>
             <Field label="Country" value={form.venue_country} onChange={(v) => set("venue_country", v)} />
           </div>
 

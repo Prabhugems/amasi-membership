@@ -26,36 +26,36 @@ export interface EventTypeUiConfig {
 export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig> = {
   fmas: {
     id: "fmas", label: "FMAS Course", description: "Fellowship in Minimal Access Surgery skill course",
-    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo"],
+    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo", "zone"],
   },
   mmas: {
     id: "mmas", label: "MMAS Course", description: "Mastery in Minimal Access Surgery skill course",
-    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo"],
+    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo", "zone"],
   },
   dmas: {
     id: "dmas", label: "DMAS Course", description: "Diploma in Minimal Access Surgery skill course",
-    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo"],
+    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo", "zone"],
   },
   slcp: {
     id: "slcp", label: "Safe Laparoscopic Cholecystectomy Programme", description: "SLCP hosting application",
     fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo",
-      "high_speed_internet", "expected_participants", "live_surgery_demo"],
+      "high_speed_internet", "expected_participants", "live_surgery_demo", "zone"],
   },
   workshop: {
     id: "workshop", label: "Workshop / CME / Conference", description: "AMASI workshop, CME, or conference hosting application",
-    fields: ["event_name", "expected_participants", "live_surgery_demo"],
+    fields: ["event_name", "expected_participants", "live_surgery_demo", "zone"],
   },
   rural_program: {
     id: "rural_program", label: "Rural Surgery Camp", description: "Rural Surgery Camp hosting application",
-    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo"],
+    fields: ["amasi_membership_number", "auditorium_facilities", "committee_member_photo", "institution_photo", "zone"],
   },
   nextgen: {
     id: "nextgen", label: "NextGen Organizer", description: "AMASI NextGen: Nurturing the Future hosting application",
-    fields: ["committee_member_photo"],
+    fields: ["committee_member_photo", "zone"],
   },
   meet_the_master: {
     id: "meet_the_master", label: "Meet the Master", description: "A Day with a Master hosting application",
-    fields: ["event_name", "expected_participants", "live_surgery_demo"],
+    fields: ["event_name", "expected_participants", "live_surgery_demo", "zone"],
     pendingContent: true,
   },
   zonal_event: {

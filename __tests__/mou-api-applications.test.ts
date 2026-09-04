@@ -46,6 +46,7 @@ const validBody = {
   phone_number: "9999999999",
   primary_institution: "Test Hospital",
   preferred_date_1: "2026-12-01",
+  zone: "South",
   agree_terms: true,
   certify_accurate: true,
   authority_confirm: true,

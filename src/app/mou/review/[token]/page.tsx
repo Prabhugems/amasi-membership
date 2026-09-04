@@ -1,9 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { useParams } from "next/navigation"
 import { toast } from "sonner"
-import { Loader2, AlertCircle, MessageSquare, CheckCircle2, XCircle, RotateCcw, Send } from "lucide-react"
+import {
+  Loader2, AlertCircle, MessageSquare, CheckCircle2, XCircle, RotateCcw, Send,
+  User, CalendarDays, MapPin, Image as ImageIcon, Clock,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -39,14 +42,23 @@ function formatDate(s: string | null): string {
   return d.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
 }
 
-function detailRow(label: string, value: string | number | boolean | null | undefined) {
+function detail(label: string, value: string | number | boolean | null | undefined) {
   if (value === null || value === undefined || value === "") return null
   const display = typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
   return (
-    <div key={label} className="flex justify-between gap-4 border-b border-border py-2 text-sm last:border-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right text-foreground">{display}</span>
+    <div key={label}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm text-foreground">{display}</p>
     </div>
+  )
+}
+
+function SectionHeading({ icon: Icon, children }: { icon: typeof User; children: ReactNode }) {
+  return (
+    <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      {children}
+    </CardTitle>
   )
 }
 
@@ -223,60 +235,122 @@ export default function MouReviewPage() {
                   </CardTitle>
                   <StatusBadge status={application.status} />
                 </div>
-                <CardDescription>
-                  {getEventTypeConfig(application.application_type_id)?.label}
-                  {role && ` — viewing as ${role.replace(/_/g, " ")}`}
+                <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>{getEventTypeConfig(application.application_type_id)?.label}</span>
+                  {application.zone && (
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      <MapPin className="h-3 w-3" />
+                      {application.zone} Zone
+                    </span>
+                  )}
+                  {role && <span>Viewing as {role.replace(/_/g, " ")}</span>}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                {detailRow("Organizer", application.organizer_name)}
-                {detailRow("Email", application.email)}
-                {detailRow("Phone", application.phone_number)}
-                {detailRow("Institution", application.primary_institution)}
-                {detailRow("AMASI membership number", application.applicant_amasi_number)}
-                {detailRow("Preferred date", application.preferred_date_1)}
-                {detailRow("Alternate date", application.preferred_date_2)}
-                {detailRow("Zone", application.zone)}
-                {detailRow("Expected participants", application.expected_participants)}
-                {detailRow("Live surgery demo", application.live_surgery_demo)}
-                {detailRow("Venue type", application.venue_type)}
-                {detailRow("Venue name", application.venue_name)}
-                {detailRow("Venue address", application.venue_address)}
-                {detailRow("Venue city", application.venue_city)}
-                {detailRow("Venue state", application.venue_state)}
-                {detailRow("Venue ZIP", application.venue_zip)}
-                {detailRow("Venue country", application.venue_country)}
-                {detailRow("Hall A", application.auditorium_hall_a)}
-                {detailRow("Hall B", application.auditorium_hall_b)}
-                {detailRow("AV equipment", application.av_equipment)}
-                {detailRow("Endotrainers", application.endotrainers)}
-                {detailRow("High-speed internet", application.high_speed_internet)}
-                {detailRow("Submitted", formatDate(application.created_at))}
-                {detailRow("Last reviewed", formatDate(application.reviewed_at))}
-                {application.committee_member_photo_url && (
-                  <div className="border-b border-border py-2 text-sm">
-                    <span className="text-muted-foreground">Committee member photo</span>
-                    <a href={application.committee_member_photo_url} target="_blank" rel="noopener noreferrer" className="block mt-1 text-primary underline underline-offset-2">
-                      View photo
-                    </a>
-                  </div>
+              <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5" />
+                  Submitted {formatDate(application.created_at)}
+                </span>
+                {application.reviewed_at && (
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    Last reviewed {formatDate(application.reviewed_at)}
+                  </span>
                 )}
-                {application.institution_photo_url && (
-                  <div className="py-2 text-sm">
-                    <span className="text-muted-foreground">Institution photo</span>
-                    <a href={application.institution_photo_url} target="_blank" rel="noopener noreferrer" className="block mt-1 text-primary underline underline-offset-2">
-                      View photo
-                    </a>
-                  </div>
-                )}
-                {application.rejection_reason && (
-                  <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm">
+              </CardContent>
+              {application.rejection_reason && (
+                <CardContent className="pt-0">
+                  <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Reviewer notes</p>
                     <p className="text-foreground">{application.rejection_reason}</p>
                   </div>
-                )}
+                </CardContent>
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <SectionHeading icon={User}>Applicant</SectionHeading>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {detail("Organizer", application.organizer_name)}
+                  {detail("Institution", application.primary_institution)}
+                  {detail("Email", application.email)}
+                  {detail("Phone", application.phone_number)}
+                  {detail("AMASI membership number", application.applicant_amasi_number)}
+                </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <SectionHeading icon={CalendarDays}>Event</SectionHeading>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {detail("Preferred date", application.preferred_date_1)}
+                  {detail("Alternate date", application.preferred_date_2)}
+                  {detail("Expected participants", application.expected_participants)}
+                  {detail("Live surgery demo", application.live_surgery_demo)}
+                </div>
+              </CardContent>
+            </Card>
+
+            {(application.venue_type || application.venue_name || application.venue_address ||
+              application.venue_city || application.venue_state || application.venue_zip ||
+              application.auditorium_hall_a || application.auditorium_hall_b ||
+              application.av_equipment || application.endotrainers || application.high_speed_internet) && (
+              <Card>
+                <CardHeader>
+                  <SectionHeading icon={MapPin}>Venue</SectionHeading>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {detail("Venue type", application.venue_type)}
+                    {detail("Venue name", application.venue_name)}
+                    {detail("Address", application.venue_address)}
+                    {detail("City", application.venue_city)}
+                    {detail("State", application.venue_state)}
+                    {detail("Postal code", application.venue_zip)}
+                    {detail("Country", application.venue_country)}
+                    {detail("Hall A", application.auditorium_hall_a)}
+                    {detail("Hall B", application.auditorium_hall_b)}
+                    {detail("AV equipment", application.av_equipment)}
+                    {detail("Endotrainers", application.endotrainers)}
+                    {detail("High-speed internet", application.high_speed_internet)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {(application.committee_member_photo_url || application.institution_photo_url) && (
+              <Card>
+                <CardHeader>
+                  <SectionHeading icon={ImageIcon}>Documents</SectionHeading>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {application.committee_member_photo_url && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Committee member photo</p>
+                        <a href={application.committee_member_photo_url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm text-primary underline underline-offset-2">
+                          View photo
+                        </a>
+                      </div>
+                    )}
+                    {application.institution_photo_url && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Institution photo</p>
+                        <a href={application.institution_photo_url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm text-primary underline underline-offset-2">
+                          View photo
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card>
               <CardHeader>

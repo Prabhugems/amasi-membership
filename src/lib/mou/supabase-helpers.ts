@@ -88,10 +88,11 @@ export async function lookupMemberByNumberOrEmail(q: string): Promise<{
   email: string | null
   phone: string | number | null
   pg_degree: string | null
+  state: string | null
 } | null> {
   const supabase = createAdminClient()
   const isNumeric = /^\d+$/.test(q.trim())
-  const query = supabase.from("members").select("id, name, amasi_number, email, phone, pg_degree")
+  const query = supabase.from("members").select("id, name, amasi_number, email, phone, pg_degree, state")
   const { data, error } = isNumeric
     ? await query.eq("amasi_number", parseInt(q.trim(), 10)).limit(1).maybeSingle()
     : await query.eq("email", q.trim().toLowerCase()).limit(1).maybeSingle()

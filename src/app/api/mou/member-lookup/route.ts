@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
       email: member.email,
       phone: member.phone,
       pg_degree: member.pg_degree,
+      state: member.state,
     },
   })
 }

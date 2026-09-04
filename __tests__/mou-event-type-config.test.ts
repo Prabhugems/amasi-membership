@@ -10,10 +10,9 @@ describe("EVENT_TYPE_CONFIG", () => {
     ].sort())
   })
 
-  it("only zonal_event requires the zone field", () => {
-    for (const [id, config] of Object.entries(EVENT_TYPE_CONFIG)) {
-      const hasZone = config.fields.includes("zone")
-      expect(hasZone).toBe(id === "zonal_event")
+  it("every event type requires the zone field", () => {
+    for (const config of Object.values(EVENT_TYPE_CONFIG)) {
+      expect(config.fields).toContain("zone")
     }
   })
 

@@ -8,7 +8,9 @@ import { createAdminClient } from "@/lib/supabase"
 import { createApplication, getRoleAssignment } from "@/lib/mou/supabase-helpers"
 import { createApprovalToken } from "@/lib/mou/approval-token"
 import { sendApplicantConfirmation, sendSecretaryApprovalRequest, sendFyiNotification } from "@/lib/mou/notify"
-import { getEventTypeConfig } from "@/lib/mou/event-type-config"
+import { getEventTypeConfig, isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_KEYS } from "@/lib/mou/event-type-config"
+import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
+import { computeMouHash, createMouSignature } from "@/lib/mou/mou-signature"
 import { checkRateLimit } from "@/lib/rate-limit"
 import type { NewApplicationInput } from "@/lib/mou/types"
 
@@ -74,6 +76,17 @@ function pickApplicationInput(raw: Record<string, unknown>): NewApplicationInput
     authority_confirm: raw.authority_confirm,
     committee_member_photo_url: raw.committee_member_photo_url,
     institution_photo_url: raw.institution_photo_url,
+    amasi_year_of_joining: raw.amasi_year_of_joining,
+    designation: raw.designation,
+    proposed_registration_fee: raw.proposed_registration_fee,
+    programme_outline: raw.programme_outline,
+    institution_type: raw.institution_type,
+    joint_programme: raw.joint_programme,
+    partner_associations: raw.partner_associations,
+    consent_guest_institution_url: raw.consent_guest_institution_url,
+    brief_institution_url: raw.brief_institution_url,
+    faculty: raw.faculty,
+    agreements: raw.agreements,
   } as NewApplicationInput
 }
 
@@ -96,6 +109,21 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: false, message: "Zone is required for this event type" }, { status: 400 })
   }
 
+  if (isMouEventTypeConfig(typeConfig)) {
+    const validationError = validateTypeSpecificFields(typeConfig, rawBody)
+    if (validationError) return Response.json({ status: false, message: validationError }, { status: 400 })
+  }
+
+  if (isMouEventTypeConfig(typeConfig)) {
+    const typeSpecificData: Record<string, unknown> = { _v: 1 }
+    for (const field of typeConfig.typeSpecificFields) {
+      if (field.kind === "faculty-rows" || field.kind === "association-rows" || field.kind === "conditional-upload") continue
+      if (SHARED_TYPE_SPECIFIC_COLUMN_KEYS.has(field.key)) continue
+      typeSpecificData[field.key] = rawBody[field.key]
+    }
+    body.type_specific_data = typeSpecificData
+  }
+
   // Confirm this email completed OTP verification (verifyMouOtp sets
   // otp_codes.verified=true; we require a verified row within the last
   // hour so a stale verification from an unrelated form can't be replayed).
@@ -115,6 +143,34 @@ export async function POST(request: NextRequest) {
 
   const application = await createApplication(body)
 
+  if (isMouEventTypeConfig(typeConfig)) {
+    const sigIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"
+    const userAgent = request.headers.get("user-agent")
+    try {
+      await createMouSignature({
+        applicationId: application.id,
+        mouVersion: typeConfig.mouVersion,
+        mouSha256: computeMouHash(typeConfig.mouClauses, typeConfig.mouVersion),
+        signatoryName: application.organizer_name,
+        signatoryEmail: application.email,
+        signatoryAmasiNumber: application.applicant_amasi_number,
+        otpVerifiedAt: application.otp_verified_at ?? new Date().toISOString(),
+        ipAddress: sigIp,
+        userAgent,
+      })
+    } catch (err) {
+      console.error(`[mou-applications] signature record failed for application ${application.id}:`, err)
+      Sentry.captureException(err, {
+        tags: { component: "mou-applications", op: "create-mou-signature" },
+        extra: { applicationId: application.id },
+      })
+      return Response.json(
+        { status: false, message: "Your application could not be recorded. Please try submitting again." },
+        { status: 500 }
+      )
+    }
+  }
+
   // The application row is committed at this point — everything below is
   // notification/magic-link delivery, a secondary concern. A missing
   // RESEND_API_KEY, a Resend network blip, or a failed token insert must
@@ -126,7 +182,7 @@ export async function POST(request: NextRequest) {
   // are captured to Sentry for follow-up, matching the same failure-isolation
   // principle already used for the auto-create-event step in decide/route.ts.
   try {
-    await sendApplicantConfirmation(application)
+    await sendApplicantConfirmation(application, isMouEventTypeConfig(typeConfig) ? typeConfig.confirmationNote : undefined)
   } catch (err) {
     console.error(`[mou-applications] applicant confirmation email failed for application ${application.id}:`, err)
     Sentry.captureException(err, {

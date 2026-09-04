@@ -32,6 +32,18 @@ vi.mock("@/lib/mou/notify", () => ({
   sendFyiNotification: vi.fn(),
 }))
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
+vi.mock("@/lib/mou/mou-signature", () => ({
+  computeMouHash: vi.fn().mockReturnValue("fake-hash"),
+  createMouSignature: vi.fn().mockResolvedValue({ id: "sig-1" }),
+}))
+// The real checkRateLimit falls back to an in-memory Map keyed by IP that is
+// module-level (not reset by vi.clearAllMocks), so every POST in this file
+// — across every test — would otherwise share one bucket and this file now
+// makes more than the 10-per-hour default cap. Mock it out so this file
+// tests submission behavior, not rate-limit exhaustion.
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true, remaining: 10, resetAt: 0 }),
+}))
 
 import { POST } from "@/app/api/mou/applications/route"
 import { createApplication, getRoleAssignment } from "@/lib/mou/supabase-helpers"
@@ -162,5 +174,103 @@ describe("POST /api/mou/applications", () => {
     // createApprovalToken called once for secretary (which failed inside the
     // try block) and once for president (independent, still ran).
     expect(createApprovalToken).toHaveBeenCalledWith("app-1", "president", false)
+  })
+
+  it("rejects a rural_program submission missing type-specific required fields", async () => {
+    const req = new Request("http://test/api/mou/applications", {
+      method: "POST",
+      body: JSON.stringify({
+        ...validBody,
+        application_type_id: "rural_program",
+        // no venue_*, venue_setting, institution_type, faculty, agreements — all required for this type
+      }),
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(400)
+    expect(createApplication).not.toHaveBeenCalled()
+  })
+
+  it("calls createMouSignature after a successful rural_program submission", async () => {
+    const { createMouSignature } = await import("@/lib/mou/mou-signature")
+    const { EVENT_TYPE_CONFIG } = await import("@/lib/mou/event-type-config")
+    const rural = EVENT_TYPE_CONFIG.rural_program as import("@/lib/mou/event-type-config").MouEventTypeConfig
+    const futureDate = (() => { const d = new Date(); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10) })()
+    const ruralBody = {
+      ...validBody,
+      application_type_id: "rural_program",
+      preferred_date_1: futureDate,
+      applicant_amasi_number: "12345",
+      venue_type: "Hospital", venue_name: "X", venue_address: "Y", venue_city: "Z", venue_state: "Tamil Nadu", venue_zip: "600001", venue_country: "India",
+      venue_setting: "Rural",
+      institution_type: "own",
+      joint_programme: false,
+      faculty: [{ name: "Dr. A", amasi_membership_number: "123", speciality: null, is_amasi_member: true }],
+      agreements: Object.fromEntries(rural.agreements.map((a) => [a.clauseRef, new Date().toISOString()])),
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(ruralBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    expect(createMouSignature).toHaveBeenCalledWith(
+      expect.objectContaining({ applicationId: "app-1", signatoryEmail: "organizer@example.com" })
+    )
+  })
+
+  it("buckets type-specific-only fields into type_specific_data, keeps shared-column fields at the top level (plan-review fix)", async () => {
+    const { EVENT_TYPE_CONFIG } = await import("@/lib/mou/event-type-config")
+    const rural = EVENT_TYPE_CONFIG.rural_program as import("@/lib/mou/event-type-config").MouEventTypeConfig
+    const futureDate = (() => { const d = new Date(); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10) })()
+    const ruralBody = {
+      ...validBody, application_type_id: "rural_program", preferred_date_1: futureDate,
+      applicant_amasi_number: "12345",
+      venue_type: "Hospital", venue_name: "X", venue_address: "Y", venue_city: "Z", venue_state: "Tamil Nadu", venue_zip: "600001", venue_country: "India",
+      venue_setting: "Rural", institution_type: "own", joint_programme: false,
+      expected_beneficiaries: 40, financial_assistance_requested: true,
+      faculty: [{ name: "Dr. A", amasi_membership_number: "123", speciality: null, is_amasi_member: true }],
+      agreements: Object.fromEntries(rural.agreements.map((a) => [a.clauseRef, new Date().toISOString()])),
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(ruralBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await POST(req as any)
+    const insertedBody = vi.mocked(createApplication).mock.calls[0][0]
+    // venue_setting/expected_beneficiaries/financial_assistance_requested have
+    // NO column of their own — they must land in type_specific_data.
+    expect(insertedBody.type_specific_data).toMatchObject({
+      venue_setting: "Rural", expected_beneficiaries: 40, financial_assistance_requested: true, _v: 1,
+    })
+    // institution_type DOES have a real column — it must NOT be duplicated
+    // inside type_specific_data.
+    expect(insertedBody.institution_type).toBe("own")
+    expect((insertedBody.type_specific_data as Record<string, unknown>).institution_type).toBeUndefined()
+  })
+
+  it("returns 500 (not a silent swallow) when createMouSignature fails for a mou-framework type", async () => {
+    const { createMouSignature } = await import("@/lib/mou/mou-signature")
+    vi.mocked(createMouSignature).mockRejectedValueOnce(new Error("insert failed"))
+    const { EVENT_TYPE_CONFIG } = await import("@/lib/mou/event-type-config")
+    const rural = EVENT_TYPE_CONFIG.rural_program as import("@/lib/mou/event-type-config").MouEventTypeConfig
+    const futureDate = (() => { const d = new Date(); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10) })()
+    const ruralBody = {
+      ...validBody, application_type_id: "rural_program", preferred_date_1: futureDate,
+      applicant_amasi_number: "12345",
+      venue_type: "Hospital", venue_name: "X", venue_address: "Y", venue_city: "Z", venue_state: "Tamil Nadu", venue_zip: "600001", venue_country: "India",
+      venue_setting: "Rural", institution_type: "own", joint_programme: false,
+      faculty: [{ name: "Dr. A", amasi_membership_number: "123", speciality: null, is_amasi_member: true }],
+      agreements: Object.fromEntries(rural.agreements.map((a) => [a.clauseRef, new Date().toISOString()])),
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(ruralBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(500)
+  })
+
+  it("does not call validateTypeSpecificFields/createMouSignature for the other 7 unchanged types (fmas)", async () => {
+    const { createMouSignature } = await import("@/lib/mou/mou-signature")
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(validBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    expect(createMouSignature).not.toHaveBeenCalled()
   })
 })

@@ -37,8 +37,9 @@ function statusLinkUrl(application: AcademicEventApplication): string {
   return `${appUrl()}/mou/status/${application.id}`
 }
 
-export async function sendApplicantConfirmation(application: AcademicEventApplication): Promise<void> {
+export async function sendApplicantConfirmation(application: AcademicEventApplication, confirmationNote?: string): Promise<void> {
   const organizerName = escapeHtml(application.organizer_name)
+  const noteHtml = confirmationNote ? `<p>${escapeHtml(confirmationNote)}</p>` : ""
   await getResend().emails.send({
     from: FROM,
     to: application.email,
@@ -46,6 +47,7 @@ export async function sendApplicantConfirmation(application: AcademicEventApplic
     html: `<p>Dear ${organizerName},</p>
       <p>Your application (ID ${application.id}) has been received and is under review by the AMASI Hon. Secretary.
       You'll be notified by email once a decision is made.</p>
+      ${noteHtml}
       <p>You can check the status of your application at any time here:
       <a href="${statusLinkUrl(application)}">${statusLinkUrl(application)}</a></p>`,
   })

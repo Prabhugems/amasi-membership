@@ -22,7 +22,10 @@ import { createAdminClient } from "@/lib/supabase"
 import { checkRateLimit } from "@/lib/rate-limit"
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5 MB — matches /api/members/upload
-const VALID_DOC_TYPES = new Set(["committee_member_photo", "institution_photo"])
+const VALID_DOC_TYPES = new Set([
+  "committee_member_photo", "institution_photo",
+  "consent_guest_institution", "brief_institution", "consent_partner_association",
+])
 
 // Content-sniff by magic bytes, not the client-declared MIME type or
 // filename extension — per rafter-secure-design ingestion guidance, allowlist

@@ -88,9 +88,15 @@ export function validateTypeSpecificFields(config: MouEventTypeConfig, body: Bod
     minDate.setHours(0, 0, 0, 0)
     for (const dateKey of ["preferred_date_1", "preferred_date_2"] as const) {
       const raw = body[dateKey]
-      if (typeof raw !== "string" || !raw) continue
-      const d = new Date(raw)
-      if (d < minDate) {
+      // Genuinely not provided (preferred_date_2 is optional) — skip.
+      // Provided but the wrong shape (a non-string, or an unparseable
+      // string) is NOT the same as "not provided" — this validator is the
+      // authoritative server-side enforcement boundary for the 45-day lead
+      // time, so a malformed value must be rejected, not silently passed
+      // through via NaN < minDate always evaluating to false.
+      if (raw === undefined || raw === null || raw === "") continue
+      const d = typeof raw === "string" ? new Date(raw) : new Date(NaN)
+      if (Number.isNaN(d.getTime()) || d < minDate) {
         return `AMASI requires facility details one month in advance and the signed MOU 15 days before the event. Please choose a date at least ${config.minLeadDays} days away.`
       }
     }
@@ -101,7 +107,10 @@ export function validateTypeSpecificFields(config: MouEventTypeConfig, body: Bod
   // its own TypeSpecificFieldDef (event-type-config.ts), so an out-of-range
   // count would otherwise trip the generic number-range check first and
   // return a generic "must be at most 3" message instead of the specific
-  // clause-17 explanation this dedicated check exists to give.
+  // clause-17 explanation this dedicated check exists to give. Intentional
+  // side effect: on a submission that fails BOTH this rule and some
+  // unrelated rule (e.g. a missing agreement), the clause-17 message wins
+  // and is reported first — this ordering is deliberate, not arbitrary.
   if (body.small_state_exception_requested === true && config.smallStateException) {
     const { chapterFlagField, venueStateField, states } = config.smallStateException
     const chapterOk = body[chapterFlagField] === true

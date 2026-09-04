@@ -47,6 +47,16 @@ describe("validateTypeSpecificFields — rural_program", () => {
     expect(result).toContain("45 days")
   })
 
+  it("rejects an unparseable preferred_date_1 string instead of silently passing it", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: "not-a-date" })
+    expect(result).toBeTruthy()
+  })
+
+  it("rejects a non-string preferred_date_1 instead of treating it as not provided", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: 12345 })
+    expect(result).toBeTruthy()
+  })
+
   it("requires venue fields (requiresVenue: true)", () => {
     const result = validateTypeSpecificFields(rural, { ...validRuralBody, venue_name: undefined })
     expect(result).toBeTruthy()

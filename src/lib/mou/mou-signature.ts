@@ -62,7 +62,12 @@ export async function createMouSignature(input: CreateSignatureInput): Promise<M
 // application_id AND mou_version so it can never touch the wrong signature
 // row if an application somehow had more than one (it shouldn't, given the
 // unique(application_id, mou_version) constraint, but the extra scope costs
-// nothing and documents intent).
+// nothing and documents intent). Also scoped to approved_at IS NULL so a
+// retry (e.g. the Secretary re-submitting a decision after an earlier
+// attempt partially failed downstream) can never re-stamp an
+// already-counter-signed row — this function is idempotent under retry,
+// even though the surrounding decide route is not fully reorder-proof
+// (that's a separate, out-of-scope architectural question).
 export async function markCounterSigned(
   applicationId: string,
   mouVersion: number,
@@ -74,6 +79,7 @@ export async function markCounterSigned(
     .update({ approved_by: approvedBy, approved_at: new Date().toISOString() })
     .eq("application_id", applicationId)
     .eq("mou_version", mouVersion)
+    .is("approved_at", null)
 
   if (error) {
     // Don't throw: by the time this runs (Task 9's decide route) the

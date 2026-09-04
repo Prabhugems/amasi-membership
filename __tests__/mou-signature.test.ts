@@ -98,11 +98,11 @@ describe("markCounterSigned", () => {
     updateMock.mockReturnValue({ eq: eqMock })
   })
 
-  it("updates only approved_by/approved_at, scoped to application_id + mou_version", async () => {
-    eqMock.mockImplementation(() => ({ eq: eqMock, resolve: undefined }))
-    // Two chained .eq() calls (application_id, then mou_version) — mock the
-    // second to resolve.
-    const secondEq = vi.fn().mockResolvedValue({ error: null })
+  it("updates only approved_by/approved_at, scoped to application_id + mou_version + approved_at IS NULL", async () => {
+    // Chain is .eq(application_id).eq(mou_version).is(approved_at, null) —
+    // mock .is() to resolve, and the idempotency guard (Fix 2).
+    const isMock = vi.fn().mockResolvedValue({ error: null })
+    const secondEq = vi.fn().mockReturnValue({ is: isMock })
     const firstEq = vi.fn().mockReturnValue({ eq: secondEq })
     updateMock.mockReturnValue({ eq: firstEq })
 
@@ -115,14 +115,32 @@ describe("markCounterSigned", () => {
     expect(Object.keys(updateArg).sort()).toEqual(["approved_at", "approved_by"])
     expect(firstEq).toHaveBeenCalledWith("application_id", "app-1")
     expect(secondEq).toHaveBeenCalledWith("mou_version", 1)
+    expect(isMock).toHaveBeenCalledWith("approved_at", null)
   })
 
   it("captures to Sentry (does not throw) when the update fails — decision is already persisted by this point", async () => {
-    const secondEq = vi.fn().mockResolvedValue({ error: { message: "update failed" } })
+    const isMock = vi.fn().mockResolvedValue({ error: { message: "update failed" } })
+    const secondEq = vi.fn().mockReturnValue({ is: isMock })
     const firstEq = vi.fn().mockReturnValue({ eq: secondEq })
     updateMock.mockReturnValue({ eq: firstEq })
 
     await expect(markCounterSigned("app-1", 1, "Dr. Biswarup Bose")).resolves.not.toThrow()
     expect(Sentry.captureException).toHaveBeenCalled()
+  })
+
+  it("does not re-stamp an already counter-signed row on retry (idempotent — Fix 2)", async () => {
+    // .is("approved_at", null) is what the DB itself enforces this with —
+    // when a row already has approved_at set, the update matches zero rows
+    // and Supabase returns { error: null, data: [] } (no error, just no
+    // rows touched). This test documents that a retry is safe: no error is
+    // thrown even though nothing was updated.
+    const isMock = vi.fn().mockResolvedValue({ error: null })
+    const secondEq = vi.fn().mockReturnValue({ is: isMock })
+    const firstEq = vi.fn().mockReturnValue({ eq: secondEq })
+    updateMock.mockReturnValue({ eq: firstEq })
+
+    await expect(markCounterSigned("app-1", 1, "Dr. Biswarup Bose")).resolves.not.toThrow()
+    expect(isMock).toHaveBeenCalledWith("approved_at", null)
+    expect(Sentry.captureException).not.toHaveBeenCalled()
   })
 })

@@ -103,4 +103,11 @@ describe("rural_program and workshop MouEventTypeConfig", () => {
       expect(isMouEventTypeConfig(EVENT_TYPE_CONFIG[id])).toBe(false)
     }
   })
+
+  it("every config's agreements array has unique clauseRef values (Fix 6 — no duplicate keys/React keys)", () => {
+    for (const [, config] of both) {
+      const clauseRefs = config.agreements.map((a) => a.clauseRef)
+      expect(new Set(clauseRefs).size).toBe(clauseRefs.length)
+    }
+  })
 })

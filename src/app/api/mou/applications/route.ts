@@ -45,7 +45,41 @@ const REQUIRED_FIELDS = [
 // membership claim; it's purely a self-declared field the applicant already
 // controls via any legitimate form field, so allowing it here adds no new
 // trust boundary.
+// "" is what <Input type="number"> writes back when the field is left
+// blank — Supabase/PostgREST resolves "" through the integer/numeric column
+// input function and throws 22P02 invalid input syntax, not a validation
+// error, so this must be coerced before the value ever reaches
+// createApplication. Empty/null/undefined -> undefined (column gets its
+// SQL default/null); a non-empty string -> Number(...); a genuinely
+// unparseable value also becomes undefined rather than surfacing NaN to
+// Postgres.
+function numOrUndefined(v: unknown): number | undefined {
+  if (v === "" || v === null || v === undefined) return undefined
+  const n = Number(v)
+  return Number.isNaN(n) ? undefined : n
+}
+
 function pickApplicationInput(raw: Record<string, unknown>): NewApplicationInput {
+  const typeConfig = getEventTypeConfig(raw.application_type_id as string)
+  // The 11 shared mou-framework columns are only meaningful for the 2
+  // mou-framework event types (rural_program/workshop) — for the other 7
+  // types nothing reads them, so keep them out of the write-side allowlist
+  // entirely rather than accepting arbitrary values from those applicants.
+  const mouFrameworkFields = typeConfig && isMouEventTypeConfig(typeConfig)
+    ? {
+        amasi_year_of_joining: numOrUndefined(raw.amasi_year_of_joining),
+        designation: raw.designation,
+        proposed_registration_fee: numOrUndefined(raw.proposed_registration_fee),
+        programme_outline: raw.programme_outline,
+        institution_type: raw.institution_type,
+        joint_programme: raw.joint_programme,
+        partner_associations: raw.partner_associations,
+        consent_guest_institution_url: raw.consent_guest_institution_url,
+        brief_institution_url: raw.brief_institution_url,
+        faculty: raw.faculty,
+        agreements: raw.agreements,
+      }
+    : {}
   return {
     application_type_id: raw.application_type_id,
     organizer_name: raw.organizer_name,
@@ -76,17 +110,7 @@ function pickApplicationInput(raw: Record<string, unknown>): NewApplicationInput
     authority_confirm: raw.authority_confirm,
     committee_member_photo_url: raw.committee_member_photo_url,
     institution_photo_url: raw.institution_photo_url,
-    amasi_year_of_joining: raw.amasi_year_of_joining,
-    designation: raw.designation,
-    proposed_registration_fee: raw.proposed_registration_fee,
-    programme_outline: raw.programme_outline,
-    institution_type: raw.institution_type,
-    joint_programme: raw.joint_programme,
-    partner_associations: raw.partner_associations,
-    consent_guest_institution_url: raw.consent_guest_institution_url,
-    brief_institution_url: raw.brief_institution_url,
-    faculty: raw.faculty,
-    agreements: raw.agreements,
+    ...mouFrameworkFields,
   } as NewApplicationInput
 }
 
@@ -141,7 +165,20 @@ export async function POST(request: NextRequest) {
     return Response.json({ status: false, message: "Please verify your email with the code first" }, { status: 400 })
   }
 
-  const application = await createApplication(body)
+  let application: Awaited<ReturnType<typeof createApplication>>
+  try {
+    application = await createApplication(body)
+  } catch (err) {
+    console.error("[mou-applications] createApplication failed:", err)
+    Sentry.captureException(err, {
+      tags: { component: "mou-applications", op: "create-application" },
+      extra: { applicationTypeId: body.application_type_id, email: body.email },
+    })
+    return Response.json(
+      { status: false, message: "We couldn't save your application. Please check your entries and try again." },
+      { status: 400 }
+    )
+  }
 
   if (isMouEventTypeConfig(typeConfig)) {
     const sigIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown"

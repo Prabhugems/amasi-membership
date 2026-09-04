@@ -115,6 +115,29 @@ describe("validateTypeSpecificFields — rural_program", () => {
     const result = validateTypeSpecificFields(rural, { ...validRuralBody, agreements: incomplete })
     expect(result).toBeTruthy()
   })
+
+  it("rejects a venue_setting value not in the options list, e.g. 'Metro City' (Fix 5 — bypassing the clause-4 hard block)", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, venue_setting: "Metro City" })
+    expect(result).toBeTruthy()
+    expect(result).toContain("must be one of the listed options")
+  })
+
+  it("rejects a lowercase 'urban' as a bypass of the exact-match Urban block (Fix 5)", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, venue_setting: "urban" })
+    expect(result).toBeTruthy()
+  })
+
+  it("rejects a faculty row with a blank name (Fix 5)", () => {
+    const faculty = [{ name: "", amasi_membership_number: "123", speciality: null, is_amasi_member: true }]
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, faculty })
+    expect(result).toContain("name")
+  })
+
+  it("rejects a faculty row with a missing name (Fix 5)", () => {
+    const faculty = [{ amasi_membership_number: "123", speciality: null, is_amasi_member: true }]
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, faculty })
+    expect(result).toContain("name")
+  })
 })
 
 const validWorkshopBody = {

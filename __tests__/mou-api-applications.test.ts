@@ -273,4 +273,68 @@ describe("POST /api/mou/applications", () => {
     expect(res.status).toBe(200)
     expect(createMouSignature).not.toHaveBeenCalled()
   })
+
+  it("coerces blank amasi_year_of_joining/proposed_registration_fee to undefined instead of crashing on '' (Fix 1)", async () => {
+    const { EVENT_TYPE_CONFIG } = await import("@/lib/mou/event-type-config")
+    const rural = EVENT_TYPE_CONFIG.rural_program as import("@/lib/mou/event-type-config").MouEventTypeConfig
+    const futureDate = (() => { const d = new Date(); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10) })()
+    const ruralBody = {
+      ...validBody, application_type_id: "rural_program", preferred_date_1: futureDate,
+      applicant_amasi_number: "12345",
+      venue_type: "Hospital", venue_name: "X", venue_address: "Y", venue_city: "Z", venue_state: "Tamil Nadu", venue_zip: "600001", venue_country: "India",
+      venue_setting: "Rural", institution_type: "own", joint_programme: false,
+      // The form's <Input type="number"> writes back "" when left blank —
+      // both fields are optional typeSpecificFields entries.
+      amasi_year_of_joining: "",
+      proposed_registration_fee: "",
+      faculty: [{ name: "Dr. A", amasi_membership_number: "123", speciality: null, is_amasi_member: true }],
+      agreements: Object.fromEntries(rural.agreements.map((a) => [a.clauseRef, new Date().toISOString()])),
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(ruralBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    const insertedBody = vi.mocked(createApplication).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(insertedBody.amasi_year_of_joining).toBeUndefined()
+    expect(insertedBody.proposed_registration_fee).toBeUndefined()
+  })
+
+  it("returns 400 (not an unhandled throw) when createApplication itself fails (Fix 1 defense in depth)", async () => {
+    vi.mocked(createApplication).mockRejectedValueOnce(new Error("22P02 invalid input syntax"))
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(validBody) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.status).toBe(false)
+  })
+
+  it("does not include the 11 mou-framework-only fields for the other 7 event types (Fix 8)", async () => {
+    const maliciousExtras = {
+      ...validBody,
+      amasi_year_of_joining: 2020,
+      designation: "Professor",
+      proposed_registration_fee: 500,
+      programme_outline: "outline",
+      institution_type: "own",
+      joint_programme: true,
+      partner_associations: [{ name: "Assoc", consent_letter_url: null }],
+      consent_guest_institution_url: "https://x/y.pdf",
+      brief_institution_url: "https://x/z.pdf",
+      faculty: [{ name: "Dr. A", amasi_membership_number: null, speciality: null, is_amasi_member: true }],
+      agreements: { "1": "2026-01-01T00:00:00.000Z" },
+    }
+    const req = new Request("http://test/api/mou/applications", { method: "POST", body: JSON.stringify(maliciousExtras) })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await POST(req as any)
+    expect(res.status).toBe(200)
+    const insertedBody = vi.mocked(createApplication).mock.calls[0][0] as unknown as Record<string, unknown>
+    for (const key of [
+      "amasi_year_of_joining", "designation", "proposed_registration_fee", "programme_outline",
+      "institution_type", "joint_programme", "partner_associations", "consent_guest_institution_url",
+      "brief_institution_url", "faculty", "agreements",
+    ]) {
+      expect(insertedBody[key]).toBeUndefined()
+    }
+  })
 })

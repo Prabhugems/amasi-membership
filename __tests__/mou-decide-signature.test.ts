@@ -42,13 +42,15 @@ vi.mock("@/lib/mou/mou-signature", () => ({
 }))
 // `from()` needs to serve two different chains depending on table: the
 // "events" auto-create insert (insert().select().single()) and, for
-// mou-framework types, the mou_signatures counter-signature lookup
-// (select().eq().eq().maybeSingle()) added by Task 9. The literal brief
-// snippet only covered the insert chain — extended here to unblock the
-// signature-lookup Step 6 adds, since this file is local to this task.
-// maybeSingle()'s payload is keyed off counterSignedFlag (see above) so
-// the test can actually detect an ordering regression, not just that
-// markCounterSigned was called at some point during the request.
+// mou-framework types, the mou_signatures counter-signature lookup — now
+// select().eq().order().limit().maybeSingle() (Fix 3: find the actual
+// signed row regardless of the current config's mouVersion, rather than
+// .eq("mou_version", typeConfig.mouVersion), which would make an
+// application signed under an older version permanently unfindable once
+// the config's version is bumped). maybeSingle()'s payload is keyed off
+// counterSignedFlag (see above) so the test can actually detect an
+// ordering regression, not just that markCounterSigned was called at some
+// point during the request.
 vi.mock("@/lib/supabase", () => ({
   createAdminClient: () => ({
     storage: { from: () => ({ upload: vi.fn().mockResolvedValue({ error: null }), getPublicUrl: () => ({ data: { publicUrl: "https://x/mou.pdf" } }) }) },
@@ -56,18 +58,20 @@ vi.mock("@/lib/supabase", () => ({
       insert: () => ({ select: () => ({ single: vi.fn().mockResolvedValue({ data: { id: "event-1" }, error: null }) }) }),
       select: () => ({
         eq: () => ({
-          eq: () => ({
-            maybeSingle: vi.fn().mockImplementation(async () => ({
-              data: {
-                id: "sig-1", application_id: "app-1", mou_version: 1, mou_sha256: "a".repeat(64),
-                signatory_name: "Dr. Test", signatory_email: "test@example.com", signatory_amasi_number: null,
-                otp_verified_at: "2026-09-04T00:00:00.000Z", accepted_at: "2026-09-04T00:00:00.000Z",
-                ip_address: "127.0.0.1", user_agent: null, created_at: "2026-09-04T00:00:00.000Z",
-                approved_by: counterSignedFlag.value ? "hon_secretary" : null,
-                approved_at: counterSignedFlag.value ? "2026-09-04T01:00:00.000Z" : null,
-              },
-              error: null,
-            })),
+          order: () => ({
+            limit: () => ({
+              maybeSingle: vi.fn().mockImplementation(async () => ({
+                data: {
+                  id: "sig-1", application_id: "app-1", mou_version: 1, mou_sha256: "a".repeat(64),
+                  signatory_name: "Dr. Test", signatory_email: "test@example.com", signatory_amasi_number: null,
+                  otp_verified_at: "2026-09-04T00:00:00.000Z", accepted_at: "2026-09-04T00:00:00.000Z",
+                  ip_address: "127.0.0.1", user_agent: null, created_at: "2026-09-04T00:00:00.000Z",
+                  approved_by: counterSignedFlag.value ? "hon_secretary" : null,
+                  approved_at: counterSignedFlag.value ? "2026-09-04T01:00:00.000Z" : null,
+                },
+                error: null,
+              })),
+            }),
           }),
         }),
       }),

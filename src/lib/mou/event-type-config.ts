@@ -106,7 +106,7 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
       { clauseRef: "6", text: "All banners, brochures, print and electronic materials will carry the logos of both AMASI and ASI." },
       { clauseRef: "12", text: "No bank account will be opened in the name of AMASI for this event under any circumstances." },
       { clauseRef: "13", text: "The programme — speakers, subjects, timings, allotment of halls and chairpersons — will be finalised only after AMASI's approval." },
-      { clauseRef: "13", text: "The organising committee will provide halls of adequate capacity, audiovisual equipment and its management, a suitable podium, and personnel for assistance." },
+      { clauseRef: "13 (facilities)", text: "The organising committee will provide halls of adequate capacity, audiovisual equipment and its management, a suitable podium, and personnel for assistance." },
       { clauseRef: "16", text: "The organising committee will arrange to-and-fro transport, accommodation and food for AMASI-provided faculty." },
       { clauseRef: "18", text: "No audiovisual material promoting the meetings, conferences or workshops of any other professional body will be displayed at the venue without informing AMASI." },
       { clauseRef: "19", text: "The event will not be used for personal propaganda, promotion of a private hospital, political propaganda, or any purpose other than the academic dissemination of knowledge." },

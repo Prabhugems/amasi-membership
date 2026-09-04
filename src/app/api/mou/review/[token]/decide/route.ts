@@ -143,14 +143,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Fetch the (now possibly counter-signed, per above) signature record
-    // to embed in the generated PDF below.
+    // to embed in the generated PDF below. Keyed on the actual signed row,
+    // not on typeConfig.mouVersion (the CURRENT config's version) — that
+    // config version is documented to be bumped whenever the clause text
+    // changes, which would otherwise make an application signed under an
+    // older version permanently unfindable (a silent 0-row match, not an
+    // error). Order by mou_version desc and take the most recent row —
+    // there is at most one signature per application in practice, but this
+    // finds the real signature the applicant actually signed regardless of
+    // what the config says today.
     let signatureRecord: MouSignature | null = null
     if (typeConfig && isMouEventTypeConfig(typeConfig)) {
       const { data } = await supabase
         .from("mou_signatures")
         .select("*")
         .eq("application_id", application.id)
-        .eq("mou_version", typeConfig.mouVersion)
+        .order("mou_version", { ascending: false })
+        .limit(1)
         .maybeSingle()
       signatureRecord = data
     }

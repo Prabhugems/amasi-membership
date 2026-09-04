@@ -23,13 +23,23 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const typeConfig = getEventTypeConfig(application.application_type_id)
   let hasSignature: boolean | null = null
   if (typeConfig && isMouEventTypeConfig(typeConfig)) {
-    const { data: signature } = await supabase
+    // Not scoped to typeConfig.mouVersion — see decide/route.ts for why: an
+    // application signed under an older clause version must still be found
+    // after the config's mouVersion is bumped. Order by mou_version desc
+    // and take the most recent row.
+    const { data: signature, error } = await supabase
       .from("mou_signatures")
       .select("id")
       .eq("application_id", id)
-      .eq("mou_version", typeConfig.mouVersion)
+      .order("mou_version", { ascending: false })
+      .limit(1)
       .maybeSingle()
-    hasSignature = !!signature
+    // A genuinely failed query (e.g. the table doesn't exist pre-migration)
+    // is indistinguishable from "no signature exists" unless we check
+    // `error` — both would otherwise report hasSignature: false and trip
+    // the admin UI's anomaly banner. Leave hasSignature as null (unknown)
+    // rather than asserting an anomaly when the query itself failed.
+    hasSignature = error ? null : !!signature
   }
 
   return Response.json({ status: true, application, remarks: remarks ?? [], hasSignature })

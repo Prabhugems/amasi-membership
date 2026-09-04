@@ -29,15 +29,24 @@ function validateField(field: TypeSpecificFieldDef, body: Body): string | null {
       const value = body[field.key]
       if (field.required && isBlank(value)) return `${field.label} is required`
       if (field.blockValue && value === field.blockValue.value) return field.blockValue.message
+      // Without this, the clause-4 "Urban venues cannot be accepted" hard
+      // block above is bypassable by submitting anything other than the
+      // literal blockValue string (e.g. "urban" lowercase, or garbage like
+      // "Metro City") — such a value would fall through both checks above
+      // and get stored as-is.
+      if (!isBlank(value) && !field.options.some((o) => o.value === value)) {
+        return `${field.label} must be one of the listed options`
+      }
       return null
     }
     case "checkbox":
       return null
     case "faculty-rows": {
-      const rows = Array.isArray(body.faculty) ? (body.faculty as Array<{ is_amasi_member?: boolean; speciality?: string | null }>) : []
+      const rows = Array.isArray(body.faculty) ? (body.faculty as Array<{ name?: string | null; is_amasi_member?: boolean; speciality?: string | null }>) : []
       if (rows.length < field.minRows) return `At least ${field.minRows} faculty member${field.minRows === 1 ? "" : "s"} required`
       if (rows.length > field.maxRows) return `At most ${field.maxRows} faculty members allowed`
       for (const row of rows) {
+        if (isBlank(row.name)) return "Every faculty row must have a name"
         if (row.is_amasi_member === false && isBlank(row.speciality)) {
           return "Non-AMASI faculty members must have a speciality — non-member faculty are permitted only for other specialities (anaesthesia, gynaecology, urology, gastroenterology, etc.) and require prior intimation to AMASI"
         }

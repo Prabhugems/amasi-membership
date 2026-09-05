@@ -5,13 +5,20 @@ import { useParams } from "next/navigation"
 import { toast } from "sonner"
 import {
   Loader2, AlertCircle, MessageSquare, CheckCircle2, XCircle, RotateCcw, Send,
-  User, CalendarDays, MapPin, Image as ImageIcon, Clock,
+  User, CalendarDays, MapPin, Image as ImageIcon, Clock, ListChecks, Download,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { StatusBadge } from "@/components/mou/status-badge"
-import { getEventTypeConfig } from "@/lib/mou/event-type-config"
+import {
+  getEventTypeConfig,
+  isMouEventTypeConfig,
+  SHARED_TYPE_SPECIFIC_COLUMN_KEYS,
+  type TypeSpecificFieldDef,
+} from "@/lib/mou/event-type-config"
+import { isSafeHttpUrl } from "@/lib/mou/safe-url"
 import type { AcademicEventApplication } from "@/lib/mou/types"
 
 // `token` comes from the route param via useParams — not useSearchParams /
@@ -60,6 +67,30 @@ function SectionHeading({ icon: Icon, children }: { icon: typeof User; children:
       {children}
     </CardTitle>
   )
+}
+
+// Mirrors the identical helper in src/app/admin/mou-applications/page.tsx —
+// a typeSpecificFields key either has a real column on the application row
+// (SHARED_TYPE_SPECIFIC_COLUMN_KEYS) or lives only in type_specific_data.
+// The migration adding type_specific_data (sql/040) may not have run on
+// every environment, so fall back to {} rather than dereferencing directly.
+function typeSpecificValue(
+  application: AcademicEventApplication,
+  typeSpecificData: Record<string, unknown>,
+  field: TypeSpecificFieldDef
+): string | null {
+  if (field.kind === "facilities-group") {
+    const group = (typeSpecificData.facilities ?? {}) as Record<string, unknown>
+    return field.items
+      .filter((i) => group[i.key])
+      .map((i) => (i.kind === "checkbox" ? i.label : `${i.label}: ${group[i.key]}`))
+      .join(" · ") || null
+  }
+  const value = SHARED_TYPE_SPECIFIC_COLUMN_KEYS.has(field.key)
+    ? (application as unknown as Record<string, unknown>)[field.key]
+    : typeSpecificData[field.key]
+  if (value === undefined || value === null || value === "") return null
+  return typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)
 }
 
 export default function MouReviewPage() {
@@ -323,6 +354,109 @@ export default function MouReviewPage() {
                 </CardContent>
               </Card>
             )}
+
+            {(() => {
+              const typeConfig = getEventTypeConfig(application.application_type_id)
+              if (!typeConfig || !isMouEventTypeConfig(typeConfig)) return null
+              const typeSpecificData = (application.type_specific_data ?? {}) as Record<string, unknown>
+              const scalarFields = typeConfig.typeSpecificFields.filter(
+                (f) => f.kind !== "faculty-rows" && f.kind !== "association-rows" && f.kind !== "conditional-upload"
+              )
+              const uploadFields = typeConfig.typeSpecificFields.filter(
+                (f): f is Extract<TypeSpecificFieldDef, { kind: "conditional-upload" }> => f.kind === "conditional-upload"
+              )
+              const financialAssistanceRequested =
+                application.application_type_id === "rural_program" && typeSpecificData.financial_assistance_requested === true
+              const smallStateExceptionRequested =
+                application.application_type_id === "workshop" && typeSpecificData.small_state_exception_requested === true
+
+              return (
+                <Card>
+                  <CardHeader>
+                    <SectionHeading icon={ListChecks}>{typeConfig.label} details</SectionHeading>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {scalarFields.map((f) => {
+                        const value = typeSpecificValue(application, typeSpecificData, f)
+                        return value ? detail(f.kind === "facilities-group" ? "Facilities" : f.label, value) : null
+                      })}
+                    </div>
+
+                    {application.faculty && application.faculty.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Faculty</p>
+                        <div className="space-y-1.5">
+                          {application.faculty.map((f, i) => (
+                            <div key={i} className="rounded-md border border-border p-2 text-sm">
+                              <span className="font-medium text-foreground">{f.name}</span>
+                              {f.amasi_membership_number && (
+                                <span className="text-muted-foreground"> · AMASI #{f.amasi_membership_number}</span>
+                              )}
+                              {f.speciality && <span className="text-muted-foreground"> · {f.speciality}</span>}
+                              <span className="text-muted-foreground"> · {f.is_amasi_member ? "AMASI member" : "Non-member"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {application.partner_associations && application.partner_associations.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Partner associations</p>
+                        <div className="space-y-1.5">
+                          {application.partner_associations.map((a, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 rounded-md border border-border p-2 text-sm">
+                              <span className="font-medium text-foreground">{a.name}</span>
+                              {isSafeHttpUrl(a.consent_letter_url) && (
+                                <a
+                                  href={a.consent_letter_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  Consent letter
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {uploadFields.map((f) => {
+                      const url = (application as unknown as Record<string, unknown>)[`${f.docType}_url`]
+                      if (!isSafeHttpUrl(url)) return null
+                      return (
+                        <div key={f.key}>
+                          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">{f.label}</p>
+                          <Button asChild variant="outline" size="sm" className="gap-1.5">
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-3.5 w-3.5" />
+                              Open document
+                            </a>
+                          </Button>
+                        </div>
+                      )
+                    })}
+
+                    {financialAssistanceRequested && (
+                      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
+                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                        Financial assistance requested (up to ₹1,00,000).
+                      </div>
+                    )}
+                    {smallStateExceptionRequested && (
+                      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm text-amber-900">
+                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                        Small-state faculty transport requested (clause 17) — this costs AMASI money. State: {String(typeSpecificData.venue_state ?? application.venue_state ?? "—")}, faculty count: {String(typeSpecificData.small_state_faculty_count ?? "—")}.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })()}
 
             {(application.committee_member_photo_url || application.institution_photo_url) && (
               <Card>

@@ -28,6 +28,7 @@ import {
   type TypeSpecificFieldDef,
 } from "@/lib/mou/event-type-config"
 import type { AcademicEventApplication, ApplicationStatus, ApplicationTypeId } from "@/lib/mou/types"
+import { isSafeHttpUrl } from "@/lib/mou/safe-url"
 import { cn } from "@/lib/utils"
 
 // This page is a record/audit view only (per the design spec's Phase 1 scope
@@ -106,23 +107,6 @@ function formatDateTime(s: string | null): string {
 
 function eventLabel(app: AcademicEventApplication): string {
   return app.event_name || getEventTypeConfig(app.application_type_id)?.label || app.application_type_id
-}
-
-// The faculty/association/conditional-upload URLs rendered below (Fix 7)
-// come from applicant-supplied application data — consent_letter_url,
-// consent_guest_institution_url, brief_institution_url — which the write
-// path (pickApplicationInput in the applications route) does not validate
-// as a same-origin storage URL, only as a string. An href of the form
-// "javascript:..." would execute in the admin's authenticated session the
-// moment they click it here, so only ever render http(s) links.
-function isSafeHttpUrl(value: unknown): value is string {
-  if (typeof value !== "string" || !value) return false
-  try {
-    const u = new URL(value)
-    return u.protocol === "https:" || u.protocol === "http:"
-  } catch {
-    return false
-  }
 }
 
 function Stat({

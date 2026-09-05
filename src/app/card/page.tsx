@@ -386,7 +386,19 @@ function CardContent() {
   const captureCard = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, scale = 3) => {
     if (!ref.current) return null
     const html2canvas = (await import("html2canvas")).default
-    return html2canvas(ref.current, { scale, backgroundColor: null, useCORS: true })
+    // See src/app/member/fmas-certificate/page.tsx for why scroll offsets
+    // must be compensated — otherwise captured overlay content shifts
+    // whenever the page is scrolled at capture time, even though the live
+    // preview looks correct.
+    return html2canvas(ref.current, {
+      scale,
+      backgroundColor: null,
+      useCORS: true,
+      scrollX: -window.scrollX,
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.offsetWidth,
+      windowHeight: document.documentElement.offsetHeight,
+    })
   }, [])
 
   const handleDownloadPNG = async () => {

@@ -58,7 +58,22 @@ function FmasCertificateContent() {
   const captureCanvas = async (scale = 2) => {
     if (!certRef.current) return null
     const html2canvas = (await import("html2canvas")).default
-    return html2canvas(certRef.current, { scale, backgroundColor: "#fff", useCORS: true })
+    // html2canvas positions absolutely-positioned children (the name overlay)
+    // using the page's current scroll offset unless told otherwise — if the
+    // page was scrolled at all when this ran, the captured PNG/PDF shows the
+    // name shifted down from where it renders live, even though the on-screen
+    // preview looks correct. Compensating scrollX/scrollY (and pinning the
+    // capture to the document's actual size) makes the capture match the live
+    // DOM regardless of scroll position.
+    return html2canvas(certRef.current, {
+      scale,
+      backgroundColor: "#fff",
+      useCORS: true,
+      scrollX: -window.scrollX,
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.offsetWidth,
+      windowHeight: document.documentElement.offsetHeight,
+    })
   }
 
   const handleDownloadPNG = async () => {

@@ -64,7 +64,19 @@ function MmasCertificateContent() {
   const captureCanvas = async (scale = 2) => {
     if (!certRef.current) return null
     const html2canvas = (await import("html2canvas")).default
-    return html2canvas(certRef.current, { scale, backgroundColor: "#fff", useCORS: true })
+    // See src/app/member/fmas-certificate/page.tsx for why scroll offsets
+    // must be compensated — otherwise the captured name overlay shifts
+    // whenever the page is scrolled at capture time, even though the live
+    // preview looks correct.
+    return html2canvas(certRef.current, {
+      scale,
+      backgroundColor: "#fff",
+      useCORS: true,
+      scrollX: -window.scrollX,
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.offsetWidth,
+      windowHeight: document.documentElement.offsetHeight,
+    })
   }
 
   const handleDownloadPNG = async () => {

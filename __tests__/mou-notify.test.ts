@@ -157,6 +157,25 @@ describe("HTML-injection guard on applicant-supplied fields across all outbound 
     expect(html).not.toContain("<script>alert(3)</script>")
     expect(html).toContain("&lt;script&gt;")
   })
+
+  it("tells the recipient which role they're being notified as (president)", async () => {
+    await sendFyiNotification(app, "FMAS Course", "president@example.com", "president", "https://example.com/link")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain("AMASI President")
+  })
+
+  it("tells the recipient which role they're being notified as (zone chair, mapped to a readable label)", async () => {
+    await sendFyiNotification(app, "Rural Surgery Camp", "chair@example.com", "zone_chair_south", "https://example.com/link")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain("South Zone Chair")
+  })
+
+  it("falls back to a readable slug for an unmapped role, still escaped", async () => {
+    await sendFyiNotification(app, "FMAS Course", "someone@example.com", "zone_chair_<script>", "https://example.com/link")
+    const html = sendMock.mock.calls[0][0].html as string
+    expect(html).toContain("zone chair &lt;script&gt;")
+    expect(html).not.toContain("<script>")
+  })
 })
 
 describe("sendWhatsAppNudge", () => {

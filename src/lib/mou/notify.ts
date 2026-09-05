@@ -37,6 +37,27 @@ function statusLinkUrl(application: AcademicEventApplication): string {
   return `${appUrl()}/mou/status/${application.id}`
 }
 
+// FYI recipients (President, zone chairs) are notified purely by role slug
+// (see academic_event_role_assignments.role / the zone_chair_<zone> lookup
+// in src/app/api/mou/applications/route.ts) — without this, the email body
+// never told the recipient *why* they were CC'd, e.g. a South Zone chair had
+// no way to tell from the email itself that they were the South Zone chair,
+// only that they'd received a random FYI. Falls back to a readable version
+// of the raw slug for any role not in this map, rather than silently
+// omitting the sentence for a role this map hasn't been updated for.
+const ROLE_LABELS: Record<string, string> = {
+  president: "AMASI President",
+  zone_chair_north: "North Zone Chair",
+  zone_chair_south: "South Zone Chair",
+  zone_chair_east: "East Zone Chair",
+  zone_chair_west: "West Zone Chair",
+  zone_chair_central: "Central Zone Chair",
+}
+
+function roleLabel(role: string): string {
+  return ROLE_LABELS[role] ?? role.replace(/_/g, " ")
+}
+
 export async function sendApplicantConfirmation(application: AcademicEventApplication, confirmationNote?: string): Promise<void> {
   const organizerName = escapeHtml(application.organizer_name)
   const noteHtml = confirmationNote ? `<p>${escapeHtml(confirmationNote)}</p>` : ""
@@ -85,6 +106,7 @@ export async function sendFyiNotification(
     subject: `FYI: ${typeLabel} application from ${application.organizer_name}`,
     html: `<p>A new ${typeLabel} application from ${organizerName} has been submitted and is
       awaiting the Hon. Secretary's decision. This is for your information only — no action is needed from you.</p>
+      <p style="color:#666;font-size:13px;">You're receiving this as the ${escapeHtml(roleLabel(recipientRole))}.</p>
       <p><a href="${viewLinkUrl}">View application and leave a remark</a></p>`,
   })
 }

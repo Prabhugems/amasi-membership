@@ -229,8 +229,8 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5">
-              <div>
+            <div className="space-y-4">
+              <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Organizer
                 </h3>
@@ -244,7 +244,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               </div>
 
-              <div>
+              <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Venue &amp; schedule
                 </h3>
@@ -268,7 +268,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 )}
               </div>
 
-              <div>
+              <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Review &amp; decision
                 </h3>
@@ -289,7 +289,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
 
               {isMouFramework && typeConfig && "typeSpecificFields" in typeConfig && (
-                <div>
+                <div className="rounded-md border border-border p-4">
                   <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                     {typeConfig.label} details
                   </h3>
@@ -394,7 +394,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
               )}
 
               {app.status === "approved" && (
-                <div>
+                <div className="rounded-md border border-border p-4">
                   <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                     MOU
                   </h3>
@@ -411,7 +411,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               )}
 
-              <div>
+              <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Remarks
                 </h3>

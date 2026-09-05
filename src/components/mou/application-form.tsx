@@ -785,6 +785,34 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
                 onScrolledToEnd={() => setScrolledToEnd(true)}
               />
               <div className="space-y-3">
+                <label
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm font-medium",
+                    scrolledToEnd ? "cursor-pointer" : "opacity-50"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!scrolledToEnd}
+                    checked={
+                      typeConfig.agreements.every((a) => !!agreements[a.clauseRef]) &&
+                      form.agree_terms && form.certify_accurate && form.authority_confirm
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        const now = new Date().toISOString()
+                        setAgreements(Object.fromEntries(typeConfig.agreements.map((a) => [a.clauseRef, now])))
+                      } else {
+                        setAgreements({})
+                      }
+                      set("agree_terms", e.target.checked)
+                      set("certify_accurate", e.target.checked)
+                      set("authority_confirm", e.target.checked)
+                    }}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  Select all
+                </label>
                 {typeConfig.agreements.map((a) => (
                   <label
                     key={a.clauseRef}

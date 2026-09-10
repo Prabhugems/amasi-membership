@@ -1,6 +1,7 @@
 export type ApplicationTypeId =
   | "fmas" | "mmas" | "dmas" | "workshop" | "rural_program"
   | "slcp" | "nextgen" | "meet_the_master" | "zonal_event"
+  | "amasicon"
 
 export type ApplicationStatus =
   | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected"

@@ -106,7 +106,10 @@ export function validateTypeSpecificFields(config: MouEventTypeConfig, body: Bod
       if (raw === undefined || raw === null || raw === "") continue
       const d = typeof raw === "string" ? new Date(raw) : new Date(NaN)
       if (Number.isNaN(d.getTime()) || d < minDate) {
-        return `AMASI requires facility details one month in advance and the signed MOU 15 days before the event. Please choose a date at least ${config.minLeadDays} days away.`
+        return (
+          config.leadTimeMessage ??
+          `AMASI requires facility details one month in advance and the signed MOU 15 days before the event. Please choose a date at least ${config.minLeadDays} days away.`
+        )
       }
     }
   }

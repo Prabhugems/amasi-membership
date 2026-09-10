@@ -27,6 +27,7 @@ const EVENT_TYPE_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "conference" | "
   mmas: "course",
   dmas: "course",
   workshop: "workshop",
+  amasicon: "conference",
   rural_program: "workshop",
   slcp: "workshop",
   nextgen: "workshop",

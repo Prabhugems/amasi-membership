@@ -559,6 +559,10 @@ interface NumberedClauseTemplate {
   title: string
   roleLabel: string
   clauses: string[]
+  // Optional trailing procedure sheet (AMASICON's "Procedures to be
+  // followed" page). Rendered after the numbered clauses, before the
+  // signature block, so it is part of the signed document.
+  appendix?: { title: string; sections: { heading: string; items: string[] }[] }
 }
 
 export const WORKSHOP_CLAUSES: string[] = [
@@ -618,12 +622,112 @@ export const RURAL_PROGRAM_CLAUSES: string[] = [
   "This Memorandum of Understanding has to be signed by the Organizing Secretary of the rural surgical camp on behalf of the Second party. Hony. Secretary of AMASI has to sign on behalf of the First party. If the Organizing Secretary of selected rural surgical camp fails to sign the Memorandum of Understanding at least 15 days prior to the event, invitation stands cancelled and Second Party shall not use the logo or name of the first party for any such event.",
 ]
 
+// AMASICON MOU — transcribed from
+// https://amasi.org/wp-content/uploads/2025/06/MOU-for-AMASICON.pdf (41
+// clauses + the "Procedures to be followed" sheet). The "20XX" / blank
+// placeholders in the original are kept as-is: the signed application row
+// (organizer, date, venue) is printed in the acknowledgment box above the
+// clauses, so the clause text itself stays byte-stable for the hash.
+export const AMASICON_CLAUSES: string[] = [
+  "ASSOCIATION OF MINIMAL ACCESS SURGEONS OF INDIA hereinafter called AMASI being the First Party and ORGANISING COMMITTEE OF AMASI CONFERENCE hereafter called OC being the second party, we the first party and the second party hereby enter in MOU as per the following details.",
+  "Executive Committee of AMASI (EC) shall be the authority to represent the first party. Honorary Secretary of AMASI shall carry out all instruction of the Executive Committee of AMASI and is the authorized signatory of the first party.",
+  "The authorities to present the second party shall be office bearers of Organizing Committee which invited the conference. Organizing Secretary of the conference shall act on the advice of the Organizing Committee. He is authorized to sign for the second party. The Organizing Committee is responsible for the proper conduction of the conference.",
+  "If any official body other than AMASI is also involved in organizing the conference, e.g. the local or state chapter of Association of Surgeons of India (ASI), prior intimation and approval of the first party will need to be taken.",
+  "The Annual Conference of AMASI (hereinafter called as AMASICON20XX) shall be held on the agreed dates at the agreed place. The organizing secretary for the same shall be the applicant named in this application, a valid member of AMASI since the year stated in the application.",
+  "The venue of the conference at the place already decided will be at the discretion of the OC, subject to endorsement of EC of AMASI.",
+  "All the banners, brochures, print materials, electronic materials associated with the event should bear the logos of both AMASI as well as ASI.",
+  "The First Party will decide the programme of the Conference. This includes selection of speakers, subjects, timings, allotment of halls, chairman etc. The second party shall make arrangements for the conduction of the conference. It includes providing halls of adequate capacity, audiovisual equipment and management, suitable podium in each hall and personnel for assistance.",
+  "The Second Party is bounded by the decision of the General Body of AMASI regarding Registration fees for the conference.",
+  "Orator, Guest Speakers from Overseas and India and persons to be admitted as Honorary Fellowship at the conference are exempt from paying Registration fees. Hony. Secretary of AMASI shall send list of these persons (Exemption list) as approved by the EC to the Organizing Secretary. The Second Party shall honour this list. The first party may make any addition to this thereafter. The Second party shall not allow any complimentary registrations or accommodation at the cost of the conference, unless it is by agreement of the First Party.",
+  "All the AMASI EC, including the President, Past Presidents and Secretary, are supposed to register for the conference and make their own arrangements for stay and transport to the city of the conference. However, the AMASI EC members are given the privilege that they may register at the lowest rate offered by the Second Party since the announcement of that particular AMASICON. Also the Second Party will provide the EC members with transportation to and from the airport/railway station to their place of accommodation/venue.",
+  "The Second party shall provide: (a) Local Hospitality (HOTEL STAY, REGISTRATION AND LOCAL TRANSPORT) to persons on exemption list. (b) Free accommodation and food to office staff of AMASI. Suitable accommodation very near the venue of the Conference is preferable. (c) Computer, Typewriter, Furniture and Stationery to office staff of AMASI. (d) One stall near registration counter to AMASI Office staff for collecting subscription etc. and one room for keeping the valuables of the central office.",
+  "The Second Party shall open only one account (and not more than one) in the name of AMASICON (year) at a bank. Hony. Treasurer of OC and two other office bearers (Organizing Secretary or Organizing Chairman) of OC (number to be decided by OC) shall operate the account (Conference A/C). The account shall be operable by at least two signatures of which one should be that of the Treasurer.",
+  "Organizing Secretary must print the following: All money paid shall be in the form of crossed account payee demand draft (cheques permitted for local banks) payable to AMASICON (year), account number (a/c no.) of (name of Bank) at (name of city). Cheques/drafts without account number and Bank details shall not be accepted — in first as well as all subsequent circulars including trade circulars to delegates and in all correspondence. (Year) write year of conference e.g. \"AMASICON 2016\"; (A/c no.) write account number e.g. \"Savings 129587\" as per the item above; write name of Bank e.g. \"State Bank of India\"; (City) write name of the city e.g. \"Mumbai\".",
+  "All conference collections including Registration fees, advertisement, stall charges, sponsorship etc. must be deposited in conference a/c only.",
+  "The Second Party shall issue a receipt on receiving money. The receipt should be sent to the Delegate or person / institution concerned within 7 days of receiving the draft or realization of cheque.",
+  "The Second Party shall forward the list of office bearers and Chairman of various committees to Hony. Secretary of AMASI at least one year prior to the conference. The list of members of the Finance committee and name of Office Bearer authorized to operate the conference a/c should also be sent along with it.",
+  "Second party may arrange Pre-conference workshop or Post-conference programme. Full management including fees, speakers etc. will be done by the second party. However, its accounts shall be kept under separate head under main conference account. All money transactions shall be from conference a/c only.",
+  "Executive Committee and other committee meetings of AMASI will be held on any Day of Conference. The second party shall make proper arrangements for the same.",
+  "The first party will appoint scrutinizing committee for scientific paper etc., which will consist of 5-6 members including President and Hon. Secretary.",
+  "The first party will provide the deadlines for various activities relating to the holding of AMASICON. The second party will abide by these deadlines.",
+  "Printing & dispatch to all members will be done by the Second party.",
+  "The Second Party shall maintain close liaison with the First party. Organizing Secretary shall provide full details of the facilities available for the conference to Hon. Secretary of AMASI at least 9 months in advance.",
+  "Organizing Secretary, in his circular, shall inform all members: (i) Details regarding accommodation at Hotels, etc. (ii) Weather conditions at the place and consequent clothing requirements etc. (iii) Train timings relevant to the conference. (iv) Flight/air timings relevant to the conference. (v) Sightseeing places with details. (vi) Name, address and other details of Travel agents (if appointed) to cater to accommodation, travel, sightseeing etc. of delegates; accommodation tariff, commission for booking tickets, charges for sightseeing etc.; deposit to be sent in advance to travel agents. OC should supervise the working of the travel agents so that they deal fairly with delegates; the Organizing Secretary should attend any complaints against the travel agents and take proper action. (vii) Registration fees as decided by the General Body of AMASI. (viii) Registration form must include AMASI membership number of the delegate if he claims to be one. The Organizing Secretary must confirm the membership of AMASI before accepting him in the category of AMASI member.",
+  "The Second Party will decide about person to be invited to the Conference as Inaugurator after consultation with the President, AMASI. The Organizing Secretary shall also send a small introductory bio-data of the inaugurator; suitable mementoes will be prepared by the Second Party on behalf of AMASI. Protocol of AMASI shall be followed at these functions.",
+  "The Second Party shall arrange for the inauguration function, the convocation function of FMAS program and the General body meeting of AMASI as per instructions of the First party. Protocol of AMASI shall be followed at these functions.",
+  "The OC may bring out a souvenir on the occasion of the Conference. Suitable advertisements may be accepted at charges fixed by the Committee. The Souvenir will contain photographs of office bearers of AMASI as well as main members of OC and inaugurator. The souvenir shall also contain messages from the chairman and the patron(s) of the conference. In addition, the souvenir should carry the abstracts of all papers and videos (including free paper, award paper, junior scholar paper, free and award videos) with details of the presenting author. Organizing secretary shall send a copy of the circular inviting advertisements in the Souvenir wherein rates of charges are printed to Hony. Secretary AMASI.",
+  "The Second Party may call a press conference before Conference wherein salient features of the conference shall be highlighted.",
+  "OC may allow stalls to be put up at the Conference venue at rates fixed by it. The Organizing Secretary shall send the following information to Hony. Secretary, AMASI before the Conference begins: (a) Total number of stalls put up, approximate size of each. (b) List of stalls occupied and by whom, mentioning total charges for each stall. (c) Rate of stalls — ordinary and special. (d) Total collection from stalls; in case some companies have not yet paid, the same should be indicated. As per terms in item 13, all collections must be credited to the Conference a/c only.",
+  "The OC may accept sponsorship for various events, thus receiving donations in cash or in the form of dinners, lunches etc. As in the case of stalls, details of each sponsorship including the amount collected from each (value in case of dinners, lunches) should be submitted to Hony. Secretary AMASI, before the Conference.",
+  "The Second Party shall host dinner for Members of EC, President and Secretary of AMASI, Past Presidents of AMASI and their spouses and special invitees.",
+  "Office bearers of OC viz. Chairman, Organizing Secretary, Treasurer & Joint Secretary as well as members of Finance Committee shall be full members of AMASI. OC shall maintain meticulous accounts of the conference. After the conference is over, OC shall clear all liabilities and get the account audited.",
+  "Organizing Secretary shall send unaudited provisional account of the Conference to Hony. Secretary AMASI within three months.",
+  "AMASI may get the Conference accounts audited by its own auditors or those appointed by it. The Second Party shall supply all information and documents required for the same.",
+  "Audited Conference accounts shall be submitted to Hony. Secretary and Hony. Treasurer of AMASI within 06 months for placing before the EC for its approval.",
+  "The first party will provide seed money not exceeding Rs. 10 lakh (ten lakhs only) to the second party for the initial funding required as soon as the MOU is signed and conference account opened. The entire seed money has to be returned from the conference account to AMASI account within one month of completion of the conference. The seed money amount may be increased or decreased on mutual agreement of both the First and the Second Parties.",
+  "The Second Party shall remit Rs. 05 lakhs or 30% of the Registration fees, whichever is higher, to AMASI headquarters within three months of the conference along with the provisional unaudited accounts. Once the conference account is audited and closed, one of the following three courses shall be adopted: (i) In case the excess of income over expenditure is less than Rs. 20,00,000/- (Rupees Twenty lakhs): The Second Party is liable to pay a minimum guarantee amount of Rs. 20,00,000/- (Rupees twenty lakhs only). Twenty lakhs will be transferred to the AMASI account and will be used for AMASI Headquarters activities (no amount shall be earmarked for the city/state or zonal activities in which the conference was conducted). (ii) In case the excess of income over expenditure is between Rs. 20,00,000/- and Rs. 40,00,000/-: The surplus is to be transferred to the AMASI account, of which Rs. 20,00,000/- will remain with AMASI headquarters and the remaining is to be utilized as follows — if the conference has been hosted in a government teaching hospital, a part of the OC's share may be used for equipment or events contributing to the academics of medical students and resident doctors; the OC's share may be used for academic programs of the respective zonal section of AMASI; the utilization of the OC's share shall be determined by the OC members consisting of Organizing Chairman, Organizing Secretary, Organizing Co-secretary and the Treasurer with the approval of the EC of AMASI as represented by the current Hon. Secretary of AMASI; and the utilization shall be in tranches not exceeding 3 lakhs for a single purpose/event. (iii) In case the excess of income over expenditure is MORE THAN Rs. 40,00,000/-: The surplus is to be transferred to the AMASI account, of which 50% will remain with AMASI headquarters and the remaining 50% is to be utilized on the same terms as in (ii).",
+  "A list of delegates with details of the conference shall be sent to the Central Office either by CD or by letter. It is mandatory to computerize conference data and a CD (read only) containing the above information should be sent instead of printed sheets.",
+  "If the Second Party fails to make payments as provided in this contract, it will be considered unpaid debt. The First Party will adopt one or more of the penal and disciplinary procedures. A resolution of the Executive Committee to this effect will be conclusive and binding.",
+  "The Organizing Secretary shall submit a report to Hony. Secretary AMASI after conclusion of the conference. It should include conference photographs, two copies of video recording of inaugural function (one for office, the other for the President of that year) and two copies of all conference publications. It should also mention the number of surgeries demonstrated in live workshop, the total number of registered delegates, the number of national and international faculties. The report should reach Hony. Secretary, AMASI within one month of the conference.",
+  "This Memorandum of Understanding has to be signed by the Organizing Secretary of the conference on behalf of the Second party. Hony. Secretary of AMASI has to sign on behalf of the First party. If the Organizing Secretary of selected conference fails to sign the Memorandum of Understanding at least 12 months prior to the agreed date, the invitation stands cancelled and the General Body shall consider alternate invitations for selection.",
+]
+
+export const AMASICON_PROCEDURES: NonNullable<NumberedClauseTemplate["appendix"]> = {
+  title: "PROCEDURES TO BE FOLLOWED FOR AMASICON",
+  sections: [
+    {
+      heading: "Pre-incorporation",
+      items: [
+        "Open a separate bank account in the name of AMASICON.",
+        "Enroll in a separate GST registration and comply with the procedures laid down as per the GST rules.",
+        "Apply for a separate TAN number (tax deducted at source).",
+      ],
+    },
+    {
+      heading: "Post incorporation",
+      items: [
+        "File the GST returns on a regular basis and maintain proper records such as GST registration certificate, GST returns (GSTR-1, GSTR-3B and GSTR-2B), tax remittance challans.",
+        "File the GSTR-9 and GSTR-9C returns (annual return) if applicable.",
+        "Deduct TDS and remit the same within the stipulated time and file the quarterly returns in time.",
+      ],
+    },
+    {
+      heading: "For finalisation of accounts",
+      items: [
+        "Maintain proper books of accounts in accounting software (recommended: Tally).",
+        "Maintain the proper expense bills and related details including bank statements.",
+        "Prepare the reconciliation statement of TDS deducted and paid.",
+        "Prepare the reconciliation statement of GST collected and paid.",
+        "Prepare the reconciliation statement of TDS on income earned and deducted by others.",
+        "Furnish the Profit and Loss account and Balance Sheet along with the audit report.",
+      ],
+    },
+    {
+      heading: "End process",
+      items: [
+        "Hand over all the financial records after completion of the conference.",
+        "Surrender the GST registration.",
+        "Close the bank account; any funds available are to be transferred to the AMASI Head Office bank account.",
+        "Cancel the TAN registration (TDS number).",
+      ],
+    },
+  ],
+}
+
 function getNumberedClauseTemplate(typeId: ApplicationTypeId): NumberedClauseTemplate {
   if (typeId === "workshop") {
     return {
       title: "MEMORANDUM OF UNDERSTANDING FOR WORKSHOP/CME/CONFERENCE (OTHER THAN AMASICON)",
       roleLabel: "workshop/CME/conference",
       clauses: WORKSHOP_CLAUSES,
+    }
+  }
+  if (typeId === "amasicon") {
+    return {
+      title: "MEMORANDUM OF UNDERSTANDING FOR AMASICON",
+      roleLabel: "AMASICON, on behalf of the second party",
+      clauses: AMASICON_CLAUSES,
+      appendix: AMASICON_PROCEDURES,
     }
   }
   return {
@@ -654,6 +758,18 @@ function renderNumberedClauseMou(application: AcademicEventApplication, signatur
             <Text style={styles.clauseText}>{clause}</Text>
           </View>
         ))}
+
+        {template.appendix && (
+          <View break>
+            <Text style={styles.docTitle}>{template.appendix.title}</Text>
+            {template.appendix.sections.map((section) => (
+              <View key={section.heading}>
+                <Text style={styles.sectionHeading}>{section.heading}</Text>
+                <BulletList items={section.items} />
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.signatureBlock}>
           <Text style={styles.signatureLine}>Signed: _________________ (Hon Secretary of AMASI)</Text>
@@ -688,7 +804,7 @@ function renderNumberedClauseMou(application: AcademicEventApplication, signatur
 
 const COLLEGE_OF_MAS_TYPES: ApplicationTypeId[] = ["fmas", "mmas", "dmas"]
 const ARTICLE_TYPES: ApplicationTypeId[] = ["slcp", "nextgen", "meet_the_master", "zonal_event"]
-const NUMBERED_CLAUSE_TYPES: ApplicationTypeId[] = ["workshop", "rural_program"]
+const NUMBERED_CLAUSE_TYPES: ApplicationTypeId[] = ["workshop", "rural_program", "amasicon"]
 
 export async function generateMouPdf(
   application: AcademicEventApplication,

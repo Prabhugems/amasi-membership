@@ -149,6 +149,9 @@ const PUBLIC_API_ROUTES = [
   // getMemberSession + active-member check + per-member Upstash rate
   // limit (10 req/min). Exact path only.
   "/api/members/sync",
+  // Public member count — returns only { count: N }, no PII. Called by
+  // external sites (amasi.org, partner widgets) without admin cookies.
+  "/api/members/count",
   // Member-facing announcements. Anonymous read; handler does its own
   // IP rate limit (60 req/15min) and only returns published+public rows.
   "/api/announcements",

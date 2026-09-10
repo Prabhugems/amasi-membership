@@ -1,3 +1,4 @@
+// @auth: public — returns only { count: N }, no PII; polled by external sites and partner widgets
 import { createAdminClient } from "@/lib/supabase"
 
 // force-dynamic so the count reflects live DB state on every poll

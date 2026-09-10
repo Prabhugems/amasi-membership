@@ -178,6 +178,30 @@ describe("generateMouPdf", () => {
     expect(text).toContain("Kerala Update")
   })
 
+  describe("Meet the Master and Zonal Event carry no placeholder terms (live since 2026-09-10)", () => {
+    it("meet_the_master MOU has real structure/fee/faculty articles and no TBD text", async () => {
+      const mtmApplication = baseApplication({ application_type_id: "meet_the_master", zone: "West" })
+      const text = extractPdfText(await generateMouPdf(mtmApplication, "AMASI Meet the Master"))
+      expect(text).not.toContain("TBD")
+      expect(text).not.toContain("placeholder")
+      expect(text).toContain("invited Master surgeon")
+      expect(text).toContain("approved in writing by AMASI HQ")
+      // SLCP-specific money terms must not leak into the sibling template
+      expect(text).not.toContain("500 per registration")
+      expect(text).not.toContain("Safe Lap Chole")
+    })
+
+    it("zonal_event MOU names the zone, has real articles and no TBD text", async () => {
+      const zonalApplication = baseApplication({ application_type_id: "zonal_event", zone: "East", event_name: "Odisha Update" })
+      const text = extractPdfText(await generateMouPdf(zonalApplication, "Zonal Event"))
+      expect(text).not.toContain("TBD")
+      expect(text).not.toContain("placeholder")
+      expect(text).toContain("East zone")
+      expect(text).toContain("Chairperson")
+      expect(text).not.toContain("500 per registration")
+    })
+  })
+
   describe("Party 2 caption per Article-family type", () => {
     it("labels Party 2 as PROGRAMME ORGANIZER for slcp (not NEXTGEN ORGANIZER)", async () => {
       const buffer = await generateMouPdf(slcpApplication, "AMASI Safe Laparoscopic Cholecystectomy")

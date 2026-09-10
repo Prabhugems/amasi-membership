@@ -12,11 +12,10 @@ export interface EventTypeUiConfig {
   label: string
   description: string
   fields: MouFieldKey[]
-  // True only for types whose MOU legal text still has [TBD] placeholder
-  // terms (financial/participant details) pending real content from the
-  // AMASI Secretary — see mou-template-article.md in the SDD workspace.
-  // Hides the type from the /mou landing page and its application route
-  // until this is cleared.
+  // Hides a type from the /mou landing page and its application route while
+  // its MOU text is still being drafted. No type is hidden today (Meet the
+  // Master and Zonal Event went live 2026-09-10 with application-driven
+  // terms — see getArticleVars in mou-pdf.tsx); kept for future types.
   pendingContent?: boolean
 }
 
@@ -298,14 +297,12 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
     fields: ["committee_member_photo", "zone"],
   },
   meet_the_master: {
-    id: "meet_the_master", label: "Meet the Master", description: "A Day with a Master hosting application",
+    id: "meet_the_master", label: "Meet the Master", description: "A Day with a Master — host a one-day interactive programme built around an invited Master surgeon. Programme, fee and faculty are proposed here and fixed by AMASI HQ in the approval.",
     fields: ["event_name", "expected_participants", "live_surgery_demo", "zone"],
-    pendingContent: true,
   },
   zonal_event: {
-    id: "zonal_event", label: "Zonal Event", description: "A zone-specific AMASI event",
+    id: "zonal_event", label: "Zonal Event", description: "A zone-specific AMASI academic event (CME, workshop, symposium or hands-on session). The zone's Chairperson is notified; programme, fee and faculty are fixed by AMASI HQ in the approval.",
     fields: ["event_name", "zone", "expected_participants"],
-    pendingContent: true,
   },
 }
 

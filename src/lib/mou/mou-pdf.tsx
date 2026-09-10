@@ -330,6 +330,34 @@ const SLCP_ELIGIBILITY_TERMS = [
   "Commitment to AMASI standards",
 ]
 
+// Meet the Master and Zonal Event have no fixed national fee schedule or
+// programme template (unlike SLCP/NextGen): each edition's programme, fee
+// and faculty are proposed in the application and fixed by AMASI HQ in the
+// written approval. These shared terms say exactly that, so the generated
+// MOU carries no placeholder text and no numbers AMASI has not set.
+const APPROVED_PROGRAMME_PARTY1_RESPONSIBILITIES = [
+  "Provide curriculum guidance and quality standards",
+  "Approve the programme, registration fee and faculty proposed in the application",
+  "Handle all participant certifications",
+  "Provide academic material for use in the programme",
+  "Maintain professional standards",
+  "Provide programme endorsement and branding",
+]
+
+const APPROVED_PROGRAMME_PARTY2_RESPONSIBILITIES = [
+  "Will not divert from the approved academic content without prior written permission from AMASI HQ",
+  "Handle logistics and participant management",
+  "Submit report within 15 days",
+  "Display College of MAS and AMASI logos",
+  "Expenses to be borne by organizers or from sponsorship funds; no financial liability to AMASI",
+]
+
+const APPROVED_PROGRAMME_REGISTRATION_TERMS = [
+  "Registration fee, if any, as proposed by the organizer and approved in writing by AMASI HQ before the programme is announced",
+  "Any share of registration income payable to AMASI as fixed by AMASI HQ in the written approval",
+  "Registration managed by the organizer",
+]
+
 function buildZonalProgramTitle(application: AcademicEventApplication): string {
   const zone = application.zone
   const eventName = application.event_name
@@ -423,34 +451,60 @@ function getArticleVars(application: AcademicEventApplication): ArticleVars {
         programTitle: "AMASI Meet the Master",
         programTagline: "one day interactive academic programme",
         purposeDetail: "",
-        structureBullets: ["[TBD — confirm programme structure/timing with AMASI Secretary]"],
-        party1Responsibilities: SLCP_PARTY1_RESPONSIBILITIES,
-        party2Responsibilities: SLCP_PARTY2_RESPONSIBILITIES,
-        registrationFees: ["[TBD — confirm registration fee structure with AMASI Secretary]"],
+        structureBullets: [
+          "One-day interactive academic programme built around an invited Master surgeon",
+          "Programme content — operative demonstrations (live or recorded, where facilities permit), case discussions and interactive sessions — as proposed by the organizer and approved by AMASI HQ",
+          "Timings, sessions and the Master to be invited are finalised in consultation with AMASI HQ before the programme is announced",
+        ],
+        party1Responsibilities: [
+          ...APPROVED_PROGRAMME_PARTY1_RESPONSIBILITIES,
+          "Approve the invited Master and any supporting faculty",
+        ],
+        party2Responsibilities: [
+          "Provide venue and facilities meeting AMASI standards",
+          "Arrange travel and accommodation for the Master and AMASI-designated faculty",
+          ...APPROVED_PROGRAMME_PARTY2_RESPONSIBILITIES,
+        ],
+        registrationFees: APPROVED_PROGRAMME_REGISTRATION_TERMS,
         sponsorshipNote: "",
-        facultyTerms: ["[TBD]"],
+        facultyTerms: [
+          "The Master and any supporting faculty are designated by AMASI HQ in consultation with the organizer",
+          "Travel and accommodation borne by the organizer",
+          "AMASI handles all certifications",
+        ],
         eligibilityTerms: SLCP_ELIGIBILITY_TERMS,
         eventNoun: "programme",
         party2Label: "PROGRAMME ORGANIZER",
-        placeholderNote:
-          "Programme structure, registration fees, and faculty terms below are placeholders pending confirmation with the AMASI Secretary. Party responsibilities and eligibility below are provisionally reused from the SLCP programme terms as the closest sibling template — confirm before go-live.",
       }
     case "zonal_event":
       return {
         programTitle: buildZonalProgramTitle(application),
         programTagline: "zonal academic programme",
         purposeDetail: "",
-        structureBullets: ["[TBD — confirm programme structure with AMASI Secretary and the zone's Chairperson]"],
-        party1Responsibilities: SLCP_PARTY1_RESPONSIBILITIES,
-        party2Responsibilities: SLCP_PARTY2_RESPONSIBILITIES,
-        registrationFees: ["[TBD]"],
+        structureBullets: [
+          `Zonal academic programme for AMASI members of the ${application.zone ? `${application.zone} zone` : "zone"} — format (CME, workshop, symposium or hands-on session) as proposed in the application`,
+          "Programme content, timings and sessions as approved by AMASI HQ and the zone's Chairperson",
+          "Event name and dates as recorded in the approved application",
+        ],
+        party1Responsibilities: [
+          ...APPROVED_PROGRAMME_PARTY1_RESPONSIBILITIES,
+          "Notify the zone's Chairperson and list the event on AMASI's zonal events calendar",
+        ],
+        party2Responsibilities: [
+          "Provide venue and facilities meeting AMASI standards",
+          "Arrange travel and accommodation for AMASI-designated faculty",
+          ...APPROVED_PROGRAMME_PARTY2_RESPONSIBILITIES,
+        ],
+        registrationFees: APPROVED_PROGRAMME_REGISTRATION_TERMS,
         sponsorshipNote: "",
-        facultyTerms: ["[TBD — zonal events are also notified to the zone's Chairperson per the approval workflow]"],
+        facultyTerms: [
+          "Faculty designated by AMASI HQ in consultation with the zone's Chairperson; faculty are bonafide AMASI members unless AMASI approves otherwise",
+          "Travel and accommodation borne by the organizer",
+          "AMASI handles all certifications",
+        ],
         eligibilityTerms: SLCP_ELIGIBILITY_TERMS,
         eventNoun: "event",
         party2Label: "PROGRAMME ORGANIZER",
-        placeholderNote:
-          "Programme structure, registration fees, and faculty terms below are placeholders pending confirmation with the AMASI Secretary and the zone's Chairperson. Party responsibilities and eligibility below are provisionally reused from the SLCP programme terms as the closest sibling template — confirm before go-live.",
       }
     default:
       throw new Error(`getArticleVars called with unsupported application_type_id: ${application.application_type_id}`)

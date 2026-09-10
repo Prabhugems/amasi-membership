@@ -638,8 +638,8 @@ export function ApplicationForm({ typeId }: { typeId: ApplicationTypeId }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Preferred date" required type="date" value={form.preferred_date_1} onChange={(v) => set("preferred_date_1", v)} />
-            <Field label="Alternate date" type="date" value={form.preferred_date_2} onChange={(v) => set("preferred_date_2", v)} />
+            <Field label={(isMouFramework && typeConfig.dateLabels?.primary) || "Preferred date"} required type="date" value={form.preferred_date_1} onChange={(v) => set("preferred_date_1", v)} />
+            <Field label={(isMouFramework && typeConfig.dateLabels?.alternate) || "Alternate date"} type="date" value={form.preferred_date_2} onChange={(v) => set("preferred_date_2", v)} />
             {fields.has("event_name") && (
               <Field label="Event name" value={form.event_name} onChange={(v) => set("event_name", v)} />
             )}

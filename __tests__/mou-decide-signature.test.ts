@@ -33,6 +33,7 @@ vi.mock("@/lib/mou/mou-pdf", () => ({
   generateMouPdf: vi.fn().mockResolvedValue(Buffer.from("pdf")),
   RURAL_PROGRAM_CLAUSES: [],
   WORKSHOP_CLAUSES: [],
+  AMASICON_CLAUSES: [],
 }))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
 vi.mock("@/lib/mou/mou-signature", () => ({

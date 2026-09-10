@@ -23,6 +23,7 @@ vi.mock("@/lib/mou/mou-pdf", () => ({
   generateMouPdf: vi.fn().mockResolvedValue(Buffer.from("%PDF-fake")),
   RURAL_PROGRAM_CLAUSES: [],
   WORKSHOP_CLAUSES: [],
+  AMASICON_CLAUSES: [],
 }))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))

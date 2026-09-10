@@ -4,10 +4,10 @@ import { RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "@/lib/mou/mou-pdf"
 import { SMALL_STATE_CHAPTER_STATES } from "@/lib/mou/small-state-chapters"
 
 describe("EVENT_TYPE_CONFIG", () => {
-  it("has exactly the 9 in-scope event types", () => {
+  it("has exactly the 10 in-scope event types", () => {
     const ids = Object.keys(EVENT_TYPE_CONFIG).sort()
     expect(ids).toEqual([
-      "dmas", "fmas", "meet_the_master", "mmas", "nextgen",
+      "amasicon", "dmas", "fmas", "meet_the_master", "mmas", "nextgen",
       "rural_program", "slcp", "workshop", "zonal_event",
     ].sort())
   })
@@ -97,7 +97,7 @@ describe("rural_program and workshop MouEventTypeConfig", () => {
     }
   })
 
-  it("the other 7 event types have no typeSpecificFields (unchanged shape)", () => {
+  it("the other 7 event types have no typeSpecificFields (unchanged shape); amasicon is covered in mou-amasicon.test.ts", () => {
     const untouchedIds = ["fmas", "mmas", "dmas", "slcp", "nextgen", "meet_the_master", "zonal_event"] as const
     for (const id of untouchedIds) {
       expect(isMouEventTypeConfig(EVENT_TYPE_CONFIG[id])).toBe(false)

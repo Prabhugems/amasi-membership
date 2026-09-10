@@ -1,5 +1,5 @@
 import type { ApplicationTypeId } from "./types"
-import { RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "./mou-pdf"
+import { AMASICON_CLAUSES, RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "./mou-pdf"
 import { SMALL_STATE_CHAPTER_STATES } from "./small-state-chapters"
 
 export type MouFieldKey =
@@ -41,6 +41,13 @@ export interface MouEventTypeConfig extends EventTypeUiConfig {
   organizerNameLabel?: string
   agreements: Agreement[]
   minLeadDays?: number
+  // Replaces the default "facility details one month in advance / signed MOU
+  // 15 days before" lead-time rejection message, for types whose MOU sets a
+  // different horizon (AMASICON: 12 months, clause 41).
+  leadTimeMessage?: string
+  // Labels for the two common date inputs when "Preferred date" doesn't fit
+  // (AMASICON asks for the proposed conference date, a year or more out).
+  dateLabels?: { primary: string; alternate: string }
   requiresVenue?: boolean
   confirmationNote?: string
   typeSpecificFields: TypeSpecificFieldDef[]
@@ -95,7 +102,7 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
     minLeadDays: 45,
     requiresVenue: true,
     confirmationNote: "AMASI HQ completes processing within two weeks of receiving the request. Please do not announce or publicise the programme until you receive written approval.",
-    eventSubtypeWarning: "The MOU covers events other than AMASICON. Annual conference applications do not go through this route.",
+    eventSubtypeWarning: "The MOU covers events other than AMASICON. Annual conference bids have their own application at /mou/amasicon.",
     smallStateException: {
       chapterFlagField: "organised_by_state_chapter",
       venueStateField: "venue_state",
@@ -218,6 +225,72 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
         { key: "inpatient_beds", kind: "number", label: "Inpatient beds" },
       ] },
       { key: "faculty", kind: "faculty-rows", minRows: 1, maxRows: 20 },
+    ],
+  },
+  amasicon: {
+    id: "amasicon", label: "AMASICON — Annual Conference", description: "Bid to host the annual national conference of AMASI. Valid bids are placed before the next General Body Meeting, where the proposed Organizing Secretary presents the case in person.",
+    // expected_participants doubles as "expected delegates"; event_name is
+    // the conference name the bid is for (e.g. "AMASICON 2028").
+    fields: ["amasi_membership_number", "event_name", "expected_participants", "zone"],
+    mouClauses: AMASICON_CLAUSES,
+    mouTitle: "MEMORANDUM OF UNDERSTANDING FOR AMASICON",
+    mouVersion: 1,
+    organizerNameLabel: "Proposed Organizing Secretary name",
+    // Clause 41: the MOU must be signed at least 12 months before the agreed
+    // conference date. OTP acceptance on this form is that signature, so the
+    // proposed date must be at least a year out at submission.
+    minLeadDays: 365,
+    leadTimeMessage: "Clause 41 of the AMASICON MOU requires it to be signed at least 12 months before the agreed conference date. Please propose a date at least 365 days away.",
+    dateLabels: { primary: "Proposed conference date (first day)", alternate: "Alternate date" },
+    // A bid is placed a year or more out — the exact venue is usually not
+    // fixed yet (clause 6 leaves it to the OC subject to EC endorsement).
+    // The host city is captured as a required type-specific field instead.
+    requiresVenue: false,
+    confirmationNote: "Valid AMASICON invitations are placed before the next General Body Meeting of AMASI, where you will present your bid in person. AMASI HQ will write to you once the GBM date is fixed. Please do not announce or publicise the bid until then.",
+    agreements: [
+      { clauseRef: "bid", text: "I will personally present this bid at the General Body Meeting of AMASI when the item is taken up, and I accept that the General Body's decision is final." },
+      { clauseRef: "4", text: "If any official body other than AMASI (e.g. a local or state chapter of ASI) is involved in organising the conference, AMASI's prior intimation and approval will be taken." },
+      { clauseRef: "7", text: "All banners, brochures, print and electronic materials will carry the logos of both AMASI and ASI." },
+      { clauseRef: "8", text: "AMASI decides the scientific programme — speakers, subjects, timings, halls and chairpersons. The organising committee will provide halls of adequate capacity, audiovisual equipment and its management, a podium in each hall, and personnel for assistance." },
+      { clauseRef: "9, 10", text: "Registration fees will be as decided by the General Body of AMASI. The exemption list approved by the EC will be honoured, and no complimentary registrations or accommodation will be given at the conference's cost without AMASI's agreement." },
+      { clauseRef: "11, 12", text: "EC members may register at the lowest rate offered and will be given airport/railway transfers. Local hospitality will be provided to the exemption list, and free accommodation, food, equipment, a stall near registration and a secure room will be provided to AMASI office staff." },
+      { clauseRef: "13, 14, 15, 16", text: "Exactly one bank account will be opened in the name of AMASICON (year), operated by the Treasurer with at least two signatures. Every collection — registration, advertisement, stalls, sponsorship — will be deposited in it, payment details will be printed in every circular, and receipts will be issued within 7 days." },
+      { clauseRef: "17", text: "The list of office bearers, committee chairpersons, Finance Committee members and the account signatory will be sent to the Hon. Secretary at least one year before the conference." },
+      { clauseRef: "21, 23", text: "The organising committee will abide by AMASI's deadlines and will provide full details of the available facilities to the Hon. Secretary at least 9 months in advance." },
+      { clauseRef: "24", text: "Circulars to members will carry accommodation, travel, weather, sightseeing and travel-agent details and the fee table, and the AMASI membership of every delegate claiming the member rate will be verified before acceptance." },
+      { clauseRef: "25, 26, 31", text: "The inaugurator will be chosen in consultation with the President; the inauguration, FMAS convocation, General Body Meeting and EC meetings will be arranged as instructed by AMASI and per AMASI protocol; and a dinner will be hosted for the EC, past Presidents, their spouses and special invitees." },
+      { clauseRef: "29, 30", text: "Full details of stalls and sponsorships, including amounts collected, will be submitted to the Hon. Secretary before the conference begins; all such collections go to the conference account only." },
+      { clauseRef: "32, 33, 34, 35", text: "The Organizing Chairman, Organizing Secretary, Treasurer, Joint Secretary and Finance Committee members will all be full members of AMASI. Meticulous accounts will be kept; unaudited provisional accounts will reach the Hon. Secretary within three months and audited accounts within six months, and AMASI's auditors will be given every document they ask for." },
+      { clauseRef: "36", text: "Seed money of up to ₹10 lakh advanced by AMASI will be returned in full from the conference account within one month of the conference." },
+      { clauseRef: "37", text: "Within three months of the conference, ₹5 lakh or 30% of registration fees, whichever is higher, will be remitted to AMASI HQ with the provisional accounts. The minimum guarantee to AMASI is ₹20 lakh of surplus, and larger surpluses will be shared exactly as the MOU sets out." },
+      { clauseRef: "38, 39, 40", text: "The delegate list will be sent to the central office in electronic form; any unpaid amount due to AMASI is a debt subject to the EC's disciplinary procedures; and a report with photographs, two copies of the inaugural video and all publications will reach the Hon. Secretary within one month." },
+      { clauseRef: "41", text: "I understand that my OTP-verified acceptance of the MOU on this form is my signature on it as Organizing Secretary, that it takes effect once the General Body awards the conference, and that if it is not in place at least 12 months before the agreed date the invitation stands cancelled." },
+      { clauseRef: "existing", text: "I certify that all information provided is accurate and that I have the authority to submit this bid on behalf of the proposed organising committee." },
+    ],
+    typeSpecificFields: [
+      { key: "amasi_year_of_joining", kind: "number", label: "Year of joining AMASI", required: true, min: 1993, max: new Date().getFullYear() },
+      { key: "designation", kind: "text", label: "Designation at institution" },
+      { key: "organizing_chairman", kind: "text", label: "Proposed Organizing Chairman", required: true, helperText: "Must be a full member of AMASI (clause 32)." },
+      { key: "organizing_treasurer", kind: "text", label: "Proposed Treasurer", helperText: "Must be a full member of AMASI (clause 32)." },
+      { key: "host_city", kind: "text", label: "Proposed host city", required: true },
+      { key: "proposed_month", kind: "text", label: "Preferred month / window", helperText: "e.g. second week of September. The proposed date above is your first choice." },
+      { key: "local_support", kind: "textarea", label: "Why this city — connectivity, hotel inventory, institutional backing", required: true, maxLength: 2000 },
+      { key: "previous_conferences", kind: "textarea", label: "Major conferences this team has hosted earlier", maxLength: 1000 },
+      { key: "supporting_city_chapter", kind: "text", label: "Supporting city chapter of ASI (if any)" },
+      { key: "supporting_state_chapter", kind: "text", label: "Supporting state chapter of ASI (if any)" },
+      { key: "supporting_others", kind: "text", label: "Other supporting associations (if any)" },
+      { key: "joint_programme", kind: "checkbox", label: "Another official body (e.g. an ASI chapter) will formally co-organise the conference", helperText: "Clause 4 — needs AMASI's prior approval. Add a consent letter for each partner association below." },
+      { key: "partner_associations", kind: "association-rows", maxRows: 10 },
+      { key: "government_teaching_hospital", kind: "checkbox", label: "The conference will be hosted by a government teaching hospital", helperText: "Affects how the organising committee's share of any surplus may be used (clause 37)." },
+      { key: "programme_outline", kind: "textarea", label: "Proposed pre- or post-conference workshops (if any)", helperText: "The main scientific programme is decided by AMASI (clause 8). Workshop accounts sit under the conference account (clause 18)." },
+      { key: "facilities", kind: "facilities-group", items: [
+        { key: "halls", kind: "number", label: "Number of halls" },
+        { key: "seating_capacity", kind: "number", label: "Main hall seating capacity" },
+        { key: "trade_exhibition_area", kind: "checkbox", label: "Trade exhibition area" },
+        { key: "live_surgery_relay", kind: "checkbox", label: "Live surgery relay from an operating theatre" },
+        { key: "av_equipment", kind: "checkbox", label: "AV equipment in every hall" },
+        { key: "hotel_rooms_nearby", kind: "number", label: "Hotel rooms within 5 km" },
+      ] },
     ],
   },
   nextgen: {

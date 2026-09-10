@@ -3,12 +3,11 @@ import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/ca
 import { ArrowRight, FileText, Download, Info } from "lucide-react"
 import { EVENT_TYPE_CONFIG } from "@/lib/mou/event-type-config"
 
-// Static documents that intentionally stay outside the native-form system
-// (Task 11 spec §"What to build" / design doc §1) — these are heavier
-// legal/process documents downloaded and handled offline, not something an
-// applicant fills in on this site.
+// Reference copies of the original MOU / process documents. Every event
+// type — AMASICON included since 2026-09 — is applied for through the
+// online forms above; these stay linked so applicants can read the source
+// documents the generated MOUs are transcribed from.
 const STATIC_DOCUMENTS: { label: string; href: string; kind: "docx" | "pdf" }[] = [
-  { label: "Application for Hosting AMASICON", href: "https://amasi.org/wp-content/uploads/2025/06/Application-for-Hosting-AMASICON.docx", kind: "docx" },
   { label: "MOU for AMASICON", href: "https://amasi.org/wp-content/uploads/2025/06/MOU-for-AMASICON.pdf", kind: "pdf" },
   { label: "MOU for Workshop CME Conference", href: "https://amasi.org/wp-content/uploads/2025/06/MOU-for-Workshop-CME-Conference.pdf", kind: "pdf" },
   { label: "MOU for Rural Surgery Camp", href: "https://amasi.org/wp-content/uploads/2025/06/MOU-for-Rural-Surgery-Camp.pdf", kind: "pdf" },
@@ -51,17 +50,17 @@ export default function MouLandingPage() {
 
         <div className="mt-14">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Reference documents</p>
-          <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Static forms &amp; MOU templates</h2>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">MOU templates &amp; process</h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground leading-relaxed">
-            These documents are handled outside this application system.
+            The source documents the online MOUs are transcribed from. Read them before you apply.
           </p>
 
           <div className="mt-4 rounded-md border border-border bg-card p-4">
             <div className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
               <Info className="h-4 w-4 shrink-0 mt-0.5" />
               <p>
-                AMASICON hosting bids are decided separately by the Executive Committee and are not submitted
-                through this form. Use the application document below to express interest.
+                AMASICON bids are placed before the General Body Meeting, where the proposed Organizing Secretary
+                presents the case in person. All other event types are decided by the Executive Committee.
               </p>
             </div>
 

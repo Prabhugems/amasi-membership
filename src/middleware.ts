@@ -76,6 +76,10 @@ const PUBLIC_ROUTES = [
   // (/api/electoral-roll/*) is allowlisted below; the admin triage page lives
   // under /admin/electoral-roll which is auth-gated by default.
   "/electoral-roll",
+  // Event-hosting (MOU) applications. The page is public but the form itself
+  // requires a member OTP session; the admin queue is /admin/mou-applications
+  // (auth-gated by default). Linked from amasi.org (/mou/fmas, /mou/nextgen …).
+  "/mou",
   // Sentry SDK tunnel (next.config.ts: tunnelRoute). Client error reports POST
   // here; without this allowlist the middleware redirected to /login (307) and
   // the POST followed into a 405, silently dropping every client-side Sentry
@@ -142,6 +146,11 @@ const PUBLIC_API_ROUTES = [
   // getMemberSession + active-member check + per-member Upstash rate
   // limit (10 req/min). Exact path only.
   "/api/members/sync",
+  // Event-hosting (MOU) applications: upload + submit + own-list. Every
+  // handler resolves the member session and the active-member row itself
+  // (src/lib/mou-member.ts); per-member rate limits inside. Admin surface is
+  // /api/admin/mou-applications/* and stays behind the default admin gate.
+  "/api/mou/",
   // Member-facing announcements. Anonymous read; handler does its own
   // IP rate limit (60 req/15min) and only returns published+public rows.
   "/api/announcements",

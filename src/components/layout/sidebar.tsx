@@ -33,6 +33,7 @@ import {
   Calendar,
   CreditCard,
   AlertCircle,
+  FileSignature,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -42,7 +43,7 @@ interface NavItem {
   name: string
   href: string
   icon: typeof LayoutDashboard
-  badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete" | "orphanPayments"
+  badgeKey?: "pending" | "tickets" | "upgrades" | "incomplete" | "orphanPayments" | "mouApplications"
   superAdminOnly?: boolean
   // When true, render as <a target="_blank"> instead of <Link>. Used for
   // cross-app shortcuts (e.g. the AMASI events admin portal at events.amasi.org).
@@ -70,6 +71,7 @@ const sections: NavSection[] = [
       { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },
       { name: "FMAS Holders", href: "/admin/fmas", icon: Award },
+      { name: "Event MOUs", href: "/admin/mou-applications", icon: FileSignature, badgeKey: "mouApplications" },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Campaigns", href: "/campaigns", icon: Send },
@@ -92,12 +94,13 @@ const sections: NavSection[] = [
 ]
 
 function useBadgeCounts(enabled: boolean) {
-  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number; orphanPayments: number }>({
+  const [counts, setCounts] = useState<{ pending: number; tickets: number; upgrades: number; incomplete: number; orphanPayments: number; mouApplications: number }>({
     pending: 0,
     tickets: 0,
     upgrades: 0,
     incomplete: 0,
     orphanPayments: 0,
+    mouApplications: 0,
   })
 
   useEffect(() => {
@@ -110,19 +113,22 @@ function useBadgeCounts(enabled: boolean) {
         // (head/count mode) — keeps /api/badges out of the payment-flow blast
         // radius. Independent fetch so a transient failure on one doesn't
         // zero the other.
-        const [badgesRes, orphanRes] = await Promise.all([
+        const [badgesRes, orphanRes, mouRes] = await Promise.all([
           fetch("/api/badges"),
           fetch("/api/admin/orphan-payments?count=1&days=30"),
+          fetch("/api/admin/mou-applications?count=1"),
         ])
         if (cancelled) return
         const badgesData = badgesRes.ok ? await badgesRes.json() : null
         const orphanData = orphanRes.ok ? await orphanRes.json() : null
+        const mouData = mouRes.ok ? await mouRes.json() : null
         setCounts((prev) => ({
           pending: badgesData?.pending ?? prev.pending,
           tickets: badgesData?.tickets ?? prev.tickets,
           upgrades: badgesData?.upgrades ?? prev.upgrades,
           incomplete: badgesData?.incomplete ?? prev.incomplete,
           orphanPayments: orphanData?.total ?? prev.orphanPayments,
+          mouApplications: mouData?.total ?? prev.mouApplications,
         }))
       } catch {
         // silently fail — badges just show 0

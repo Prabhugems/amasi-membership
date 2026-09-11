@@ -169,7 +169,6 @@ function FmasCertificateContent() {
 
   return (
     <div className="space-y-8 max-w-3xl mx-auto">
-      <style dangerouslySetInnerHTML={{ __html: certificateCSS }} />
 
       <div className="text-center space-y-3">
         <div className="mx-auto w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center">
@@ -255,6 +254,7 @@ function FmasCertificateContent() {
 export default function FmasCertificatePage() {
   return (
     <>
+      <style dangerouslySetInnerHTML={{ __html: certificateCSS }} />
       <AdminBackLink />
       <Suspense fallback={
         <div className="p-6 text-center">

@@ -33,6 +33,7 @@ import {
   Calendar,
   CreditCard,
   AlertCircle,
+  Vote,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -66,6 +67,7 @@ const sections: NavSection[] = [
       { name: "All Members", href: "/members", icon: Users },
       { name: "Search Member", href: "/search", icon: Search },
       { name: "Events", href: "https://events.amasi.org", icon: Calendar, external: true },
+      { name: "EC Nominations", href: "https://events.amasi.org/nomination-invites", icon: Vote, external: true },
       { name: "Reports", href: "/reports", icon: BarChart3 },
       { name: "Funnel", href: "/funnel", icon: TrendingDown },
       { name: "Upgrades", href: "/upgrades", icon: ArrowUpCircle, badgeKey: "upgrades" as const },

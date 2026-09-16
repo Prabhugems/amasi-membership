@@ -46,6 +46,7 @@ const DEFAULT_CERT_BOX_HEIGHT = 1054
 // the fixed box above stretches the image to the wrong aspect ratio.
 const CERT_BOX_HEIGHT_BY_YEAR: Record<number, number> = {
   2025: 978, // 2025.jpg is 1157x1600 (aspect ~0.723)
+  2024: 1059, // 2024.png is 1334x1999 (aspect ~0.667)
 }
 
 function MmasCertificateContent() {

@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         convocationDate: template.convocationDate,
         nameTopPct: template.nameTopPct,
         nameFontSizePx: template.nameFontSizePx,
+        courseNameTopPct: template.courseNameTopPct,
       },
     })
   } catch (e) {

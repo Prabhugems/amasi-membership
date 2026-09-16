@@ -68,6 +68,7 @@ async function main() {
         convocationPlace: extractConvocationPlace(course.convocationDateAndPlace),
         nameTopPct: null,
         nameFontSizePx: null,
+        courseNameTopPct: null,
       })
     }
   }

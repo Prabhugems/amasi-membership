@@ -50,6 +50,9 @@ export async function getTemplate(
       ? null
       : Number(data.name_top_pct),
     nameFontSizePx: data.name_font_size_px ?? null,
+    courseNameTopPct: data.course_name_top_pct === null || data.course_name_top_pct === undefined
+      ? null
+      : Number(data.course_name_top_pct),
   }
 }
 

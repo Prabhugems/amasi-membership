@@ -18,6 +18,7 @@ export interface CredentialTemplate {
   convocationPlace: string | null
   nameTopPct: number | null
   nameFontSizePx: number | null
+  courseNameTopPct: number | null
 }
 
 // Shape of an Airtable FMASIANS row (only the fields we care about).

@@ -39,7 +39,14 @@ const certificateCSS = `
 // template's aspect ratio, so this box uses its own dimensions rather than
 // reusing FMAS's 707x1000 (which would stretch this image).
 const CERT_BOX_WIDTH = 707
-const CERT_BOX_HEIGHT = 1054
+const DEFAULT_CERT_BOX_HEIGHT = 1054
+
+// Per-year override when a template's artwork aspect ratio differs from the
+// 2026 default (e.g. sourced at a different resolution/crop). Without this,
+// the fixed box above stretches the image to the wrong aspect ratio.
+const CERT_BOX_HEIGHT_BY_YEAR: Record<number, number> = {
+  2025: 978, // 2025.jpg is 1157x1600 (aspect ~0.723)
+}
 
 function MmasCertificateContent() {
   const searchParams = useSearchParams()
@@ -196,7 +203,7 @@ function MmasCertificateContent() {
           <div className="overflow-auto flex justify-center">
             <div
               ref={certRef}
-              style={{ width: `${CERT_BOX_WIDTH}px`, height: `${CERT_BOX_HEIGHT}px`, position: "relative", background: "#fff" }}
+              style={{ width: `${CERT_BOX_WIDTH}px`, height: `${CERT_BOX_HEIGHT_BY_YEAR[cert.year] ?? DEFAULT_CERT_BOX_HEIGHT}px`, position: "relative", background: "#fff" }}
             >
               <img
                 src={cert.templateUrl}
@@ -226,7 +233,7 @@ function MmasCertificateContent() {
               {cert.courseName && (
                 <div style={{
                   position: "absolute",
-                  top: "52.5%",
+                  top: `${typeof cert.courseNameTopPct === "number" ? cert.courseNameTopPct : 52.5}%`,
                   left: 0,
                   right: 0,
                   textAlign: "center",

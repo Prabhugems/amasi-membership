@@ -171,7 +171,8 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
     mouTitle: "MEMORANDUM OF UNDERSTANDING FOR RURAL SURGERY CAMP",
     mouVersion: 1,
     organizerNameLabel: "Organizing Secretary name",
-    minLeadDays: 45,
+    minLeadDays: 10,
+    leadTimeMessage: "Please choose a camp date at least 10 days from today.",
     requiresVenue: true,
     confirmationNote: "AMASI HQ completes processing within two weeks of receiving the request. Please do not announce or publicise the programme until you receive written approval.",
     agreements: [

@@ -58,9 +58,9 @@ describe("rural_program and workshop MouEventTypeConfig", () => {
     }
   })
 
-  it("workshop requires 10 days' lead time; rural_program requires 45", () => {
+  it("both require 10 days' lead time, matching their MOU's signed-MOU-before-event clause", () => {
     expect(workshop.minLeadDays).toBe(10)
-    expect(rural.minLeadDays).toBe(45)
+    expect(rural.minLeadDays).toBe(10)
   })
 
   it("both use 'Organizing Secretary name' as the organizer-name label", () => {

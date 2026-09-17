@@ -11,6 +11,10 @@ const STATUS_CONFIG: Record<ApplicationStatus, { label: string; dotClassName: st
   changes_requested: { label: "changes requested", dotClassName: "bg-warning" },
   approved: { label: "approved", dotClassName: "bg-success" },
   rejected: { label: "rejected", dotClassName: "bg-destructive" },
+  // The event already took place — a step past "approved", not a rejection
+  // path. Same dot color as approved (both are positive/terminal states);
+  // the label is what distinguishes them.
+  completed: { label: "completed", dotClassName: "bg-success" },
 }
 
 export function StatusBadge({

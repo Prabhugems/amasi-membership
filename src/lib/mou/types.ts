@@ -4,7 +4,7 @@ export type ApplicationTypeId =
   | "amasicon"
 
 export type ApplicationStatus =
-  | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected"
+  | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "completed"
 
 export interface AcademicEventApplication {
   id: string

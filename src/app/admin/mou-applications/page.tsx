@@ -70,6 +70,7 @@ const STATUSES: ApplicationStatus[] = [
   "under_review",
   "changes_requested",
   "approved",
+  "completed",
   "rejected",
 ]
 
@@ -78,6 +79,7 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   under_review: "Under review",
   changes_requested: "Changes requested",
   approved: "Approved",
+  completed: "Completed",
   rejected: "Rejected",
 }
 
@@ -393,7 +395,7 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               )}
 
-              {app.status === "approved" && (
+              {(app.status === "approved" || app.status === "completed") && (
                 <div className="rounded-md border border-border p-4">
                   <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                     MOU
@@ -704,7 +706,7 @@ export default function AdminMouApplicationsPage() {
                       <StatusBadge status={app.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {app.status === "approved" && app.mou_generated_url ? (
+                      {(app.status === "approved" || app.status === "completed") && app.mou_generated_url ? (
                         <a
                           href={app.mou_generated_url}
                           target="_blank"

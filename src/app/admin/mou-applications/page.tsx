@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   ScrollText,
   Loader2,
@@ -10,7 +10,9 @@ import {
   Filter,
   Download,
   Inbox,
+  Send,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -155,6 +157,7 @@ function Field({ label, value }: { label: string; value: string | number | null 
 }
 
 function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const qc = useQueryClient()
   const { data, isLoading, isError } = useQuery<DetailResponse>({
     queryKey: ["mou-admin-detail", id],
     queryFn: async () => {
@@ -162,6 +165,20 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
       if (!res.ok) throw new Error("Failed to load application")
       return res.json()
     },
+  })
+
+  const resendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/resend`, { method: "POST" })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to resend")
+      return json as { sent_to: string }
+    },
+    onSuccess: (json) => {
+      toast.success(`Resent to ${json.sent_to}`)
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+    },
+    onError: (e: Error) => toast.error(e.message),
   })
 
   const app = data?.application
@@ -222,9 +239,28 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
         {app && (
           <>
             <DialogHeader>
-              <div className="flex items-center gap-2 flex-wrap">
-                <DialogTitle>{eventLabel(app)}</DialogTitle>
-                <StatusBadge status={app.status} />
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <DialogTitle>{eventLabel(app)}</DialogTitle>
+                  <StatusBadge status={app.status} />
+                </div>
+                {(app.status === "submitted" || app.status === "under_review" || app.status === "changes_requested") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={resendMutation.isPending}
+                    onClick={() => resendMutation.mutate()}
+                    title="Re-sends the approval-request email to the Hon. Secretary with a fresh link — use if the original was missed"
+                  >
+                    {resendMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    Resend to Secretary
+                  </Button>
+                )}
               </div>
               <DialogDescription>
                 {getEventTypeConfig(app.application_type_id)?.label} — submitted by {app.organizer_name}

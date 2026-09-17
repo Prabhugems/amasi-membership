@@ -100,9 +100,11 @@ export function validateTypeSpecificFields(config: MouEventTypeConfig, body: Bod
       // Genuinely not provided (preferred_date_2 is optional) — skip.
       // Provided but the wrong shape (a non-string, or an unparseable
       // string) is NOT the same as "not provided" — this validator is the
-      // authoritative server-side enforcement boundary for the 45-day lead
-      // time, so a malformed value must be rejected, not silently passed
-      // through via NaN < minDate always evaluating to false.
+      // authoritative server-side enforcement boundary for each type's
+      // minLeadDays, so a malformed value must be rejected, not silently
+      // passed through via NaN < minDate always evaluating to false. A
+      // past-dated event is rejected the same way: it's always further
+      // than minLeadDays in the past, not just "less than" minDate.
       if (raw === undefined || raw === null || raw === "") continue
       const d = typeof raw === "string" ? new Date(raw) : new Date(NaN)
       if (Number.isNaN(d.getTime()) || d < minDate) {

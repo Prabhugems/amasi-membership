@@ -98,7 +98,7 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
     mouTitle: "MEMORANDUM OF UNDERSTANDING FOR WORKSHOP/CME/CONFERENCE (OTHER THAN AMASICON)",
     mouVersion: 1,
     organizerNameLabel: "Organizing Secretary name",
-    minLeadDays: 45,
+    minLeadDays: 15,
     requiresVenue: true,
     confirmationNote: "AMASI HQ completes processing within two weeks of receiving the request. Please do not announce or publicise the programme until you receive written approval.",
     eventSubtypeWarning: "The MOU covers events other than AMASICON. Annual conference bids have their own application at /mou/amasicon.",

@@ -15,6 +15,39 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
 ]
 
+// Exported (not inlined in `headers()` below) so __tests__/next-config-headers.test.ts
+// can assert on it directly, without going through the Sentry/bundle-analyzer
+// wrapping this file's default export gets. Every route gets `securityHeaders`
+// via the catch-all; a later, more specific `source` overrides one key for a
+// narrower path — see "Header Overriding Behavior" in Next's headers() docs
+// (last matching rule for a given key wins). This is how the X-Frame-Options
+// exception below works, and how any future same-origin-framing need should
+// be added: don't touch `securityHeaders`, append another scoped rule after it.
+export async function headerRules() {
+  // CORS headers for /api/* are owned by src/middleware.ts (dynamic
+  // origin reflection against an allowlist). Static `headers()` can only
+  // return one Access-Control-Allow-Origin value, which broke every
+  // *.amasi.org subdomain trying to call our public APIs from the browser.
+  return [
+    {
+      source: "/(.*)",
+      headers: securityHeaders,
+    },
+    {
+      // The admin lightbox (src/app/pending/page.tsx) frames this route in
+      // an <iframe> to preview PDFs. X-Frame-Options: DENY above blocks ALL
+      // framing, same-origin included, so the preview always failed with
+      // "membership.amasi.org refused to connect." Listed after the
+      // catch-all so it wins (last matching header for a given key wins —
+      // see Next.js headers() "Header Overriding Behavior"). SAMEORIGIN
+      // still blocks any other site from framing a document, which is all
+      // the clickjacking protection this route needs.
+      source: "/api/applications/:id/document/:key",
+      headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+    },
+  ]
+}
+
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
@@ -22,30 +55,7 @@ const nextConfig: NextConfig = {
     },
     optimizePackageImports: ["lucide-react", "recharts", "framer-motion"],
   },
-  async headers() {
-    // CORS headers for /api/* are owned by src/middleware.ts (dynamic
-    // origin reflection against an allowlist). Static `headers()` can only
-    // return one Access-Control-Allow-Origin value, which broke every
-    // *.amasi.org subdomain trying to call our public APIs from the browser.
-    return [
-      {
-        source: "/(.*)",
-        headers: securityHeaders,
-      },
-      {
-        // The admin lightbox (src/app/pending/page.tsx) frames this route in
-        // an <iframe> to preview PDFs. X-Frame-Options: DENY above blocks ALL
-        // framing, same-origin included, so the preview always failed with
-        // "membership.amasi.org refused to connect." Listed after the
-        // catch-all so it wins (last matching header for a given key wins —
-        // see Next.js headers() "Header Overriding Behavior"). SAMEORIGIN
-        // still blocks any other site from framing a document, which is all
-        // the clickjacking protection this route needs.
-        source: "/api/applications/:id/document/:key",
-        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
-      },
-    ]
-  },
+  headers: headerRules,
 };
 
 export default withSentryConfig(withBundleAnalyzer(nextConfig), {

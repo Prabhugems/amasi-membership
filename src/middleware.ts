@@ -246,6 +246,8 @@ const PUBLIC_API_ROUTES = [
 // be wrong (we DO want to keep rejecting these). Match is exact OR prefix
 // + "/" so a future /api/verifyPayment/foo would also be muted, but a
 // look-alike like /api/verifyPaymentX is not.
+const ADMIN_DOCUMENT_PROXY_RE = /^\/api\/applications\/[^/]+\/document\/[^/]+$/
+
 const KNOWN_DEAD_LEGACY_PATHS = [
   "/api/verifyPayment",
 ]
@@ -421,7 +423,19 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
         pathname.startsWith("/api/admin/") ||
         pathname.startsWith("/api/dashboard") ||
         pathname === "/api/applications/list" ||
-        pathname === "/api/applications/incomplete"
+        pathname === "/api/applications/incomplete" ||
+        // /api/applications/<id>/document/<key> — the admin dashboard's
+        // document proxy. Matched by shape, not prefix, because the
+        // /api/applications/[id] namespace is split between admin and member
+        // routes (see carve-out 2 above); a prefix skip would mute genuine
+        // member-route regressions too.
+        //
+        // This one is louder than its siblings if left uncarved: /pending
+        // renders one <img> PER DOCUMENT, so a single page view by an admin
+        // whose cookie has expired fires a Sentry message for every document
+        // on screen, not one per poll. That is the /api/applications/list
+        // incident (145 events / 16 days) multiplied by the document count.
+        ADMIN_DOCUMENT_PROXY_RE.test(pathname)
       if (
         !token &&
         !isAdminOnlyByDesign &&

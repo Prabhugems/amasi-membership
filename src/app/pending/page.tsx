@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "next/navigation"
+import { documentHref, documentKind, hasDocument, type ApplicationDocument } from "@/lib/application-documents"
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -126,10 +127,11 @@ function ApplicationTimeline({ app }: { app: any }) {
 }
 
 // ─── Document thumbnail component ───────────────────────────────────────────
-function DocThumbnail({ docKey, doc, onView }: { docKey: string; doc: any; onView: () => void }) {
+function DocThumbnail({ applicationId, docKey, doc, onView }: { applicationId: string; docKey: string; doc: ApplicationDocument; onView: () => void }) {
   const label = DOC_LABELS[docKey as DocType] || docKey.replace(/_/g, " ")
-  const url = doc.fileUrl || doc.url || null
-  const isImage = url && /\.(jpg|jpeg|png|webp|gif)/i.test(url)
+  const present = hasDocument(doc)
+  const url = present ? documentHref(applicationId, docKey) : null
+  const isImage = documentKind(doc) === "image"
 
   return (
     <button
@@ -220,7 +222,7 @@ function PendingPageInner() {
   const [rejectReason, setRejectReason] = useState("")
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [focusIndex, setFocusIndex] = useState(-1)
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<{ href: string; kind: ReturnType<typeof documentKind> } | null>(null)
   const [internalNote, setInternalNote] = useState("")
   const [showNotes, setShowNotes] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
@@ -529,8 +531,8 @@ function PendingPageInner() {
       e.preventDefault()
       setActionMode("reject")
     } else if (e.key === "Escape") {
-      if (lightboxUrl) {
-        setLightboxUrl(null)
+      if (lightbox) {
+        setLightbox(null)
       } else if (expandedId) {
         setExpandedId(null)
         setActionMode(null)
@@ -540,7 +542,7 @@ function PendingPageInner() {
     }
     // Note: '?' handler removed — the global ShortcutHelp listener handles it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applications, focusIndex, expandedId, approveMutation, lightboxUrl])
+  }, [applications, focusIndex, expandedId, approveMutation, lightbox])
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown)
@@ -903,8 +905,8 @@ function PendingPageInner() {
                   )}
 
                   <Avatar className="h-12 w-12 shrink-0 border shadow-sm">
-                    {(profileDoc?.fileUrl || profileDoc?.url) && (
-                      <AvatarImage src={profileDoc?.fileUrl || profileDoc?.url} alt={fullName} />
+                    {hasDocument(profileDoc) && (
+                      <AvatarImage src={documentHref(app.id, "profile")} alt={fullName} />
                     )}
                     <AvatarFallback className="text-sm font-semibold bg-primary/5 text-primary">
                       {getInitials(fullName)}
@@ -1146,9 +1148,9 @@ function PendingPageInner() {
                       <User className="h-3.5 w-3.5" /> Personal Details
                     </p>
                     <div className="flex items-start gap-4">
-                      {(profileDoc?.fileUrl || profileDoc?.url) && (
-                        <button onClick={() => setLightboxUrl(profileDoc?.fileUrl || profileDoc.url)} className="shrink-0">
-                          <img src={profileDoc?.fileUrl || profileDoc.url} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
+                      {hasDocument(profileDoc) && (
+                        <button onClick={() => setLightbox({ href: documentHref(app.id, "profile"), kind: documentKind(profileDoc) })} className="shrink-0">
+                          <img src={documentHref(app.id, "profile")} alt="Profile" className="h-20 w-20 rounded-xl object-cover border shadow-sm hover:shadow-md transition-shadow" />
                         </button>
                       )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 flex-1 text-sm">
@@ -1366,11 +1368,11 @@ function PendingPageInner() {
                       {Object.entries(docs).map(([key, doc]: [string, any]) => (
                         <DocThumbnail
                           key={key}
+                          applicationId={app.id}
                           docKey={key}
                           doc={doc}
                           onView={() => {
-                            const url = doc.fileUrl || doc.url
-                            if (url) setLightboxUrl(url)
+                            if (hasDocument(doc)) setLightbox({ href: documentHref(app.id, key), kind: documentKind(doc) })
                             else toast.error("No document URL available")
                           }}
                         />
@@ -1752,17 +1754,17 @@ function PendingPageInner() {
       />
 
       {/* Document Lightbox */}
-      <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
+      <Dialog open={!!lightbox} onOpenChange={() => setLightbox(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
           <DialogHeader className="p-4 pb-0">
             <DialogTitle className="text-sm font-semibold">Document Preview</DialogTitle>
           </DialogHeader>
-          {lightboxUrl && (
+          {lightbox && (
             <div className="p-4 pt-2 flex items-center justify-center max-h-[80vh] overflow-auto">
-              {/\.(pdf)/i.test(lightboxUrl) ? (
-                <iframe src={lightboxUrl} className="w-full h-[70vh] rounded-lg border" />
+              {lightbox.kind === "pdf" ? (
+                <iframe src={lightbox.href} className="w-full h-[70vh] rounded-lg border" />
               ) : (
-                <img src={lightboxUrl} alt="Document" className="max-w-full max-h-[70vh] object-contain rounded-lg" />
+                <img src={lightbox.href} alt="Document" className="max-w-full max-h-[70vh] object-contain rounded-lg" />
               )}
             </div>
           )}

@@ -3,7 +3,6 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { scoreApplication, toScorerFormShape } from "@/lib/ai-approval"
-import { signDocumentsAcrossRows } from "@/lib/storage-url"
 
 export async function GET(request: NextRequest) {
   const session = await getAdminSession()
@@ -44,12 +43,19 @@ export async function GET(request: NextRequest) {
     }
 
     const healed = await autoHealBuggyScores(supabase, data || [])
-    // documents.*.fileUrl is stored as a bare storage path since Phase B
-    // (src/lib/storage-url.ts) — sign at the API boundary so the admin
-    // dashboard's <img>/lightbox tags get a loadable URL.
-    const signed = await signDocumentsAcrossRows(healed)
 
-    return Response.json({ status: true, data: signed, total: count || 0 })
+    // documents.*.fileUrl goes back as the STORED value — a bare storage path,
+    // or a legacy public URL on older rows. Deliberately not signed.
+    //
+    // This used to hand the browser a signed Supabase URL per document. A
+    // signed URL is a bearer token for a doctor's certificate: whoever holds
+    // the string can fetch the file for the next hour, from anywhere, signed
+    // in or not. The dashboard now addresses documents by (application, key)
+    // through /api/applications/[id]/document/[key], which re-checks the admin
+    // session on every request, so no credential needs to leave the server.
+    // The client still reads fileUrl, but only for its file extension, to
+    // decide between an <img> and an <iframe>.
+    return Response.json({ status: true, data: healed, total: count || 0 })
   } catch (error: any) {
     return Response.json({ status: false, message: error.message }, { status: 500 })
   }

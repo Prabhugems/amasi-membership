@@ -32,6 +32,18 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      {
+        // The admin lightbox (src/app/pending/page.tsx) frames this route in
+        // an <iframe> to preview PDFs. X-Frame-Options: DENY above blocks ALL
+        // framing, same-origin included, so the preview always failed with
+        // "membership.amasi.org refused to connect." Listed after the
+        // catch-all so it wins (last matching header for a given key wins —
+        // see Next.js headers() "Header Overriding Behavior"). SAMEORIGIN
+        // still blocks any other site from framing a document, which is all
+        // the clickjacking protection this route needs.
+        source: "/api/applications/:id/document/:key",
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      },
     ]
   },
 };

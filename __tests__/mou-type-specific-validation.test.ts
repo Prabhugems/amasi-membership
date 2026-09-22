@@ -42,9 +42,23 @@ describe("validateTypeSpecificFields — rural_program", () => {
     expect(result).toContain("rural setting")
   })
 
-  it("rejects a preferred_date_1 less than 45 days out", () => {
-    const result = validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: futureDate(10) })
-    expect(result).toContain("45 days")
+  // Rural camps require 10 days' notice, not 45 — 9679afe tightened these gates
+  // and this test kept asserting the old rule while feeding a date that sits
+  // exactly ON the new boundary, so it was asserting against a legitimate pass.
+  it("rejects a preferred_date_1 inside the lead time", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: futureDate(3) })
+    expect(result).toContain("10 days")
+  })
+
+  // The boundary itself is allowed — pins which side of the comparison is
+  // inclusive, which is the part a future change to minLeadDays would break.
+  it("accepts a preferred_date_1 exactly on the lead-time boundary", () => {
+    expect(validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: futureDate(10) })).toBeNull()
+  })
+
+  it("rejects a preferred_date_1 in the past", () => {
+    const result = validateTypeSpecificFields(rural, { ...validRuralBody, preferred_date_1: futureDate(-1) })
+    expect(result).toContain("10 days")
   })
 
   it("rejects an unparseable preferred_date_1 string instead of silently passing it", () => {

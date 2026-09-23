@@ -30,6 +30,7 @@ interface RenameTarget {
   newShortName: string
   oldOrganizerName: string | null
   newOrganizerName: string
+  shortNameSkippedReason?: string
 }
 
 // Deliberately not importing getEventTypeConfig from event-type-config.ts —
@@ -71,10 +72,23 @@ async function findTargets(supabase: AdminClient): Promise<RenameTarget[]> {
     if (!eventRow || eventRow.status === "cancelled") continue // don't bother renaming a cancelled event
 
     const typeLabel = await getTypeLabel(supabase, app.application_type_id)
-    const newShortName = buildShortName(app.event_name, typeLabel, app.venue_city, app.venue_state)
+    const computedShortName = buildShortName(app.event_name, typeLabel, app.venue_city, app.venue_state)
     const newOrganizerName = app.organizer_name
 
-    const shortNameChanged = eventRow.short_name !== newShortName
+    // application.event_name is blank for some pre-existing rows, which makes
+    // buildShortName() fall back to the bare type label ("FMAS Course",
+    // "NextGen Organizer") — identical to the flat-title bug this backfill
+    // exists to fix. If the event's CURRENT short_name already has something
+    // more specific than that bare label (typically a course/batch number
+    // set by an earlier, different code path), renaming would regress it.
+    // Skip the short_name change for those rows; still update organizer_name,
+    // which is purely additive (null -> a real value) and never regresses.
+    const eventNameBlank = !app.event_name
+    const oldHasExtraInfo = !!eventRow.short_name && eventRow.short_name !== typeLabel
+    const wouldRegress = eventNameBlank && oldHasExtraInfo
+    const newShortName = wouldRegress ? (eventRow.short_name as string) : computedShortName
+
+    const shortNameChanged = !wouldRegress && eventRow.short_name !== newShortName
     const organizerNameChanged = eventRow.organizer_name !== newOrganizerName
     if (!shortNameChanged && !organizerNameChanged) continue
 
@@ -85,6 +99,9 @@ async function findTargets(supabase: AdminClient): Promise<RenameTarget[]> {
       newShortName,
       oldOrganizerName: eventRow.organizer_name,
       newOrganizerName,
+      shortNameSkippedReason: wouldRegress
+        ? `skipped: event_name is blank, current short_name "${eventRow.short_name}" is more specific than the computed fallback "${computedShortName}"`
+        : undefined,
     })
   }
   return targets
@@ -116,7 +133,11 @@ async function main() {
   log("─".repeat(100))
   for (const t of targets) {
     log(`  application ${t.applicationId} / event ${t.eventId}`)
-    log(`    short_name:      "${t.oldShortName ?? "(null)"}" → "${t.newShortName}"`)
+    if (t.shortNameSkippedReason) {
+      log(`    short_name:      unchanged — ${t.shortNameSkippedReason}`)
+    } else {
+      log(`    short_name:      "${t.oldShortName ?? "(null)"}" → "${t.newShortName}"`)
+    }
     log(`    organizer_name:  "${t.oldOrganizerName ?? "(null)"}" → "${t.newOrganizerName}"`)
   }
   log("─".repeat(100))
@@ -143,18 +164,18 @@ async function main() {
         .update({ short_name: t.newShortName, organizer_name: t.newOrganizerName, updated_at: new Date().toISOString() })
         .eq("id", t.eventId)
       if (error) throw new Error(error.message)
+      const changes: Record<string, { from: string | null; to: string }> = {
+        organizer_name: { from: t.oldOrganizerName, to: t.newOrganizerName },
+      }
+      if (!t.shortNameSkippedReason) {
+        changes.short_name = { from: t.oldShortName, to: t.newShortName }
+      }
       await logAdminAction({
         adminEmail: "system@amasi.org",
         action: "mou_event_renamed",
         entityType: "event",
         entityId: t.eventId,
-        details: {
-          changes: {
-            short_name: { from: t.oldShortName, to: t.newShortName },
-            organizer_name: { from: t.oldOrganizerName, to: t.newOrganizerName },
-          },
-          fieldCount: 2,
-        },
+        details: { changes, fieldCount: Object.keys(changes).length },
       })
       succeeded++
       log(`  ✓ event ${t.eventId}  (${succeeded}/${targets.length})`)

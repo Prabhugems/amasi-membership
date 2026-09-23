@@ -26,6 +26,15 @@ const DIRECTOR_ROLE_BY_APPLICATION_TYPE: Partial<Record<ApplicationTypeId, strin
   slcp: "director_slcp",
 }
 
+// Associate/Assistant Directors under the primary National Director above —
+// also FYI'd, per sql/045_academic_event_associate_director_roles.sql.
+// fmas has none; nextgen has 2 Associate Directors; slcp has 1 Assistant
+// Director.
+const ASSOCIATE_DIRECTOR_ROLES_BY_APPLICATION_TYPE: Partial<Record<ApplicationTypeId, string[]>> = {
+  nextgen: ["director_nextgen_associate_1", "director_nextgen_associate_2"],
+  slcp: ["director_slcp_assistant"],
+}
+
 const REQUIRED_FIELDS = [
   "application_type_id", "organizer_name", "email", "phone_number",
   "primary_institution", "preferred_date_1",
@@ -302,6 +311,26 @@ export async function POST(request: NextRequest) {
       Sentry.captureException(err, {
         tags: { component: "mou-applications", op: "notify-director" },
         extra: { applicationId: application.id, directorRole },
+      })
+    }
+  }
+
+  // Associate/Assistant Directors — each is its own try/catch so one bad
+  // role assignment (or one email failure) doesn't skip the others in the
+  // list, same failure-isolation principle as every notification above.
+  for (const associateRole of ASSOCIATE_DIRECTOR_ROLES_BY_APPLICATION_TYPE[body.application_type_id] ?? []) {
+    try {
+      const associate = await getRoleAssignment(associateRole)
+      if (associate) {
+        const token = await createApprovalToken(application.id, associateRole, false)
+        const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
+        await sendFyiNotification(application, typeConfig.label, associate.email, associateRole, viewUrl)
+      }
+    } catch (err) {
+      console.error(`[mou-applications] associate director FYI notification failed for application ${application.id}:`, err)
+      Sentry.captureException(err, {
+        tags: { component: "mou-applications", op: "notify-associate-director" },
+        extra: { applicationId: application.id, associateRole },
       })
     }
   }

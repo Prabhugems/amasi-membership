@@ -55,6 +55,9 @@ const ROLE_LABELS: Record<string, string> = {
   director_fmas: "National Director, FMAS Academics",
   director_nextgen: "National Director, NextGen",
   director_slcp: "National Director, SLCP",
+  director_nextgen_associate_1: "Associate Director, NextGen",
+  director_nextgen_associate_2: "Associate Director, NextGen",
+  director_slcp_assistant: "Assistant Director, SLCP",
 }
 
 function roleLabel(role: string): string {

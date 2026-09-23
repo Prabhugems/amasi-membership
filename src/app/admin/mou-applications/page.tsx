@@ -245,6 +245,29 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const [returnNote, setReturnNote] = useState("")
+  const [showReturnInput, setShowReturnInput] = useState(false)
+  const reviewMutation = useMutation({
+    mutationFn: async (vars: { action: "accept" | "return"; note?: string }) => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/report-review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vars),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to save")
+      return json as { reportStatus: "accepted" | "returned" }
+    },
+    onSuccess: (json) => {
+      toast.success(json.reportStatus === "accepted" ? "Report accepted — application closed" : "Report returned to organiser")
+      setShowReturnInput(false)
+      setReturnNote("")
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+      qc.invalidateQueries({ queryKey: ["mou-admin-list"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const app = data?.application
   const remarks = data?.remarks ?? []
 
@@ -598,8 +621,16 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   {app.report_submitted_at ? (
                     <div className="space-y-2">
                       <p className="text-sm text-foreground">
-                        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-success mr-1.5 align-middle" />
+                        <span
+                          className={cn(
+                            "inline-flex h-1.5 w-1.5 rounded-full mr-1.5 align-middle",
+                            app.report_status === "accepted" ? "bg-success" : app.report_status === "returned" ? "bg-warning" : "bg-muted-foreground"
+                          )}
+                        />
                         submitted {formatDate(app.report_submitted_at)}
+                        {app.report_status === "accepted" && " — accepted"}
+                        {app.report_status === "returned" && " — returned for changes"}
+                        {app.report_status === "submitted" && " — awaiting review"}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {app.report_documents.map((d, i) => (
@@ -612,6 +643,50 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                         ))}
                       </div>
                       {app.report_notes && <p className="text-sm text-muted-foreground">{app.report_notes}</p>}
+                      {app.report_status === "returned" && app.report_return_note && (
+                        <div className="rounded-md border border-warning/40 bg-warning/5 p-2.5 text-sm">
+                          <span className="font-semibold">Return note: </span>{app.report_return_note}
+                        </div>
+                      )}
+                      {app.report_status === "submitted" && (
+                        <div className="pt-1 space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              disabled={reviewMutation.isPending}
+                              onClick={() => reviewMutation.mutate({ action: "accept" })}
+                            >
+                              {reviewMutation.isPending && reviewMutation.variables?.action === "accept" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Accept"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={reviewMutation.isPending}
+                              onClick={() => setShowReturnInput((v) => !v)}
+                            >
+                              Return with note
+                            </Button>
+                          </div>
+                          {showReturnInput && (
+                            <div className="space-y-2">
+                              <textarea
+                                value={returnNote}
+                                onChange={(e) => setReturnNote(e.target.value)}
+                                placeholder="What needs to change before this can be accepted?"
+                                className="w-full rounded-md border border-border bg-background p-2 text-sm min-h-20"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={reviewMutation.isPending || !returnNote.trim()}
+                                onClick={() => reviewMutation.mutate({ action: "return", note: returnNote.trim() })}
+                              >
+                                {reviewMutation.isPending && reviewMutation.variables?.action === "return" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Send return note"}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div>

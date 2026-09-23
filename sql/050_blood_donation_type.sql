@@ -8,7 +8,7 @@
 insert into public.academic_event_types
   (id, label, owning_entity, requires_zone, approver_role, notify_roles, mou_template_key, active, default_event_routing)
 values
-  ('blood_donation', 'Blood Donation Drive', 'amasi', false, 'hon_secretary', '["president"]'::jsonb, 'blood_donation', true, 'none');
+  ('blood_donation', 'Blood Donation Drive', 'amasi', false, 'hon_secretary', array['president'], 'blood_donation', true, 'none');
 
 -- 050 also settles issue #5 (AMASICON default routing) from the same
 -- follow-up doc: zero applications have ever been submitted through the

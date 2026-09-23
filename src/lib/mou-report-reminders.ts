@@ -27,6 +27,21 @@ function eventDateCutoff(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
+// Statuses that mean "this application was never approved, or the outcome
+// was explicitly negative" — never carries a report obligation. Everything
+// else (approved, completed, and any future post-approval status this list
+// hasn't been updated for) is included by default. Was previously an
+// allowlist (["approved","completed"]) — switched to this denylist 2026-09-23
+// after a live check: two completed applications were correctly picked up
+// by findCandidates (that allowlist DID include "completed" already, and
+// the date math was already correct — the actual bug was that the cron had
+// never executed for real in production, unrelated to this filter), but an
+// allowlist here is still the same "silently excludes a status nobody
+// thought to add" risk this codebase has been burned by before (see
+// AGENTS.md's PUBLIC_API_ROUTES allowlist history). "approved at any
+// point" is a denylist by nature — flip it to match.
+const REPORT_OBLIGATION_EXCLUDED_STATUSES = ["submitted", "under_review", "changes_requested", "rejected"]
+
 // Applications whose event date (finalized_date, falling back to
 // preferred_date_1) is on or before `cutoff`, with `column` still unset —
 // the shared shape all three stages below query.
@@ -38,7 +53,7 @@ async function findCandidates(
   const { data, error } = await supabase
     .from("academic_event_applications")
     .select("*")
-    .in("status", ["approved", "completed"])
+    .not("status", "in", `(${REPORT_OBLIGATION_EXCLUDED_STATUSES.join(",")})`)
     .is("report_submitted_at", null)
     .is(column, null)
     .or(`and(finalized_date.not.is.null,finalized_date.lte.${cutoff}),and(finalized_date.is.null,preferred_date_1.lte.${cutoff})`)

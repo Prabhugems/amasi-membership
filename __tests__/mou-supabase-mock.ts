@@ -167,8 +167,16 @@ export function createMockSupabase(seed: MockTables = {}) {
         return builder
       },
       not(col: string, op: string, val: unknown) {
-        if (op === "is") filters.push((r) => (r[col] ?? null) !== val)
-        else filters.push((r) => r[col] !== val)
+        if (op === "is") {
+          filters.push((r) => (r[col] ?? null) !== val)
+        } else if (op === "in") {
+          // PostgREST .not(col, "in", "(a,b,c)") — val is a literal
+          // parenthesised, comma-separated string, not a JS array.
+          const list = String(val).replace(/^\(|\)$/g, "").split(",")
+          filters.push((r) => !list.includes(r[col] as string))
+        } else {
+          filters.push((r) => r[col] !== val)
+        }
         return builder
       },
       gt(col: string, val: unknown) {

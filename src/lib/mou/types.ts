@@ -67,6 +67,10 @@ export interface AcademicEventApplication {
   report_reminder_7_sent_at: string | null
   report_reminder_15_sent_at: string | null
   report_escalation_sent_at: string | null
+  report_status: "submitted" | "accepted" | "returned" | null
+  report_reviewed_by: string | null
+  report_reviewed_at: string | null
+  report_return_note: string | null
   registration_required: boolean | null
   event_routing: "amasi" | "college" | "none" | null
   created_at: string

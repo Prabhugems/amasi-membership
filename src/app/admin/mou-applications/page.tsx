@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   ScrollText,
@@ -811,19 +812,27 @@ export default function AdminMouApplicationsPage() {
   return (
     <div className="space-y-6">
       {/* Eyebrow + title */}
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-md border bg-card flex items-center justify-center shrink-0">
-          <ScrollText className="h-5 w-5 text-primary" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-md border bg-card flex items-center justify-center shrink-0">
+            <ScrollText className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+              Academic Event MOU Workflow
+            </p>
+            <h1 className="text-2xl font-bold tracking-tight">MOU Applications</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Record and audit view of academic event hosting applications — {totalAll.toLocaleString("en-IN")} total.
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-            Academic Event MOU Workflow
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight">MOU Applications</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Record and audit view of academic event hosting applications — {totalAll.toLocaleString("en-IN")} total.
-          </p>
-        </div>
+        <Button asChild variant="outline" size="sm" className="gap-1.5 shrink-0">
+          <Link href="/api/admin/mou-applications/export">
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Link>
+        </Button>
       </div>
 
       {/* Stats */}

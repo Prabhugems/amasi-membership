@@ -192,7 +192,12 @@ export async function sendOutcomeEmail(
   typeLabel: string,
   outcome: "approved" | "rejected" | "changes_requested",
   rejectionReason?: string | null,
-  mouPdfBuffer?: Buffer
+  mouPdfBuffer?: Buffer,
+  // Set only when event_routing !== 'none' and the event was actually
+  // created (src/app/api/mou/review/[token]/decide/route.ts) — folded into
+  // the same approved-outcome email rather than a second one, per the
+  // event-routing feature's design.
+  eventDetails?: { name: string; startDate: string | null; eventsUrl: string }
 ): Promise<void> {
   const subjectByOutcome = {
     approved: `Your ${typeLabel} application has been approved`,
@@ -212,8 +217,14 @@ export async function sendOutcomeEmail(
   const nextStepsLine =
     `<p style="margin:16px 0 0;">There is no resubmission flow at this time. If you have questions, please contact the AMASI Secretary` +
     ` at <a href="mailto:amasi.india@gmail.com" style="color:#0f766e;">amasi.india@gmail.com</a>.</p>`
+  const eventBlock = eventDetails
+    ? `<div style="margin:16px 0;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:13px;">
+        <strong>${escapeHtml(eventDetails.name)}</strong>${eventDetails.startDate ? ` — ${new Date(eventDetails.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}<br/>
+        Your event is live at <a href="${eventDetails.eventsUrl}" style="color:#0f766e;">${eventDetails.eventsUrl}</a> — you've been invited as its organiser (check your inbox for that invite) so you can configure tickets and manage registrations directly.
+      </div>`
+    : ""
   const bodyByOutcome = {
-    approved: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">Congratulations — your application has been approved. The signed MOU is attached to this email.</p><p style="margin:0;color:#64748b;font-size:13px;">Per the MOU, a comprehensive report with photographs is due within 15 days of the event — you can submit it anytime after from your <a href="${reportLinkUrl(application)}" style="color:#0f766e;">status page</a>.</p>`,
+    approved: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">Congratulations — your application has been approved. The signed MOU is attached to this email.</p>${eventBlock}<p style="margin:0;color:#64748b;font-size:13px;">Per the MOU, a comprehensive report with photographs is due within 15 days of the event — you can submit it anytime after from your <a href="${reportLinkUrl(application)}" style="color:#0f766e;">status page</a>.</p>`,
     rejected: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">Your application was not approved.</p>${reasonBlock}${nextStepsLine}`,
     changes_requested: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">The Hon. Secretary has requested changes.</p>${reasonBlock}${nextStepsLine}`,
   }

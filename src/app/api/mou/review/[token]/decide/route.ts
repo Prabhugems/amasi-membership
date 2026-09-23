@@ -1,13 +1,15 @@
 // @auth: public but token-gated — the Hon. Secretary's one decision.
 import { NextRequest } from "next/server"
 import { verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
-import { getApplicationById, updateApplicationStatus } from "@/lib/mou/supabase-helpers"
+import { getApplicationById, updateApplicationStatus, getRoleAssignment } from "@/lib/mou/supabase-helpers"
 import { generateMouPdf } from "@/lib/mou/mou-pdf"
 import { sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
 import { getEventTypeConfig, isMouEventTypeConfig } from "@/lib/mou/event-type-config"
 import { markCounterSigned } from "@/lib/mou/mou-signature"
+import { createEventForApplication } from "@/lib/mou/event-routing"
+import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
 import { createAdminClient } from "@/lib/supabase"
-import type { ApplicationTypeId, MouSignature } from "@/lib/mou/types"
+import type { MouSignature } from "@/lib/mou/types"
 
 const VALID_ACTIONS = ["approved", "rejected", "changes_requested"] as const
 // notes becomes rejection_reason, which sendOutcomeEmail (src/lib/mou/notify.ts)
@@ -15,74 +17,6 @@ const VALID_ACTIONS = ["approved", "rejected", "changes_requested"] as const
 // send an absurdly long email body, independent of the HTML-escaping done
 // on the notify.ts side.
 const MAX_NOTES_LENGTH = 500
-
-// public.events.event_type is a Postgres enum (conference | course | workshop
-// | webinar | symposium) with NOT NULL + a 'conference' default — confirmed
-// against the live shared DB (project jmdwxymbgxwdsmcwbahp). Map our
-// application types onto it so the amasi-faculty-management dashboard shows
-// a plausible category instead of every auto-created event defaulting to
-// "conference".
-const EVENT_TYPE_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "conference" | "course" | "workshop" | "webinar" | "symposium"> = {
-  fmas: "course",
-  mmas: "course",
-  dmas: "course",
-  workshop: "workshop",
-  amasicon: "conference",
-  rural_program: "workshop",
-  slcp: "workshop",
-  nextgen: "workshop",
-  meet_the_master: "workshop",
-  zonal_event: "conference",
-}
-
-// public.events.tenant is NOT NULL with a 'college' default — this insert
-// never set it, so every auto-created event silently fell into the
-// 'college' bucket regardless of type. That's accidentally right for
-// fmas/mmas/dmas (owning_entity 'college_of_amasi' in academic_event_types,
-// sql/039's seed) but wrong for everything else (owning_entity 'amasi'),
-// which made those events invisible on events.amasi.org's dashboard —
-// confirmed live: a zonal_event and a nextgen application both landed in
-// tenant='college' while their actual owning_entity is 'amasi'. Mirrors
-// COLLEGE_OF_MAS_TYPES in src/lib/mou/mou-pdf.tsx.
-const TENANT_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "college" | "amasi"> = {
-  fmas: "college",
-  mmas: "college",
-  dmas: "college",
-  workshop: "amasi",
-  amasicon: "amasi",
-  rural_program: "amasi",
-  slcp: "amasi",
-  nextgen: "amasi",
-  meet_the_master: "amasi",
-  zonal_event: "amasi",
-}
-
-// public.events.created_by (nullable, no default) was never set on this
-// insert either — every auto-created event sat with created_by=null.
-// events.amasi.org's dashboard appears to scope its Events list to events
-// the logged-in admin created (confirmed live: the only 2 events with a
-// non-null created_by both belong to this account, and every MOU-flow
-// event, despite existing with real tenant/ticket data, showed as 0 total
-// for that same admin). There's no "system" service account in that app's
-// `users` table to attribute these to instead, so this is the confirmed
-// AMASI super_admin account (users.id, platform_role='super_admin') —
-// a workaround for a missing system-account concept there, not a claim
-// that this person personally created every approved event.
-const EVENT_CREATED_BY_USER_ID = "d316e077-9f56-4e58-aff7-c4c367c77f9d"
-
-// public.events.slug is NOT NULL + UNIQUE with no default — an insert
-// without one fails outright. Derive one from the event name and make it
-// unique by suffixing a fragment of the (already-unique) application id,
-// so two similarly-named approvals never collide.
-function buildEventSlug(name: string, applicationId: string): string {
-  const base = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-  const suffix = applicationId.replace(/-/g, "").slice(0, 8)
-  return `${base || "event"}-${suffix}`
-}
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -119,50 +53,85 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let mouUrl: string | undefined
   let mouBuffer: Buffer | undefined
   let createdEventId: string | undefined
+  let eventDetailsForEmail: { name: string; startDate: string | null; eventsUrl: string } | undefined
   if (action === "approved") {
     const supabase = createAdminClient()
 
     // Auto-create the real event in the shared `events` table — the same
     // Supabase database amasi-faculty-management's own dashboard reads
-    // from — so an approved MOU becomes a schedulable event without manual
-    // re-entry. This is a best-effort side effect: same principle as "a
-    // failed WordPress push must not silently lose the approval" — a bad
-    // insert here must never fail or roll back the decision that was
-    // already persisted-in-intent above. Log/capture and move on.
-    try {
-      const eventName = application.event_name || `${typeLabel} — ${application.organizer_name}`
-      const { data: eventRow, error: eventError } = await supabase
-        .from("events")
-        .insert({
-          name: eventName,
-          short_name: typeLabel,
-          slug: buildEventSlug(eventName, application.id),
-          event_type: EVENT_TYPE_BY_APPLICATION_TYPE[application.application_type_id] ?? "conference",
-          tenant: TENANT_BY_APPLICATION_TYPE[application.application_type_id] ?? "amasi",
-          created_by: EVENT_CREATED_BY_USER_ID,
-          description: `${typeLabel} hosted by ${application.organizer_name} at ${application.primary_institution}`,
-          start_date: application.finalized_date || application.preferred_date_1,
-          end_date: application.finalized_date || application.preferred_date_1,
-          venue_name: application.venue_name,
-          city: application.venue_city,
-          state: application.venue_state,
-          country: application.venue_country || "India",
-          timezone: "Asia/Kolkata",
-        })
-        .select("id")
-        .single()
+    // from — so a routed approval becomes a schedulable event without
+    // manual re-entry. Skipped entirely when event_routing is 'none':
+    // endorsement-only activities (a rural camp, a blood donation drive)
+    // that never need registration or tickets — see
+    // src/lib/mou/event-routing.ts. This whole block is a best-effort side
+    // effect: same principle as "a failed WordPress push must not silently
+    // lose the approval" — a bad insert here must never fail or roll back
+    // the decision that was already persisted-in-intent above. Log/capture
+    // and move on.
+    if (application.event_routing !== "none") {
+      const eventResult = await createEventForApplication(application, typeLabel)
+      if ("eventId" in eventResult) {
+        createdEventId = eventResult.eventId
+        eventDetailsForEmail = {
+          name: application.event_name || `${typeLabel} — ${application.organizer_name}`,
+          startDate: application.finalized_date || application.preferred_date_1,
+          eventsUrl: `https://events.amasi.org/events/${eventResult.eventId}`,
+        }
 
-      if (eventError || !eventRow) {
-        throw new Error(eventError?.message || "event insert returned no row")
+        // Invite the applicant as organiser of the event they just had
+        // approved, and the relevant National Director (only fmas/nextgen/
+        // slcp have one — same gate as the submission-time FYI email).
+        // Each isolated so one failure never blocks the other or the
+        // outcome email below. role: 'coordinator', never 'admin' — 'admin'
+        // bypasses event_ids scoping entirely in usePermissions()'s
+        // hasEventAccess (AMASI-management's src/hooks/use-permissions.ts,
+        // read directly this session), which would hand out access to
+        // every event in the system, not just this one.
+        try {
+          await supabase.from("team_invitations").insert({
+            email: application.email,
+            name: application.organizer_name,
+            role: "coordinator",
+            event_ids: [eventResult.eventId],
+          })
+        } catch (err) {
+          console.error(`[mou-decide] organiser invite failed for application ${application.id}:`, err)
+          const Sentry = await import("@sentry/nextjs")
+          Sentry.captureException(err, {
+            tags: { component: "mou-decide", op: "invite-organiser" },
+            extra: { applicationId: application.id, eventId: eventResult.eventId },
+          })
+        }
+
+        const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[application.application_type_id]
+        if (directorRole) {
+          try {
+            const director = await getRoleAssignment(directorRole)
+            if (director) {
+              await supabase.from("team_invitations").insert({
+                email: director.email,
+                name: director.name,
+                role: "coordinator",
+                event_ids: [eventResult.eventId],
+              })
+            }
+          } catch (err) {
+            console.error(`[mou-decide] director invite failed for application ${application.id}:`, err)
+            const Sentry = await import("@sentry/nextjs")
+            Sentry.captureException(err, {
+              tags: { component: "mou-decide", op: "invite-director" },
+              extra: { applicationId: application.id, eventId: eventResult.eventId, directorRole },
+            })
+          }
+        }
+      } else {
+        console.error(`[mou-decide] event auto-create failed for application ${application.id}:`, eventResult.error)
+        const Sentry = await import("@sentry/nextjs")
+        Sentry.captureException(new Error(eventResult.error), {
+          tags: { component: "mou-decide", op: "auto-create-event" },
+          extra: { applicationId: application.id },
+        })
       }
-      createdEventId = eventRow.id
-    } catch (err) {
-      console.error(`[mou-decide] event auto-create failed for application ${application.id}:`, err)
-      const Sentry = await import("@sentry/nextjs")
-      Sentry.captureException(err, {
-        tags: { component: "mou-decide", op: "auto-create-event" },
-        extra: { applicationId: application.id },
-      })
     }
 
     // Counter-sign the MOU on behalf of AMASI — only the two mou-framework
@@ -245,7 +214,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // decision above, so its rejection_reason is stale (null, unless a prior
   // decision already set it). safeNotes is the actual value just written to
   // the DB.
-  await sendOutcomeEmail(application, typeLabel, action, action !== "approved" ? safeNotes : null, mouBuffer)
+  await sendOutcomeEmail(application, typeLabel, action, action !== "approved" ? safeNotes : null, mouBuffer, eventDetailsForEmail)
   await sendWhatsAppNudge(application, action)
 
   return Response.json({ status: true })

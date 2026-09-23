@@ -13,6 +13,7 @@ import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
 import { computeMouHash, createMouSignature } from "@/lib/mou/mou-signature"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { DIRECTOR_ROLE_BY_APPLICATION_TYPE, ASSOCIATE_DIRECTOR_ROLES_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
+import { getDefaultEventRouting } from "@/lib/mou/event-routing"
 import type { NewApplicationInput } from "@/lib/mou/types"
 
 const REQUIRED_FIELDS = [
@@ -165,6 +166,11 @@ export async function POST(request: NextRequest) {
   if (!verifiedOtp) {
     return Response.json({ status: false, message: "Please verify your email with the code first" }, { status: 400 })
   }
+
+  // Server-derived default, never from the client — same reasoning as
+  // mou_generated_url elsewhere: pickApplicationInput's allowlist above
+  // doesn't include event_routing at all.
+  body.event_routing = await getDefaultEventRouting(body.application_type_id)
 
   let application: Awaited<ReturnType<typeof createApplication>>
   try {

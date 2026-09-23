@@ -68,6 +68,7 @@ export interface AcademicEventApplication {
   report_reminder_15_sent_at: string | null
   report_escalation_sent_at: string | null
   registration_required: boolean | null
+  event_routing: "amasi" | "college" | "none" | null
   created_at: string
   updated_at: string
 }
@@ -115,6 +116,9 @@ export interface NewApplicationInput {
   faculty?: { name: string; amasi_membership_number: string | null; speciality: string | null; is_amasi_member: boolean }[]
   agreements?: Record<string, string>
   type_specific_data?: Record<string, unknown>
+  // Server-derived (getDefaultEventRouting), never taken from the client —
+  // see the comment on pickApplicationInput in api/mou/applications/route.ts.
+  event_routing?: "amasi" | "college" | "none"
 }
 
 export interface MouSignature {

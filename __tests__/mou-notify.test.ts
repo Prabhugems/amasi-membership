@@ -44,6 +44,8 @@ const app: AcademicEventApplication = {
   brief_institution_url: null, faculty: [], agreements: null, type_specific_data: {},
   mou_generated_url: null, mou_version: 0, created_event_id: null,
   reviewed_by: null, reviewed_at: null, rejection_reason: null, admin_notes: null, published_at: null,
+  report_documents: [], report_notes: null, report_submitted_at: null,
+  report_reminder_7_sent_at: null, report_reminder_15_sent_at: null, report_escalation_sent_at: null,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 }
 

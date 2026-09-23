@@ -61,6 +61,12 @@ export interface AcademicEventApplication {
   rejection_reason: string | null
   admin_notes: string | null
   published_at: string | null
+  report_documents: { name: string; fileUrl: string }[]
+  report_notes: string | null
+  report_submitted_at: string | null
+  report_reminder_7_sent_at: string | null
+  report_reminder_15_sent_at: string | null
+  report_escalation_sent_at: string | null
   created_at: string
   updated_at: string
 }

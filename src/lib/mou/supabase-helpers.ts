@@ -30,13 +30,22 @@ const APPLICATION_STORAGE_FIELDS = [
 // application — a confused-deputy / IDOR path into the shared bucket.
 const OWNED_UPLOAD_PREFIX = "mou-applications/"
 
-function ownedPathOrNull(value: string | null | undefined): string | null {
+function ownedPathOrNull(value: string | null | undefined, prefix: string = OWNED_UPLOAD_PREFIX): string | null {
   if (!value) return null
   const path = toStoragePath(value)
-  return path && path.startsWith(OWNED_UPLOAD_PREFIX) ? value : null
+  return path && path.startsWith(prefix) ? value : null
 }
 
 function sanitizeClientSuppliedPaths(app: AcademicEventApplication): AcademicEventApplication {
+  // Post-event report documents: POST /api/mou/applications/[id]/report
+  // accepts a client-supplied `documents` array (see that route) —
+  // restricted to what POST .../report/upload actually wrote for THIS
+  // application (`mou-reports/${app.id}/...`), not just the shared
+  // `mou-reports/` folder, so a value referencing a different approved
+  // application's report can't ride along, for the same confused-deputy
+  // reason as OWNED_UPLOAD_PREFIX above. The write route already enforces
+  // this per-application scoping; this is read-side defense in depth.
+  const ownedReportPrefix = `mou-reports/${app.id}/`
   return {
     ...app,
     committee_member_photo_url: ownedPathOrNull(app.committee_member_photo_url),
@@ -47,14 +56,18 @@ function sanitizeClientSuppliedPaths(app: AcademicEventApplication): AcademicEve
       ...p,
       consent_letter_url: ownedPathOrNull(p.consent_letter_url),
     })),
+    report_documents: (app.report_documents ?? []).map((d) => ({
+      ...d,
+      fileUrl: ownedPathOrNull(d.fileUrl, ownedReportPrefix) ?? "",
+    })),
   }
 }
 
 /**
- * Sign every stored-path field on a batch of applications, including the one
- * field that isn't a flat column: `partner_associations[].consent_letter_url`.
- * Batches both the flat fields and the nested array across all rows into two
- * round trips total, not one per row.
+ * Sign every stored-path field on a batch of applications, including the two
+ * fields that aren't flat columns: `partner_associations[].consent_letter_url`
+ * and `report_documents[].fileUrl`. Batches the flat fields and both nested
+ * arrays across all rows into two round trips total, not one per row.
  */
 export async function signApplicationsStorage(
   applications: AcademicEventApplication[]
@@ -62,20 +75,27 @@ export async function signApplicationsStorage(
   const sanitized = applications.map(sanitizeClientSuppliedPaths)
   const signedTop = await signRecordsFields(sanitized, APPLICATION_STORAGE_FIELDS)
 
-  const allConsentUrls: string[] = []
+  const allNestedUrls: string[] = []
   for (const app of signedTop) {
     for (const p of app.partner_associations ?? []) {
-      if (p.consent_letter_url) allConsentUrls.push(p.consent_letter_url)
+      if (p.consent_letter_url) allNestedUrls.push(p.consent_letter_url)
+    }
+    for (const d of app.report_documents ?? []) {
+      if (d.fileUrl) allNestedUrls.push(d.fileUrl)
     }
   }
-  if (allConsentUrls.length === 0) return signedTop
+  if (allNestedUrls.length === 0) return signedTop
 
-  const signedMap = await signStorageValues(allConsentUrls)
+  const signedMap = await signStorageValues(allNestedUrls)
   return signedTop.map((app) => ({
     ...app,
     partner_associations: (app.partner_associations ?? []).map((p) => ({
       ...p,
       consent_letter_url: p.consent_letter_url ? signedMap.get(p.consent_letter_url) ?? null : p.consent_letter_url,
+    })),
+    report_documents: (app.report_documents ?? []).map((d) => ({
+      ...d,
+      fileUrl: d.fileUrl ? signedMap.get(d.fileUrl) ?? "" : d.fileUrl,
     })),
   }))
 }

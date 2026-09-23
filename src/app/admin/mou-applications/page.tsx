@@ -449,6 +449,49 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               )}
 
+              {(app.status === "approved" || app.status === "completed") && (
+                <div className="rounded-md border border-border p-4">
+                  <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+                    Post-event report
+                  </h3>
+                  {app.report_submitted_at ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-foreground">
+                        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-success mr-1.5 align-middle" />
+                        submitted {formatDate(app.report_submitted_at)}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {app.report_documents.map((d, i) => (
+                          <Button key={i} asChild variant="outline" size="sm" className="gap-1.5">
+                            <a href={d.fileUrl} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-3.5 w-3.5" />
+                              {d.name}
+                            </a>
+                          </Button>
+                        ))}
+                      </div>
+                      {app.report_notes && <p className="text-sm text-muted-foreground">{app.report_notes}</p>}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        <span
+                          className={`inline-flex h-1.5 w-1.5 rounded-full mr-1.5 align-middle ${app.report_escalation_sent_at ? "bg-destructive" : "bg-muted-foreground"}`}
+                        />
+                        not yet submitted{app.report_escalation_sent_at ? " — escalated to Secretary/Director" : ""}
+                      </p>
+                      {(app.report_reminder_7_sent_at || app.report_reminder_15_sent_at || app.report_escalation_sent_at) && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {app.report_reminder_7_sent_at && <>day-7 reminder {formatDate(app.report_reminder_7_sent_at)}</>}
+                          {app.report_reminder_15_sent_at && <>{app.report_reminder_7_sent_at ? " · " : ""}day-15 reminder {formatDate(app.report_reminder_15_sent_at)}</>}
+                          {app.report_escalation_sent_at && <>{(app.report_reminder_7_sent_at || app.report_reminder_15_sent_at) ? " · " : ""}escalated {formatDate(app.report_escalation_sent_at)}</>}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Remarks

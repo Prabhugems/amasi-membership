@@ -8,6 +8,18 @@ function getResend() {
   return new Resend(key)
 }
 
+// The Resend SDK does not throw on an API-level rejection (bad address,
+// suppressed recipient, invalid domain, etc.) — `.send()` resolves with
+// `{data, error}` either way. Every caller in this file wraps its send in
+// a try/catch that expects a thrown exception (see e.g.
+// src/app/api/mou/applications/route.ts's per-recipient isolation), so an
+// unchecked `.error` here would silently look like a successful send.
+type ResendEmailPayload = Parameters<Resend["emails"]["send"]>[0]
+async function sendEmail(payload: ResendEmailPayload): Promise<void> {
+  const { error } = await getResend().emails.send(payload)
+  if (error) throw new Error(`Resend send failed: ${error.message}`)
+}
+
 const FROM = "AMASI <noreply@amasi.org>"
 
 // rejection_reason (passed in explicitly by the decide route, see
@@ -35,6 +47,10 @@ function appUrl(): string {
 
 function statusLinkUrl(application: AcademicEventApplication): string {
   return `${appUrl()}/mou/status/${application.id}`
+}
+
+function reportLinkUrl(application: AcademicEventApplication): string {
+  return `${appUrl()}/mou/report/${application.id}`
 }
 
 // FYI recipients (President, zone chairs) are notified purely by role slug
@@ -115,7 +131,7 @@ export async function sendApplicantConfirmation(application: AcademicEventApplic
   const noteHtml = confirmationNote
     ? `<div style="margin:16px 0;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:13px;">${escapeHtml(confirmationNote)}</div>`
     : ""
-  await getResend().emails.send({
+  await sendEmail({
     from: FROM,
     to: application.email,
     subject: "AMASI application received",
@@ -137,7 +153,7 @@ export async function sendSecretaryApprovalRequest(
 ): Promise<void> {
   const organizerName = escapeHtml(application.organizer_name)
   const primaryInstitution = escapeHtml(application.primary_institution)
-  await getResend().emails.send({
+  await sendEmail({
     from: FROM,
     to: secretaryEmail,
     subject: `Application for review: ${typeLabel} — ${application.organizer_name}`,
@@ -158,7 +174,7 @@ export async function sendFyiNotification(
   viewLinkUrl: string
 ): Promise<void> {
   const organizerName = escapeHtml(application.organizer_name)
-  await getResend().emails.send({
+  await sendEmail({
     from: FROM,
     to: recipientEmail,
     subject: `FYI: ${typeLabel} application from ${application.organizer_name}`,
@@ -197,11 +213,11 @@ export async function sendOutcomeEmail(
     `<p style="margin:16px 0 0;">There is no resubmission flow at this time. If you have questions, please contact the AMASI Secretary` +
     ` at <a href="mailto:amasi.india@gmail.com" style="color:#0f766e;">amasi.india@gmail.com</a>.</p>`
   const bodyByOutcome = {
-    approved: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">Congratulations — your application has been approved. The signed MOU is attached to this email.</p>`,
+    approved: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">Congratulations — your application has been approved. The signed MOU is attached to this email.</p><p style="margin:0;color:#64748b;font-size:13px;">Per the MOU, a comprehensive report with photographs is due within 15 days of the event — you can submit it anytime after from your <a href="${reportLinkUrl(application)}" style="color:#0f766e;">status page</a>.</p>`,
     rejected: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">Your application was not approved.</p>${reasonBlock}${nextStepsLine}`,
     changes_requested: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">The Hon. Secretary has requested changes.</p>${reasonBlock}${nextStepsLine}`,
   }
-  await getResend().emails.send({
+  await sendEmail({
     from: FROM,
     to: application.email,
     subject: subjectByOutcome[outcome],
@@ -213,6 +229,57 @@ export async function sendOutcomeEmail(
     ...(mouPdfBuffer
       ? { attachments: [{ filename: `MOU-${application.id}.pdf`, content: mouPdfBuffer.toString("base64") }] }
       : {}),
+  })
+}
+
+// stage "day7": a heads-up before the deadline. stage "day15": the
+// deadline itself, framed as due today/overdue depending on exact timing
+// — day 15 is also when this fires, so "due" reads correctly either way.
+export async function sendReportReminderEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  stage: "day7" | "day15"
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const subject = stage === "day7"
+    ? `Reminder: post-event report due soon for your ${typeLabel}`
+    : `Post-event report due today for your ${typeLabel}`
+  const bodyLine = stage === "day7"
+    ? `Per the MOU, a comprehensive report with photographs from your <strong>${escapeHtml(typeLabel)}</strong> is due within 15 days of the event — that deadline is coming up. Please submit it when you're able.`
+    : `Per the MOU, a comprehensive report with photographs from your <strong>${escapeHtml(typeLabel)}</strong> was due within 15 days of the event — today is that deadline. Please submit it as soon as possible.`
+  await sendEmail({
+    from: FROM,
+    to: application.email,
+    subject,
+    html: emailShell({
+      heading: "Post-event report due",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">${bodyLine}</p>`,
+      cta: { label: "Submit event report", url: reportLinkUrl(application) },
+    }),
+  })
+}
+
+// Escalation once the report is overdue (past the 15-day deadline with
+// nothing filed) — sent to the Hon. Secretary and the relevant National
+// Director, not the applicant (who already got 2 reminders by this point).
+export async function sendReportEscalationEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  recipientEmail: string,
+  recipientRole: string,
+  viewLinkUrl: string
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  await sendEmail({
+    from: FROM,
+    to: recipientEmail,
+    subject: `Overdue: post-event report not received — ${typeLabel} — ${application.organizer_name}`,
+    html: emailShell({
+      heading: "Post-event report overdue",
+      bodyHtml: `<p style="margin:0 0 12px;">The post-event report for the <strong>${escapeHtml(typeLabel)}</strong> hosted by <strong>${organizerName}</strong> was due 15 days after the event and has not been received. The applicant has already been reminded twice.</p>
+        <p style="margin:0;color:#64748b;font-size:13px;">You're receiving this as the ${escapeHtml(roleLabel(recipientRole))}.</p>`,
+      cta: { label: "View application", url: viewLinkUrl },
+    }),
   })
 }
 

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Loader2, AlertCircle, MessageSquare } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, MessageSquare, FileText } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/mou/status-badge"
 import { getEventTypeConfig } from "@/lib/mou/event-type-config"
 import type { ApplicationStatus, ApplicationTypeId } from "@/lib/mou/types"
@@ -23,6 +24,7 @@ interface StatusApplication {
   created_at: string
   reviewed_at: string | null
   rejection_reason: string | null
+  report_submitted_at: string | null
 }
 
 interface Remark {
@@ -133,6 +135,19 @@ export default function MouStatusPage() {
                   <div className="rounded-md border border-border bg-muted/30 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Reviewer notes</p>
                     <p className="text-foreground">{application.rejection_reason}</p>
+                  </div>
+                )}
+                {(application.status === "approved" || application.status === "completed") && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-muted-foreground text-xs">
+                      {application.report_submitted_at ? "Post-event report submitted" : "Post-event report due within 15 days of the event"}
+                    </span>
+                    <Button asChild variant={application.report_submitted_at ? "outline" : "default"} size="sm">
+                      <Link href={`/mou/report/${application.id}`}>
+                        <FileText className="h-3.5 w-3.5" />
+                        {application.report_submitted_at ? "View report" : "Submit report"}
+                      </Link>
+                    </Button>
                   </div>
                 )}
               </CardContent>

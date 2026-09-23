@@ -12,28 +12,8 @@ import { getEventTypeConfig, isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_K
 import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
 import { computeMouHash, createMouSignature } from "@/lib/mou/mou-signature"
 import { checkRateLimit } from "@/lib/rate-limit"
-import type { ApplicationTypeId, NewApplicationInput } from "@/lib/mou/types"
-
-// National Director FYI recipients, keyed by the application type they hold
-// a portfolio for — only the 3 MOU types with a matching seat on the EC
-// 2026-28 roster (sql/044_academic_event_director_roles.sql). Every other
-// co-opted portfolio (HPB, Hernia, Endoscopy, Colorectal, Newsletter,
-// Membership Drive, Proctology, AMASAS Journal, Armed Forces) has no
-// corresponding academic_event_types row.
-const DIRECTOR_ROLE_BY_APPLICATION_TYPE: Partial<Record<ApplicationTypeId, string>> = {
-  fmas: "director_fmas",
-  nextgen: "director_nextgen",
-  slcp: "director_slcp",
-}
-
-// Associate/Assistant Directors under the primary National Director above —
-// also FYI'd, per sql/045_academic_event_associate_director_roles.sql.
-// fmas has none; nextgen has 2 Associate Directors; slcp has 1 Assistant
-// Director.
-const ASSOCIATE_DIRECTOR_ROLES_BY_APPLICATION_TYPE: Partial<Record<ApplicationTypeId, string[]>> = {
-  nextgen: ["director_nextgen_associate_1", "director_nextgen_associate_2"],
-  slcp: ["director_slcp_assistant"],
-}
+import { DIRECTOR_ROLE_BY_APPLICATION_TYPE, ASSOCIATE_DIRECTOR_ROLES_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
+import type { NewApplicationInput } from "@/lib/mou/types"
 
 const REQUIRED_FIELDS = [
   "application_type_id", "organizer_name", "email", "phone_number",

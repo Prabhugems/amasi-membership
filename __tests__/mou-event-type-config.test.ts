@@ -4,10 +4,10 @@ import { RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "@/lib/mou/mou-pdf"
 import { SMALL_STATE_CHAPTER_STATES } from "@/lib/mou/small-state-chapters"
 
 describe("EVENT_TYPE_CONFIG", () => {
-  it("has exactly the 10 in-scope event types", () => {
+  it("has exactly the 11 in-scope event types", () => {
     const ids = Object.keys(EVENT_TYPE_CONFIG).sort()
     expect(ids).toEqual([
-      "amasicon", "dmas", "fmas", "meet_the_master", "mmas", "nextgen",
+      "amasicon", "blood_donation", "dmas", "fmas", "meet_the_master", "mmas", "nextgen",
       "rural_program", "slcp", "workshop", "zonal_event",
     ].sort())
   })

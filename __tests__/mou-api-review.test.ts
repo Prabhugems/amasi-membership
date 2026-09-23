@@ -24,6 +24,7 @@ vi.mock("@/lib/mou/mou-pdf", () => ({
   RURAL_PROGRAM_CLAUSES: [],
   WORKSHOP_CLAUSES: [],
   AMASICON_CLAUSES: [],
+  BLOOD_DONATION_CLAUSES: [],
 }))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
@@ -135,6 +136,9 @@ describe("POST /api/mou/review/[token]/decide", () => {
       "FMAS Course",
       "rejected",
       "does not meet eligibility criteria",
+      undefined,
+      // eventDetailsForEmail — added by the event-routing feature; undefined
+      // outside the "approved" branch (this test rejects), so a 6th arg.
       undefined,
     )
   })

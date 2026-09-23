@@ -34,6 +34,7 @@ vi.mock("@/lib/mou/mou-pdf", () => ({
   RURAL_PROGRAM_CLAUSES: [],
   WORKSHOP_CLAUSES: [],
   AMASICON_CLAUSES: [],
+  BLOOD_DONATION_CLAUSES: [],
 }))
 vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
 vi.mock("@/lib/mou/mou-signature", () => ({

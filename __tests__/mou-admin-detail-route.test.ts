@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 vi.mock("@/lib/auth", () => ({ getAdminSession: vi.fn().mockResolvedValue({ id: "admin-1" }) }))
 vi.mock("@/lib/mou/supabase-helpers", () => ({
   getApplicationById: vi.fn().mockResolvedValue({ id: "app-1", application_type_id: "rural_program" }),
+  // Added by the storage sign-on-read feature — the route calls this before
+  // responding. Pass the row through unchanged; not under test here.
+  signApplicationStorage: vi.fn(async (row) => row),
 }))
 
 const maybeSingleMock = vi.fn()

@@ -1,24 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
-vi.mock("@/lib/supabase", () => ({
-  createAdminClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            gte: () => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: vi.fn().mockResolvedValue({ data: { id: "otp-1" } }),
-                }),
-              }),
-            }),
-          }),
-        }),
-      }),
+// One shared chain object every intermediate call returns itself, so both
+// the OTP-verification query shape (select→eq→eq→gte→order→limit→maybeSingle)
+// and getDefaultEventRouting's shape (select→eq→maybeSingle, added by the
+// event-routing feature) resolve through the same mock without needing a
+// second vi.mock shape. maybeSingle always resolves to the OTP row; that's
+// harmless for getDefaultEventRouting since `{id:"otp-1"}.default_event_routing`
+// is undefined, which correctly falls through to its static fallback map.
+vi.mock("@/lib/supabase", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chain: any = {}
+  chain.eq = () => chain
+  chain.gte = () => chain
+  chain.order = () => chain
+  chain.limit = () => chain
+  chain.maybeSingle = vi.fn().mockResolvedValue({ data: { id: "otp-1" } })
+  return {
+    createAdminClient: () => ({
+      from: () => ({ select: () => chain }),
     }),
-  }),
-}))
+  }
+})
 vi.mock("@/lib/mou/otp", () => ({ verifyMouOtp: vi.fn() }))
 vi.mock("@/lib/mou/supabase-helpers", () => ({
   createApplication: vi.fn(),

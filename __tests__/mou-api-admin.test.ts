@@ -5,6 +5,11 @@ vi.mock("@/lib/auth", () => ({ getAdminSession: vi.fn() }))
 vi.mock("@/lib/mou/supabase-helpers", () => ({
   listApplications: vi.fn(),
   getApplicationById: vi.fn(),
+  // Added by the storage sign-on-read feature (predates this test file's
+  // last update) — both routes under test call these before responding.
+  // Pass rows through unchanged; storage-signing itself isn't under test here.
+  signApplicationsStorage: vi.fn(async (rows) => rows),
+  signApplicationStorage: vi.fn(async (row) => row),
 }))
 
 const { remarksOrderMock } = vi.hoisted(() => ({

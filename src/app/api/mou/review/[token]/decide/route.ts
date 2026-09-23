@@ -57,6 +57,19 @@ const TENANT_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "college" | "amasi">
   zonal_event: "amasi",
 }
 
+// public.events.created_by (nullable, no default) was never set on this
+// insert either — every auto-created event sat with created_by=null.
+// events.amasi.org's dashboard appears to scope its Events list to events
+// the logged-in admin created (confirmed live: the only 2 events with a
+// non-null created_by both belong to this account, and every MOU-flow
+// event, despite existing with real tenant/ticket data, showed as 0 total
+// for that same admin). There's no "system" service account in that app's
+// `users` table to attribute these to instead, so this is the confirmed
+// AMASI super_admin account (users.id, platform_role='super_admin') —
+// a workaround for a missing system-account concept there, not a claim
+// that this person personally created every approved event.
+const EVENT_CREATED_BY_USER_ID = "d316e077-9f56-4e58-aff7-c4c367c77f9d"
+
 // public.events.slug is NOT NULL + UNIQUE with no default — an insert
 // without one fails outright. Derive one from the event name and make it
 // unique by suffixing a fragment of the (already-unique) application id,
@@ -126,6 +139,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           slug: buildEventSlug(eventName, application.id),
           event_type: EVENT_TYPE_BY_APPLICATION_TYPE[application.application_type_id] ?? "conference",
           tenant: TENANT_BY_APPLICATION_TYPE[application.application_type_id] ?? "amasi",
+          created_by: EVENT_CREATED_BY_USER_ID,
           description: `${typeLabel} hosted by ${application.organizer_name} at ${application.primary_institution}`,
           start_date: application.finalized_date || application.preferred_date_1,
           end_date: application.finalized_date || application.preferred_date_1,

@@ -52,6 +52,9 @@ const ROLE_LABELS: Record<string, string> = {
   zone_chair_east: "East Zone Chair",
   zone_chair_west: "West Zone Chair",
   zone_chair_central: "Central Zone Chair",
+  director_fmas: "National Director, FMAS Academics",
+  director_nextgen: "National Director, NextGen",
+  director_slcp: "National Director, SLCP",
 }
 
 function roleLabel(role: string): string {

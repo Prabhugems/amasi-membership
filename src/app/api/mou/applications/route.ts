@@ -12,7 +12,19 @@ import { getEventTypeConfig, isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_K
 import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
 import { computeMouHash, createMouSignature } from "@/lib/mou/mou-signature"
 import { checkRateLimit } from "@/lib/rate-limit"
-import type { NewApplicationInput } from "@/lib/mou/types"
+import type { ApplicationTypeId, NewApplicationInput } from "@/lib/mou/types"
+
+// National Director FYI recipients, keyed by the application type they hold
+// a portfolio for — only the 3 MOU types with a matching seat on the EC
+// 2026-28 roster (sql/044_academic_event_director_roles.sql). Every other
+// co-opted portfolio (HPB, Hernia, Endoscopy, Colorectal, Newsletter,
+// Membership Drive, Proctology, AMASAS Journal, Armed Forces) has no
+// corresponding academic_event_types row.
+const DIRECTOR_ROLE_BY_APPLICATION_TYPE: Partial<Record<ApplicationTypeId, string>> = {
+  fmas: "director_fmas",
+  nextgen: "director_nextgen",
+  slcp: "director_slcp",
+}
 
 const REQUIRED_FIELDS = [
   "application_type_id", "organizer_name", "email", "phone_number",
@@ -272,6 +284,24 @@ export async function POST(request: NextRequest) {
       Sentry.captureException(err, {
         tags: { component: "mou-applications", op: "notify-zone-chair" },
         extra: { applicationId: application.id, zone: body.zone },
+      })
+    }
+  }
+
+  const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[body.application_type_id]
+  if (directorRole) {
+    try {
+      const director = await getRoleAssignment(directorRole)
+      if (director) {
+        const token = await createApprovalToken(application.id, directorRole, false)
+        const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"}/mou/review/${token}`
+        await sendFyiNotification(application, typeConfig.label, director.email, directorRole, viewUrl)
+      }
+    } catch (err) {
+      console.error(`[mou-applications] director FYI notification failed for application ${application.id}:`, err)
+      Sentry.captureException(err, {
+        tags: { component: "mou-applications", op: "notify-director" },
+        extra: { applicationId: application.id, directorRole },
       })
     }
   }

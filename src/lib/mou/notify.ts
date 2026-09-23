@@ -1,6 +1,7 @@
 import { Resend } from "resend"
 import { sendTemplate } from "@/lib/whatsapp"
 import type { AcademicEventApplication } from "./types"
+import type { MouDigestSections } from "../mou-weekly-digest"
 
 function getResend() {
   const key = process.env.RESEND_API_KEY?.trim()
@@ -305,5 +306,86 @@ export async function sendWhatsAppNudge(
   // of the approval chain.
   await sendTemplate(String(application.phone_number), application.organizer_name, "mou_application_outcome", {
     outcome,
+  })
+}
+
+function formatDigestDate(value: string | null): string {
+  if (!value) return "date TBC"
+  return new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+}
+
+function digestSectionHtml(title: string, rows: string[]): string {
+  if (rows.length === 0) return ""
+  return `<div style="margin:0 0 20px;">
+    <h3 style="margin:0 0 8px;color:#0f766e;font-size:14px;text-transform:uppercase;letter-spacing:0.06em;">${title}</h3>
+    <ul style="margin:0;padding-left:18px;color:#334155;font-size:13.5px;line-height:1.6;">
+      ${rows.map((r) => `<li>${r}</li>`).join("")}
+    </ul>
+  </div>`
+}
+
+function buildMouDigestHtml(sections: MouDigestSections, weekOfDate: string): string {
+  if (sections.allEmpty) {
+    return emailShell({
+      heading: `MOU digest — week of ${escapeHtml(weekOfDate)}`,
+      bodyHtml: `<p style="margin:0;">Nothing pending.</p>`,
+      cta: { label: "Open MOU applications", url: `${appUrl()}/admin/mou-applications` },
+    })
+  }
+
+  const body = [
+    digestSectionHtml(
+      "Awaiting Secretary decision",
+      sections.awaitingDecision.map(
+        (r) => `<strong>${escapeHtml(r.organizerName)}</strong> — ${escapeHtml(r.typeLabel)} — waiting ${r.daysWaiting} day${r.daysWaiting === 1 ? "" : "s"}`
+      )
+    ),
+    digestSectionHtml(
+      "Approved but event not created",
+      sections.approvedNoEvent.map((r) => `<strong>${escapeHtml(r.organizerName)}</strong> — ${escapeHtml(r.typeLabel)}`)
+    ),
+    digestSectionHtml(
+      "Events this week and next",
+      sections.upcomingEvents.map(
+        (r) => `<strong>${escapeHtml(r.name)}</strong> — ${formatDigestDate(r.startDate)} — ${escapeHtml(r.organizerName)}`
+      )
+    ),
+    digestSectionHtml(
+      "Reports overdue (past day 15)",
+      sections.overdueReports.map(
+        (r) => `<strong>${escapeHtml(r.organizerName)}</strong> — ${escapeHtml(r.typeLabel)} — event ${formatDigestDate(r.eventDate)}`
+      )
+    ),
+    digestSectionHtml(
+      "Reports submitted, awaiting review",
+      sections.awaitingReview.map((r) => `<strong>${escapeHtml(r.organizerName)}</strong> — ${escapeHtml(r.typeLabel)}`)
+    ),
+  ].join("")
+
+  return emailShell({
+    heading: `MOU digest — week of ${escapeHtml(weekOfDate)}`,
+    bodyHtml: body,
+    cta: { label: "Open MOU applications", url: `${appUrl()}/admin/mou-applications` },
+  })
+}
+
+/**
+ * Sends the MOU-only weekly digest (Part B, item 7) — separate from
+ * src/app/api/cron/weekly-digest/route.ts's membership-KPI digest by
+ * design (decided with Prabhu 2026-09-23). `to` are the standing admin
+ * recipients; `cc` is optional (the Hon. Secretary). One send, not looped
+ * per-recipient, since Resend accepts an array for both fields.
+ */
+export async function sendMouWeeklyDigestEmail(
+  sections: MouDigestSections,
+  recipients: { to: string[]; cc?: string[] }
+): Promise<void> {
+  const weekOfDate = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+  await sendEmail({
+    from: FROM,
+    to: recipients.to,
+    ...(recipients.cc && recipients.cc.length > 0 ? { cc: recipients.cc } : {}),
+    subject: `MOU digest — week of ${weekOfDate}`,
+    html: buildMouDigestHtml(sections, weekOfDate),
   })
 }

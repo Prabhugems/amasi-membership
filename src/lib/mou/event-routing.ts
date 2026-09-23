@@ -65,6 +65,23 @@ const EVENT_TYPE_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "conference" | "
 // approved event.
 export const EVENT_CREATED_BY_USER_ID = "d316e077-9f56-4e58-aff7-c4c367c77f9d"
 
+// The events.amasi.org card shows `short_name` as its title (preferred over
+// `name` whenever set — see that repo's src/app/events/page.tsx), and
+// short_name was previously just `typeLabel` verbatim — every FMAS card
+// literally read "FMAS Course", identical and undistinguishable from every
+// other FMAS card. application.event_name already tends to carry whatever
+// course number the applicant typed in (e.g. "128 FMAS Course", "31 AMASI
+// NextGen") — reuse that rather than inventing new numbering logic, and
+// append city/state for the cases where event_name was left blank
+// (falls back to typeLabel alone, same as before, just with a city added).
+function buildEventShortName(application: AcademicEventApplication, typeLabel: string): string {
+  const base = application.event_name || typeLabel
+  const location = application.venue_city
+    ? `${application.venue_city}${application.venue_state ? `, ${application.venue_state}` : ""}`
+    : null
+  return location ? `${base} — ${location}` : base
+}
+
 // public.events.slug is NOT NULL + UNIQUE with no default — an insert
 // without one fails outright. Derive one from the event name and make it
 // unique by suffixing a fragment of the (already-unique) application id,
@@ -102,7 +119,11 @@ export async function createEventForApplication(
     .from("events")
     .insert({
       name: eventName,
-      short_name: typeLabel,
+      short_name: buildEventShortName(application, typeLabel),
+      // New column (AMASI-management migration 20260923_events_organizer_name.sql)
+      // — the events-list card subtitle prefers this over its old "name,
+      // when it differs from short_name" diff-check.
+      organizer_name: application.organizer_name,
       slug: buildEventSlug(eventName, application.id),
       event_type: EVENT_TYPE_BY_APPLICATION_TYPE[application.application_type_id] ?? "conference",
       tenant: routing,

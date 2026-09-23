@@ -42,6 +42,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (application.status !== "approved" && application.status !== "completed") {
     return Response.json({ status: false, message: "This application isn't approved — there's no event to report on." }, { status: 400 })
   }
+  // A report already submitted-and-awaiting-review or already accepted can't
+  // be silently overwritten by another POST — only a 'returned' report (the
+  // admin explicitly asked for a resubmission) or no report at all (report_status
+  // still null) may submit here. See src/app/api/admin/.../report-review/route.ts
+  // for the Accept/Return actions that move a report into/out of 'returned'.
+  if (application.report_status === "submitted" || application.report_status === "accepted") {
+    return Response.json({ status: false, message: "A report has already been submitted for this application." }, { status: 400 })
+  }
 
   let body: Record<string, unknown>
   try {
@@ -80,6 +88,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       report_documents: documents,
       report_notes: notes,
       report_submitted_at: new Date().toISOString(),
+      report_status: "submitted",
+      report_return_note: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)

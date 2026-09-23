@@ -295,6 +295,30 @@ export async function sendReportEscalationEmail(
   })
 }
 
+// Report review (Part B item 8) — the admin Returned a submitted report
+// with a note; the organiser needs to know why and how to resubmit.
+export async function sendReportReturnedEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  note: string
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const safeNote = escapeHtml(note)
+  await sendEmail({
+    from: FROM,
+    to: application.email,
+    subject: `Changes needed on your post-event report — ${typeLabel}`,
+    html: emailShell({
+      heading: "Report returned — changes needed",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p>
+        <p style="margin:0 0 12px;">Your post-event report for the <strong>${escapeHtml(typeLabel)}</strong> has been reviewed and needs changes before it can be accepted:</p>
+        <div style="margin:0 0 12px;padding:12px 16px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:4px;color:#0f172a;font-size:13px;">${safeNote}</div>
+        <p style="margin:0;color:#64748b;font-size:13px;">Please resubmit using the same link below.</p>`,
+      cta: { label: "Resubmit report", url: reportLinkUrl(application) },
+    }),
+  })
+}
+
 export async function sendWhatsAppNudge(
   application: AcademicEventApplication,
   outcome: "approved" | "rejected" | "changes_requested"

@@ -1,5 +1,5 @@
 import type { ApplicationTypeId } from "./types"
-import { AMASICON_CLAUSES, RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "./mou-pdf"
+import { AMASICON_CLAUSES, BLOOD_DONATION_CLAUSES, RURAL_PROGRAM_CLAUSES, WORKSHOP_CLAUSES } from "./mou-pdf"
 import { SMALL_STATE_CHAPTER_STATES } from "./small-state-chapters"
 
 export type MouFieldKey =
@@ -228,6 +228,64 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
       { key: "faculty", kind: "faculty-rows", minRows: 1, maxRows: 20 },
     ],
   },
+  blood_donation: {
+    id: "blood_donation", label: "Blood Donation Drive", description: "Blood Donation Drive hosting application",
+    // No venue_setting/rural restriction here (unlike rural_program) — a
+    // blood donation drive isn't location-restricted.
+    fields: ["amasi_membership_number", "committee_member_photo", "institution_photo", "zone"],
+    mouClauses: BLOOD_DONATION_CLAUSES,
+    mouTitle: "MEMORANDUM OF UNDERSTANDING FOR BLOOD DONATION DRIVE",
+    mouVersion: 1,
+    organizerNameLabel: "Organizing Secretary name",
+    minLeadDays: 10,
+    leadTimeMessage: "Please choose a drive date at least 10 days from today.",
+    requiresVenue: true,
+    confirmationNote: "AMASI HQ completes processing within two weeks of receiving the request. Please do not announce or publicise the programme until you receive written approval.",
+    agreements: [
+      { clauseRef: "5, 6", text: "I will not announce or publicise the programme, or use the AMASI name or logo in any form, until written approval is received from AMASI HQ." },
+      { clauseRef: "7", text: "All banners, brochures, print and electronic materials will carry the logos of both AMASI and ASI." },
+      { clauseRef: "12", text: "No bank account will be opened in the name of AMASI for this drive under any circumstances." },
+      { clauseRef: "19", text: "The organising committee bears full financial responsibility for the drive; AMASI bears no financial liability." },
+      { clauseRef: "20", text: "I understand AMASI provides financial assistance up to ₹1,00,000 only, released against original bills and vouchers." },
+      { clauseRef: "16", text: "The organising committee will arrange to-and-fro transport for AMASI-provided faculty from the nearest railhead or airport, and their accommodation and food." },
+      { clauseRef: "17", text: "No audiovisual material promoting the meetings, conferences or workshops of any other professional body will be displayed at the venue without informing AMASI." },
+      { clauseRef: "18", text: "The drive will not be used for personal propaganda, promotion of a private hospital, political propaganda, or any purpose other than service to the population." },
+      { clauseRef: "21, 22", text: "I will forward the detailed programme, the list of organising committee members, and the schedule of the drive and screening/collection sessions at least 3 weeks before the drive." },
+      { clauseRef: "23", text: "I will provide full details of the available facilities to the Hon. Secretary at least one month in advance." },
+      { clauseRef: "24", text: "I will submit a report to the Hon. Secretary within 15 days of the drive, including photographs, location, a description of the beneficiaries/donors, and the total number of units of blood collected." },
+      { clauseRef: "25", text: "I understand that my OTP-verified acceptance of the MOU on this form is my signature on it as Organizing Secretary, and that the MOU takes effect once AMASI approves this application." },
+      { clauseRef: "existing", text: "I certify that all information provided is accurate and that I have the authority to submit this application on behalf of my institution." },
+    ],
+    typeSpecificFields: [
+      { key: "amasi_year_of_joining", kind: "number", label: "Year of joining AMASI", min: 1993, max: new Date().getFullYear() },
+      { key: "designation", kind: "text", label: "Designation at institution" },
+      { key: "institution_type", kind: "radio", label: "Institution type", required: true, options: [
+        { value: "own", label: "Own institution" }, { value: "guest", label: "Guest institution" }, { value: "private", label: "Private institution (individual)" },
+      ] },
+      { key: "joint_programme", kind: "checkbox", label: "This is a joint programme with another association", helperText: "Add a consent letter for each partner association below." },
+      { key: "consent_guest_institution", kind: "conditional-upload", docType: "consent_guest_institution", label: "Consent letter from Head of the guest institution", requiredWhen: { field: "institution_type", equals: "guest" } },
+      { key: "brief_institution", kind: "conditional-upload", docType: "brief_institution", label: "Brief about the institution", requiredWhen: { field: "institution_type", equals: "private" } },
+      { key: "partner_associations", kind: "association-rows", maxRows: 10 },
+      { key: "expected_beneficiaries", kind: "number", label: "Expected number of donors" },
+      { key: "target_population", kind: "textarea", label: "Target population / catchment description", maxLength: 500 },
+      { key: "expected_units_collected", kind: "number", label: "Expected number of units of blood to be collected" },
+      { key: "proposed_registration_fee", kind: "number", label: "Proposed registration/administrative fee (₹)", helperText: "Subject to AMASI approval." },
+      { key: "programme_outline", kind: "textarea", label: "Proposed programme outline", helperText: "Final programme only after AMASI approval." },
+      { key: "financial_assistance_requested", kind: "checkbox", label: "Requesting AMASI financial assistance (up to ₹1,00,000)" },
+      { key: "nearest_airport", kind: "text", label: "Nearest airport" },
+      { key: "nearest_airport_km", kind: "number", label: "Distance to nearest airport (km)" },
+      { key: "nearest_railhead", kind: "text", label: "Nearest railhead" },
+      { key: "nearest_railhead_km", kind: "number", label: "Distance to nearest railhead (km)" },
+      { key: "facilities", kind: "facilities-group", items: [
+        { key: "collection_beds", kind: "number", label: "Collection beds/couches" },
+        { key: "refreshment_area", kind: "checkbox", label: "Refreshment area for donors" },
+        { key: "screening_area", kind: "checkbox", label: "Pre-donation screening area" },
+        { key: "medical_team_support", kind: "checkbox", label: "On-site medical team support" },
+        { key: "cold_chain_storage", kind: "checkbox", label: "Cold-chain storage for collected units" },
+      ] },
+      { key: "faculty", kind: "faculty-rows", minRows: 1, maxRows: 20 },
+    ],
+  },
   amasicon: {
     id: "amasicon", label: "AMASICON — Annual Conference", description: "Bid to host the annual national conference of AMASI. Valid bids are placed before the next General Body Meeting, where the proposed Organizing Secretary presents the case in person.",
     // expected_participants doubles as "expected delegates"; event_name is
@@ -303,7 +361,7 @@ export const EVENT_TYPE_CONFIG: Record<ApplicationTypeId, EventTypeUiConfig | Mo
     fields: ["event_name", "expected_participants", "live_surgery_demo", "zone"],
   },
   zonal_event: {
-    id: "zonal_event", label: "Zonal Event", description: "A zone-specific AMASI academic event (CME, workshop, symposium or hands-on session). The zone's Chairperson is notified; programme, fee and faculty are fixed by AMASI HQ in the approval.",
+    id: "zonal_event", label: "Zonal Event", description: "A zone-specific AMASI academic event for members (CME, workshop, symposium or hands-on session) — not a blood donation drive or rural camp, which have their own forms below. The zone's Chairperson is notified; programme, fee and faculty are fixed by AMASI HQ in the approval.",
     fields: ["event_name", "zone", "expected_participants"],
   },
 }

@@ -676,6 +676,39 @@ export const RURAL_PROGRAM_CLAUSES: string[] = [
   "This Memorandum of Understanding has to be signed by the Organizing Secretary of the rural surgical camp on behalf of the Second party. Hony. Secretary of AMASI has to sign on behalf of the First party. If the Organizing Secretary of selected rural surgical camp fails to sign the Memorandum of Understanding at least 15 days prior to the event, invitation stands cancelled and Second Party shall not use the logo or name of the first party for any such event.",
 ]
 
+// Adapted from RURAL_PROGRAM_CLAUSES (same MOU/report requirements per the
+// 2026-09-23 follow-up fixes) — clause 4's rural-setting restriction is
+// dropped (a blood donation drive isn't location-restricted the way a rural
+// surgical camp is), and camp-specific wording (instruments/disposables,
+// "surgeries performed") is swapped for the equivalent blood-donation terms.
+export const BLOOD_DONATION_CLAUSES: string[] = [
+  "ASSOCIATION OF MINIMAL ACCESS SURGEONS OF INDIA hereinafter called AMASI being the First Party and ORGANISING COMMITTEE OF BLOOD DONATION DRIVE hereafter called OC being the second party, we the first party and the second party hereby enter in MOU as per the following details.",
+  "Executive Committee of AMASI (EC) shall be the authority to represent the first party. Honorary Secretary of AMASI shall carry out all instruction of the Executive Committee of AMASI and is the authorized signatory of the first party.",
+  "The authorities to present the second party shall be office bearers of Organizing Committee of the blood donation drive. Organizing Secretary of the blood donation drive shall act on the advice of the Organizing Committee. He is authorized to sign for the second party. The Organizing Committee is responsible for the proper conduction of the blood donation drive.",
+  "The venue of the blood donation drive at the place already decided will be at the discretion of the OC, subject to endorsement of EC of AMASI.",
+  "AMASI is holding the full right of authority to sanction any academic activities where the name 'AMASI' and Logo of AMASI will be used in any form either digital, print or both.",
+  "A letter seeking such permission must be addressed to Secretary, AMASI HQ before announcing the programme.",
+  "All the banners, brochures, print materials, electronic materials associated with the event should bear the logos of both AMASI as well as ASI.",
+  "If the second party wishes to hold a program in any guest institution, a letter of consent from Head of the institution must be attached with request letter.",
+  "If the second party wishes to hold a program individually in private institution, he / she must attach a brief about the institution.",
+  "If the second party proposes to hold any program jointly with other association, a letter of consent form of the partner association must be attached with request letter.",
+  "AMASI HQ will complete the official processing of such request latest by two weeks after receiving such request.",
+  "There is no option/permission to open of any Bank Account in the name of AMASI in any form in any circumstances for such blood donation drives.",
+  "The Second Party will decide the programme of the blood donation drive, only after approval of the first party. The second party shall make arrangements for the conduction of the blood donation drive. It includes arranging appropriate collection kits, screening and refreshment facilities, and personnel for assistance. The second party may solicit the support of blood banks, hospitals, pharmaceutical companies and private individuals for donation in cash or kind for the same.",
+  "All the medical personnel/faculty attending such blood donation drive have to be bonafide members of AMASI. Exceptions can be made for personnel belonging to other specialities (e.g. transfusion medicine, pathology) after prior intimation to the first party.",
+  "The Second Party can fix a reasonable registration/administrative fee for the blood donation drive after approval of the first party.",
+  "The second party shall arrange to and fro transport of the faculty provided by AMASI from the nearest railhead or airport and their accommodation and food. The faculty shall reach the nearest railhead/airport at their own expense on request of the first party.",
+  "The Second party shall not display any audiovisual material at the venue to promote meeting, conferences, workshops of any other professional body without intimating the first party.",
+  "The second party shall not utilize the blood donation drive for personal propaganda, promotion of their private hospital, political propaganda or purpose other than service to the population.",
+  "The second party shall bear the full financial responsibility of the event. The first party shall not in any way bear financial liabilities for the blood donation drive. The second party also in not liable to make any payment to the first party for the same.",
+  "For blood donation drives, AMASI shall provide financial assistance upto Rs. One lakh only, on receiving the original bills and vouchers.",
+  "The Second Party shall forward a detailed program listing all the members of the OC, the schedule of the drive and screening/collection sessions and the faculty involved to the first party at least 3 weeks before the commencement of the event.",
+  "The first party will display the event and its schedule including links for registration for the event if provided by the first party on it website. For this, the full details have to be submitted by the second party to the first party at least 3 weeks prior to the event.",
+  "The Second Party shall maintain close liaison with the First party. Organizing Secretary shall provide full details of the facilities available for the blood donation drive to Hon. Secretary of AMASI at least 1month in advance. The full responsibility of conducting the blood donation drive will rest with the second party and AMASI will in no way liable or answerable to the beneficiaries of such a drive.",
+  "The Organizing Secretary shall submit a report to Hony. Secretary AMASI after conclusion of the blood donation drive. It should include blood donation drive photographs, the location of the drive, a brief description of the beneficiaries/donors, the total number of units of blood collected. The report should reach Hony. Secretary, AMASI within fifteen days.",
+  "This Memorandum of Understanding has to be signed by the Organizing Secretary of the blood donation drive on behalf of the Second party. Hony. Secretary of AMASI has to sign on behalf of the First party. If the Organizing Secretary of selected blood donation drive fails to sign the Memorandum of Understanding at least 15 days prior to the event, invitation stands cancelled and Second Party shall not use the logo or name of the first party for any such event.",
+]
+
 // AMASICON MOU — transcribed from
 // https://amasi.org/wp-content/uploads/2025/06/MOU-for-AMASICON.pdf (41
 // clauses + the "Procedures to be followed" sheet). The "20XX" / blank
@@ -784,6 +817,13 @@ function getNumberedClauseTemplate(typeId: ApplicationTypeId): NumberedClauseTem
       appendix: AMASICON_PROCEDURES,
     }
   }
+  if (typeId === "blood_donation") {
+    return {
+      title: "MEMORANDUM OF UNDERSTANDING FOR BLOOD DONATION DRIVE",
+      roleLabel: "blood donation drive",
+      clauses: BLOOD_DONATION_CLAUSES,
+    }
+  }
   return {
     title: "MEMORANDUM OF UNDERSTANDING FOR RURAL SURGERY CAMP",
     roleLabel: "rural surgical camp",
@@ -858,7 +898,7 @@ function renderNumberedClauseMou(application: AcademicEventApplication, signatur
 
 const COLLEGE_OF_MAS_TYPES: ApplicationTypeId[] = ["fmas", "mmas", "dmas"]
 const ARTICLE_TYPES: ApplicationTypeId[] = ["slcp", "nextgen", "meet_the_master", "zonal_event"]
-const NUMBERED_CLAUSE_TYPES: ApplicationTypeId[] = ["workshop", "rural_program", "amasicon"]
+const NUMBERED_CLAUSE_TYPES: ApplicationTypeId[] = ["workshop", "rural_program", "amasicon", "blood_donation"]
 
 export async function generateMouPdf(
   application: AcademicEventApplication,

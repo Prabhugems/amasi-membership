@@ -4,7 +4,7 @@ import type { AcademicEventApplication, ApplicationTypeId } from "./types"
 
 export type EventRouting = "amasi" | "college" | "none"
 
-// Mirrors sql/048's seed. Used as the default at submission time when the
+// Mirrors sql/048 + sql/050's seed. Used as the default at submission time when the
 // academic_event_types row can't be read, and as a defensive fallback
 // inside createEventForApplication for any pre-migration application row
 // that somehow still has a null event_routing.
@@ -13,8 +13,9 @@ const FALLBACK_ROUTING_BY_APPLICATION_TYPE: Record<ApplicationTypeId, EventRouti
   mmas: "college",
   dmas: "college",
   rural_program: "none",
+  blood_donation: "none",
   workshop: "amasi",
-  amasicon: "amasi",
+  amasicon: "none",
   slcp: "amasi",
   nextgen: "amasi",
   meet_the_master: "amasi",
@@ -46,6 +47,7 @@ const EVENT_TYPE_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "conference" | "
   workshop: "workshop",
   amasicon: "conference",
   rural_program: "workshop",
+  blood_donation: "workshop",
   slcp: "workshop",
   nextgen: "workshop",
   meet_the_master: "workshop",

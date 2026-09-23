@@ -65,6 +65,7 @@ function baseApplication(overrides: Partial<AcademicEventApplication>): Academic
     report_reminder_7_sent_at: null,
     report_reminder_15_sent_at: null,
     report_escalation_sent_at: null,
+    registration_required: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,

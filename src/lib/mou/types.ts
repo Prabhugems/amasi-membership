@@ -67,6 +67,7 @@ export interface AcademicEventApplication {
   report_reminder_7_sent_at: string | null
   report_reminder_15_sent_at: string | null
   report_escalation_sent_at: string | null
+  registration_required: boolean | null
   created_at: string
   updated_at: string
 }

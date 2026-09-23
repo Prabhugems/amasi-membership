@@ -181,6 +181,28 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const registrationMutation = useMutation({
+    mutationFn: async (registrationRequired: boolean) => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/registration`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registrationRequired }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to save")
+      return json as { registrationRequired: boolean; eventSynced: boolean }
+    },
+    onSuccess: (json) => {
+      toast.success(
+        json.registrationRequired
+          ? json.eventSynced ? "Registration opened" : "Saved — no linked event to sync yet"
+          : "Marked as not needing registration"
+      )
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const app = data?.application
   const remarks = data?.remarks ?? []
 
@@ -428,6 +450,38 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                       Anomaly: no matching electronic-signature record found for this application.
                     </div>
                   )}
+                </div>
+              )}
+
+              {(app.status === "approved" || app.status === "completed") && (
+                <div className="rounded-md border border-border p-4">
+                  <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+                    Registration
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Does AMASI need to open registration for this event, or is it endorsement-only (e.g. a rural/blood-donation camp) or self-registered by the organizer?
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={app.registration_required === true ? "default" : "outline"}
+                      disabled={registrationMutation.isPending}
+                      onClick={() => registrationMutation.mutate(true)}
+                    >
+                      Open registration
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={app.registration_required === false ? "default" : "outline"}
+                      disabled={registrationMutation.isPending}
+                      onClick={() => registrationMutation.mutate(false)}
+                    >
+                      Not needed
+                    </Button>
+                    {app.registration_required === null && (
+                      <span className="text-xs text-muted-foreground">Not decided yet</span>
+                    )}
+                  </div>
                 </div>
               )}
 

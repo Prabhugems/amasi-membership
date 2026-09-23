@@ -177,6 +177,7 @@ describe("generateMouPdf — amasicon", () => {
     report_reminder_7_sent_at: null,
     report_reminder_15_sent_at: null,
     report_escalation_sent_at: null,
+    registration_required: null,
     created_at: "2026-09-10T00:00:00.000Z",
     updated_at: "2026-09-10T00:00:00.000Z",
   } satisfies AcademicEventApplication

@@ -46,6 +46,7 @@ const app: AcademicEventApplication = {
   reviewed_by: null, reviewed_at: null, rejection_reason: null, admin_notes: null, published_at: null,
   report_documents: [], report_notes: null, report_submitted_at: null,
   report_reminder_7_sent_at: null, report_reminder_15_sent_at: null, report_escalation_sent_at: null,
+  registration_required: null,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 }
 

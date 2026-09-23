@@ -65,6 +65,14 @@ interface DetailResponse {
   application: AcademicEventApplication
   remarks: Remark[]
   hasSignature: boolean | null
+  eventRoutingLocked: boolean
+  eventCreationFailed: boolean
+}
+
+const ROUTING_LABELS: Record<"amasi" | "college" | "none", string> = {
+  amasi: "AMASI",
+  college: "College of MAS",
+  none: "No event (MOU only)",
 }
 
 const STATUSES: ApplicationStatus[] = [
@@ -199,6 +207,40 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
           : "Marked as not needing registration"
       )
       qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const routingMutation = useMutation({
+    mutationFn: async (eventRouting: "amasi" | "college" | "none") => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/routing`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventRouting }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to save")
+      return json as { eventRouting: "amasi" | "college" | "none"; changed: boolean }
+    },
+    onSuccess: (json) => {
+      if (json.changed) toast.success(`Routing set to ${ROUTING_LABELS[json.eventRouting]}`)
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+      qc.invalidateQueries({ queryKey: ["mou-admin-list"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const retryEventMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/retry-event`, { method: "POST" })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to create event")
+      return json as { eventId: string }
+    },
+    onSuccess: () => {
+      toast.success("Event created")
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+      qc.invalidateQueries({ queryKey: ["mou-admin-list"] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -452,6 +494,51 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   )}
                 </div>
               )}
+
+              <div className="rounded-md border border-border p-4">
+                <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+                  Event routing
+                </h3>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Which entity does this event open under — or should it have no event at all (endorsement-only, e.g. a rural camp or blood-donation drive)? Settable before or after approval.
+                </p>
+                {data?.eventRoutingLocked && (
+                  <p className="text-xs text-destructive mb-2">
+                    Locked — this event already has registrations or ticket sales.
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {(["college", "amasi", "none"] as const).map((option) => (
+                    <Button
+                      key={option}
+                      size="sm"
+                      variant={app.event_routing === option ? "default" : "outline"}
+                      disabled={routingMutation.isPending || data?.eventRoutingLocked}
+                      onClick={() => routingMutation.mutate(option)}
+                    >
+                      {ROUTING_LABELS[option]}
+                    </Button>
+                  ))}
+                  {!app.event_routing && (
+                    <span className="text-xs text-muted-foreground">Not set yet</span>
+                  )}
+                </div>
+                {data?.eventCreationFailed && (
+                  <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 p-2.5">
+                    <p className="text-sm text-destructive mb-2">
+                      Approved with routing set, but event creation failed — no event exists for this application.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={retryEventMutation.isPending}
+                      onClick={() => retryEventMutation.mutate()}
+                    >
+                      {retryEventMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Retry create event"}
+                    </Button>
+                  </div>
+                )}
+              </div>
 
               {(app.status === "approved" || app.status === "completed") && (
                 <div className="rounded-md border border-border p-4">
@@ -836,7 +923,17 @@ export default function AdminMouApplicationsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={app.status} />
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge status={app.status} />
+                        {(app.status === "approved" || app.status === "completed") &&
+                          app.event_routing !== "none" &&
+                          !app.created_event_id && (
+                            <span
+                              title="Event creation failed — no event exists for this application"
+                              className="inline-flex h-1.5 w-1.5 rounded-full bg-destructive"
+                            />
+                          )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       {(app.status === "approved" || app.status === "completed") && app.mou_generated_url ? (

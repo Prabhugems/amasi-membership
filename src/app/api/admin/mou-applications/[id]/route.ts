@@ -4,6 +4,7 @@ import { getAdminSession } from "@/lib/auth"
 import { getApplicationById, signApplicationStorage } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
 import { isMouEventTypeConfig, getEventTypeConfig } from "@/lib/mou/event-type-config"
+import { isEventRoutingLocked } from "@/lib/mou/event-routing"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getAdminSession()
@@ -43,6 +44,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   }
 
   const signedApplication = await signApplicationStorage(application)
+  const eventRoutingLocked = await isEventRoutingLocked(supabase, application.created_event_id)
+  const eventCreationFailed =
+    (application.status === "approved" || application.status === "completed") &&
+    application.event_routing !== "none" &&
+    !application.created_event_id
 
-  return Response.json({ status: true, application: signedApplication, remarks: remarks ?? [], hasSignature })
+  return Response.json({
+    status: true,
+    application: signedApplication,
+    remarks: remarks ?? [],
+    hasSignature,
+    eventRoutingLocked,
+    eventCreationFailed,
+  })
 }

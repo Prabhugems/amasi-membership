@@ -8,6 +8,7 @@ import { getAdminSession } from "@/lib/auth"
 import { getApplicationById } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
 import { logAdminAction } from "@/lib/audit-log"
+import { syncEventRegistration } from "@/lib/mou/event-routing"
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getAdminSession()
@@ -40,35 +41,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   // Sync onto the shared `events` row this application auto-created on
-  // approval (decide/route.ts) — the same table amasi-faculty-management's
-  // own dashboard reads from. Only touches registration_open and, when
-  // turning registration ON, nudges a still-draft event to
-  // registration_open; turning it OFF never moves status backward — the
-  // event may already be further along (active/ongoing) for reasons
-  // unrelated to registration.
-  let eventSynced = false
-  if (application.created_event_id) {
-    const { data: eventRow } = await supabase
-      .from("events")
-      .select("status")
-      .eq("id", application.created_event_id)
-      .maybeSingle()
-
-    const eventUpdate: Record<string, unknown> = { registration_open: registrationRequired, updated_at: new Date().toISOString() }
-    if (registrationRequired && eventRow?.status === "draft") {
-      eventUpdate.status = "registration_open"
-    }
-
-    const { error: eventError } = await supabase
-      .from("events")
-      .update(eventUpdate)
-      .eq("id", application.created_event_id)
-    if (eventError) {
-      console.error(`[mou-registration] events sync failed for application ${id}:`, eventError.message)
-    } else {
-      eventSynced = true
-    }
-  }
+  // approval (decide/route.ts, via createEventForApplication) — the same
+  // table amasi-faculty-management's own dashboard reads from. See
+  // syncEventRegistration's own doc comment for the draft→registration_open
+  // nudge / never-moves-backward behavior.
+  const eventSynced = application.created_event_id
+    ? await syncEventRegistration(supabase, application.created_event_id, registrationRequired)
+    : false
 
   const adminEmail = typeof session.email === "string" ? session.email : "admin@amasi.org"
   await logAdminAction({

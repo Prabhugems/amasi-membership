@@ -33,5 +33,15 @@ export async function GET(request: NextRequest) {
 
   const result = await listApplications({ type, status, limit, offset })
   const signedRows = await signApplicationsStorage(result.rows)
-  return Response.json({ status: true, ...result, rows: signedRows })
+  // Purely derived from fields already on the row — no per-event query, so
+  // safe to compute for up to MAX_LIMIT rows. See the admin detail route
+  // for the (per-event, more expensive) eventRoutingLocked check.
+  const rows = signedRows.map((app) => ({
+    ...app,
+    eventCreationFailed:
+      (app.status === "approved" || app.status === "completed") &&
+      app.event_routing !== "none" &&
+      !app.created_event_id,
+  }))
+  return Response.json({ status: true, ...result, rows })
 }

@@ -129,6 +129,22 @@ export async function createEventForApplication(
 }
 
 /**
+ * True once the linked event has any real registrations or ticket sales —
+ * the point past which routing (and the admin registration toggle) should
+ * no longer be changeable. Shared by the admin detail GET route (so the UI
+ * can disable the selector up front) and the routing PATCH route (which
+ * re-checks server-side rather than trusting the client).
+ */
+export async function isEventRoutingLocked(supabase: SupabaseClient, eventId: string | null): Promise<boolean> {
+  if (!eventId) return false
+  const [{ count: regCount }, { data: soldTickets }] = await Promise.all([
+    supabase.from("registrations").select("id", { count: "exact", head: true }).eq("event_id", eventId),
+    supabase.from("ticket_types").select("quantity_sold").eq("event_id", eventId).gt("quantity_sold", 0).limit(1),
+  ])
+  return (regCount ?? 0) > 0 || (soldTickets?.length ?? 0) > 0
+}
+
+/**
  * Toggle registration_open on an EXISTING event, nudging a still-draft
  * event to registration_open status when turning it on. Turning it off
  * never moves status backward — the event may already be further along

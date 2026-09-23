@@ -35,6 +35,28 @@ const EVENT_TYPE_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "conference" | "
   zonal_event: "conference",
 }
 
+// public.events.tenant is NOT NULL with a 'college' default — this insert
+// never set it, so every auto-created event silently fell into the
+// 'college' bucket regardless of type. That's accidentally right for
+// fmas/mmas/dmas (owning_entity 'college_of_amasi' in academic_event_types,
+// sql/039's seed) but wrong for everything else (owning_entity 'amasi'),
+// which made those events invisible on events.amasi.org's dashboard —
+// confirmed live: a zonal_event and a nextgen application both landed in
+// tenant='college' while their actual owning_entity is 'amasi'. Mirrors
+// COLLEGE_OF_MAS_TYPES in src/lib/mou/mou-pdf.tsx.
+const TENANT_BY_APPLICATION_TYPE: Record<ApplicationTypeId, "college" | "amasi"> = {
+  fmas: "college",
+  mmas: "college",
+  dmas: "college",
+  workshop: "amasi",
+  amasicon: "amasi",
+  rural_program: "amasi",
+  slcp: "amasi",
+  nextgen: "amasi",
+  meet_the_master: "amasi",
+  zonal_event: "amasi",
+}
+
 // public.events.slug is NOT NULL + UNIQUE with no default — an insert
 // without one fails outright. Derive one from the event name and make it
 // unique by suffixing a fragment of the (already-unique) application id,
@@ -103,6 +125,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           short_name: typeLabel,
           slug: buildEventSlug(eventName, application.id),
           event_type: EVENT_TYPE_BY_APPLICATION_TYPE[application.application_type_id] ?? "conference",
+          tenant: TENANT_BY_APPLICATION_TYPE[application.application_type_id] ?? "amasi",
           description: `${typeLabel} hosted by ${application.organizer_name} at ${application.primary_institution}`,
           start_date: application.finalized_date || application.preferred_date_1,
           end_date: application.finalized_date || application.preferred_date_1,

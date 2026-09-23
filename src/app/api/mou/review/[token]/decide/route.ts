@@ -101,6 +101,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             tags: { component: "mou-decide", op: "invite-organiser" },
             extra: { applicationId: application.id, eventId: eventResult.eventId },
           })
+          const { sendMouAlertEmail } = await import("@/lib/mou/notify")
+          await sendMouAlertEmail(
+            `organiser invite not sent for ${application.organizer_name}`,
+            `Event ${eventResult.eventId} was created, but the organiser invite for ${application.organizer_name} (${application.email}) failed to send. They won't have access to manage the event until this is fixed manually.`
+          )
         }
 
         const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[application.application_type_id]
@@ -131,6 +136,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           tags: { component: "mou-decide", op: "auto-create-event" },
           extra: { applicationId: application.id },
         })
+        const { sendMouAlertEmail } = await import("@/lib/mou/notify")
+        await sendMouAlertEmail(
+          `event not created for ${application.organizer_name}`,
+          `Application ${application.id} (${application.organizer_name}, ${typeLabel}) was approved, but event creation failed: ${eventResult.error}. Use "Retry create event" in the admin application page.`
+        )
       }
     }
 
@@ -214,7 +224,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // decision above, so its rejection_reason is stale (null, unless a prior
   // decision already set it). safeNotes is the actual value just written to
   // the DB.
-  await sendOutcomeEmail(application, typeLabel, action, action !== "approved" ? safeNotes : null, mouBuffer, eventDetailsForEmail)
+  //
+  // Same best-effort posture as the event-creation block above: the
+  // decision is already persisted, so a failed outcome email must not fail
+  // this response or look like the decision didn't go through — alert
+  // instead (Part B item 9).
+  try {
+    await sendOutcomeEmail(application, typeLabel, action, action !== "approved" ? safeNotes : null, mouBuffer, eventDetailsForEmail)
+  } catch (err) {
+    console.error(`[mou-decide] outcome email failed for application ${application.id}:`, err)
+    const Sentry = await import("@sentry/nextjs")
+    Sentry.captureException(err, { tags: { component: "mou-decide", op: "outcome-email" }, extra: { applicationId: application.id, action } })
+    const { sendMouAlertEmail } = await import("@/lib/mou/notify")
+    await sendMouAlertEmail(
+      `outcome email not sent for ${application.organizer_name}`,
+      `The ${action} decision for application ${application.id} (${application.organizer_name}) was saved, but the outcome email to the applicant failed to send. They may not know the decision yet.`
+    )
+  }
   await sendWhatsAppNudge(application, action)
 
   return Response.json({ status: true })

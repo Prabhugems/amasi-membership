@@ -36,7 +36,7 @@ vi.mock("@/lib/mou/mou-pdf", () => ({
   AMASICON_CLAUSES: [],
   BLOOD_DONATION_CLAUSES: [],
 }))
-vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn() }))
+vi.mock("@/lib/mou/notify", () => ({ sendOutcomeEmail: vi.fn(), sendWhatsAppNudge: vi.fn(), sendMouAlertEmail: vi.fn() }))
 vi.mock("@/lib/mou/mou-signature", () => ({
   markCounterSigned: vi.fn().mockImplementation(async () => {
     counterSignedFlag.value = true

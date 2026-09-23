@@ -2,8 +2,7 @@ import { createAdminClient } from "@/lib/supabase"
 import { buildMouDigestSections } from "@/lib/mou-weekly-digest"
 import { sendMouWeeklyDigestEmail } from "@/lib/mou/notify"
 import { getRoleAssignment } from "@/lib/mou/supabase-helpers"
-// Heartbeat recording (recordHeartbeat) is added in the alerts/heartbeat
-// commit, once src/lib/cron-heartbeat.ts exists — deliberately not here yet.
+import { recordHeartbeat } from "@/lib/cron-heartbeat"
 
 // ---------------------------------------------------------------------------
 // GET /api/cron/mou-weekly-digest[?dryRun=true]
@@ -50,10 +49,12 @@ export async function GET(request: Request) {
     }
 
     if (to.length === 0) {
+      await recordHeartbeat("mou-weekly-digest", { success: false, error: "no admin recipients found" })
       return Response.json({ error: "No admin emails found" }, { status: 500 })
     }
 
     await sendMouWeeklyDigestEmail(sections, { to, cc })
+    await recordHeartbeat("mou-weekly-digest", { success: true })
 
     return Response.json({
       sent: true,
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
     console.error("[mou-weekly-digest] fatal error:", message)
+    await recordHeartbeat("mou-weekly-digest", { success: false, error: message })
     return Response.json({ error: "Digest run failed" }, { status: 500 })
   }
 }

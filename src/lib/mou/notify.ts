@@ -319,6 +319,30 @@ export async function sendReportReturnedEmail(
   })
 }
 
+// Generic admin failure alert (Part B item 9) — event-creation-on-approval,
+// organiser-invite-send, approval-email-send failures, and a stale cron
+// heartbeat all funnel through this one function so there's a single place
+// that owns "who gets told when something breaks." Sentry already captures
+// the exception/message at each call site; this is the redundant,
+// human-visible channel for the same failure. Never throws — an alert that
+// fails to send must not mask or replace the original error.
+export async function sendMouAlertEmail(subject: string, bodyText: string): Promise<void> {
+  const to = (process.env.ADMIN_DEFAULT_EMAIL || "admin@amasi.org").trim().toLowerCase()
+  try {
+    await sendEmail({
+      from: FROM,
+      to,
+      subject: `MOU: ${subject}`,
+      html: emailShell({
+        heading: subject,
+        bodyHtml: `<p style="margin:0;white-space:pre-wrap;">${escapeHtml(bodyText)}</p>`,
+      }),
+    })
+  } catch (err) {
+    console.error("[mou-alert] failed to send admin alert email:", err)
+  }
+}
+
 export async function sendWhatsAppNudge(
   application: AcademicEventApplication,
   outcome: "approved" | "rejected" | "changes_requested"

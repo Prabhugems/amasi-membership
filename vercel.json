@@ -32,6 +32,10 @@
     {
       "path": "/api/cron/mou-weekly-digest",
       "schedule": "30 3 * * 1"
+    },
+    {
+      "path": "/api/cron/heartbeat-check",
+      "schedule": "0 * * * *"
     }
   ]
 }

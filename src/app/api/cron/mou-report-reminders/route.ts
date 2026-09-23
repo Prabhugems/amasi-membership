@@ -1,4 +1,5 @@
 import { runMouReportReminders } from "@/lib/mou-report-reminders"
+import { recordHeartbeat } from "@/lib/cron-heartbeat"
 
 // ---------------------------------------------------------------------------
 // GET /api/cron/mou-report-reminders[?dryRun=true]
@@ -24,9 +25,14 @@ export async function GET(request: Request) {
 
   try {
     const summary = await runMouReportReminders({ dryRun })
+    // Dry runs don't count as a real heartbeat — recording one would mask a
+    // genuinely broken scheduled run behind manual dry-run checks.
+    if (!dryRun) await recordHeartbeat("mou-report-reminders", { success: true })
     return Response.json(summary)
   } catch (error: unknown) {
-    console.error("[mou-report-reminders] fatal error:", error instanceof Error ? error.message : String(error))
+    const message = error instanceof Error ? error.message : String(error)
+    console.error("[mou-report-reminders] fatal error:", message)
+    if (!dryRun) await recordHeartbeat("mou-report-reminders", { success: false, error: message })
     return Response.json({ error: "Reminder run failed" }, { status: 500 })
   }
 }

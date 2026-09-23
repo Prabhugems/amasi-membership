@@ -176,8 +176,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (uploadError) {
       return Response.json({ status: false, message: "Failed to generate MOU document. Please try again." }, { status: 500 })
     }
-    const { data: publicUrlData } = supabase.storage.from("uploads").getPublicUrl(fileName)
-    mouUrl = publicUrlData.publicUrl
+    // Store the bare `uploads`-bucket path, not a public URL — the bucket is
+    // private (sql/024). Readers (GET /api/mou/review/[token], the admin
+    // mou-applications routes) sign this into a fresh time-limited URL at
+    // the API boundary, per the "store paths, sign on read" rule in
+    // src/lib/storage-url.ts.
+    mouUrl = fileName
   }
 
   // markTokenUsed (and the outbound notifications) must only fire once the

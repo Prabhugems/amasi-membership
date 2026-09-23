@@ -1,5 +1,92 @@
 import { createAdminClient } from "@/lib/supabase"
+import { signRecordsFields, signStorageValues, toStoragePath } from "@/lib/storage-url"
 import type { AcademicEventApplication, ApplicationStatus, NewApplicationInput } from "./types"
+
+// Flat columns on `academic_event_applications` that hold `uploads`-bucket
+// paths (or, for rows written before sql/024's Phase B flip, legacy public
+// URLs — signStorageValue/toStoragePath normalise either shape). The bucket
+// is private, so every reader must sign these fresh rather than render the
+// stored value directly.
+//
+// mou_generated_url is server-only — written exclusively by decide/route.ts,
+// never part of POST /api/mou/applications' client allowlist (see the
+// comment on pickApplicationInput there) — so it's safe to sign as-is.
+const APPLICATION_STORAGE_FIELDS = [
+  "mou_generated_url",
+  "committee_member_photo_url",
+  "institution_photo_url",
+  "consent_guest_institution_url",
+  "brief_institution_url",
+] as const
+
+// The other four flat fields, plus partner_associations[].consent_letter_url
+// below, ARE passed through verbatim from client JSON by pickApplicationInput
+// — an applicant can set them to any string. The only legitimate source for
+// any of them is POST /api/mou/applications/upload, which always writes
+// under this one prefix. Without this check, a client could set e.g.
+// committee_member_photo_url to another member's mci_certificate path, and
+// signing it below (via the service-role client, which bypasses RLS) would
+// hand a real signed URL to that unrelated file to whoever reviews this
+// application — a confused-deputy / IDOR path into the shared bucket.
+const OWNED_UPLOAD_PREFIX = "mou-applications/"
+
+function ownedPathOrNull(value: string | null | undefined): string | null {
+  if (!value) return null
+  const path = toStoragePath(value)
+  return path && path.startsWith(OWNED_UPLOAD_PREFIX) ? value : null
+}
+
+function sanitizeClientSuppliedPaths(app: AcademicEventApplication): AcademicEventApplication {
+  return {
+    ...app,
+    committee_member_photo_url: ownedPathOrNull(app.committee_member_photo_url),
+    institution_photo_url: ownedPathOrNull(app.institution_photo_url),
+    consent_guest_institution_url: ownedPathOrNull(app.consent_guest_institution_url),
+    brief_institution_url: ownedPathOrNull(app.brief_institution_url),
+    partner_associations: (app.partner_associations ?? []).map((p) => ({
+      ...p,
+      consent_letter_url: ownedPathOrNull(p.consent_letter_url),
+    })),
+  }
+}
+
+/**
+ * Sign every stored-path field on a batch of applications, including the one
+ * field that isn't a flat column: `partner_associations[].consent_letter_url`.
+ * Batches both the flat fields and the nested array across all rows into two
+ * round trips total, not one per row.
+ */
+export async function signApplicationsStorage(
+  applications: AcademicEventApplication[]
+): Promise<AcademicEventApplication[]> {
+  const sanitized = applications.map(sanitizeClientSuppliedPaths)
+  const signedTop = await signRecordsFields(sanitized, APPLICATION_STORAGE_FIELDS)
+
+  const allConsentUrls: string[] = []
+  for (const app of signedTop) {
+    for (const p of app.partner_associations ?? []) {
+      if (p.consent_letter_url) allConsentUrls.push(p.consent_letter_url)
+    }
+  }
+  if (allConsentUrls.length === 0) return signedTop
+
+  const signedMap = await signStorageValues(allConsentUrls)
+  return signedTop.map((app) => ({
+    ...app,
+    partner_associations: (app.partner_associations ?? []).map((p) => ({
+      ...p,
+      consent_letter_url: p.consent_letter_url ? signedMap.get(p.consent_letter_url) ?? null : p.consent_letter_url,
+    })),
+  }))
+}
+
+/** Single-row convenience wrapper around signApplicationsStorage. */
+export async function signApplicationStorage(
+  application: AcademicEventApplication
+): Promise<AcademicEventApplication> {
+  const [signed] = await signApplicationsStorage([application])
+  return signed
+}
 
 export async function createApplication(input: NewApplicationInput): Promise<AcademicEventApplication> {
   const supabase = createAdminClient()

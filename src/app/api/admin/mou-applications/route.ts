@@ -1,7 +1,7 @@
 // @auth: admin
 import { NextRequest } from "next/server"
 import { getAdminSession } from "@/lib/auth"
-import { listApplications } from "@/lib/mou/supabase-helpers"
+import { listApplications, signApplicationsStorage } from "@/lib/mou/supabase-helpers"
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
@@ -32,5 +32,6 @@ export async function GET(request: NextRequest) {
   const offset = parseOffset(request.nextUrl.searchParams.get("offset"))
 
   const result = await listApplications({ type, status, limit, offset })
-  return Response.json({ status: true, ...result })
+  const signedRows = await signApplicationsStorage(result.rows)
+  return Response.json({ status: true, ...result, rows: signedRows })
 }

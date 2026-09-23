@@ -1,7 +1,7 @@
 // @auth: public but token-gated — the magic link's landing summary.
 import { NextRequest } from "next/server"
 import { verifyApprovalToken } from "@/lib/mou/approval-token"
-import { getApplicationById } from "@/lib/mou/supabase-helpers"
+import { getApplicationById, signApplicationStorage } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -19,11 +19,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .eq("application_id", application.id)
     .order("created_at", { ascending: true })
 
+  const signedApplication = await signApplicationStorage(application)
+
   return Response.json({
     status: true,
     canDecide: verified.row.can_decide,
     role: verified.row.role,
-    application,
+    application: signedApplication,
     remarks: remarks ?? [],
   })
 }

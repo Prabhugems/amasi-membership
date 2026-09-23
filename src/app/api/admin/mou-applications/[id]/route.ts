@@ -1,7 +1,7 @@
 // @auth: admin
 import { NextRequest } from "next/server"
 import { getAdminSession } from "@/lib/auth"
-import { getApplicationById } from "@/lib/mou/supabase-helpers"
+import { getApplicationById, signApplicationStorage } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
 import { isMouEventTypeConfig, getEventTypeConfig } from "@/lib/mou/event-type-config"
 
@@ -42,5 +42,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     hasSignature = error ? null : !!signature
   }
 
-  return Response.json({ status: true, application, remarks: remarks ?? [], hasSignature })
+  const signedApplication = await signApplicationStorage(application)
+
+  return Response.json({ status: true, application: signedApplication, remarks: remarks ?? [], hasSignature })
 }

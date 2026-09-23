@@ -108,11 +108,10 @@ export async function POST(request: NextRequest) {
   }
 
   // These fields (committee_member_photo_url / institution_photo_url) are
-  // stored as durable public URL strings on the application row (see
-  // src/lib/mou/types.ts) for the reviewer/admin UI to display later — a
-  // signed URL would expire before a reviewer opens the application, so use
-  // a public URL, matching the pattern the decide route already uses for
-  // the generated MOU PDF itself.
-  const { data: publicUrlData } = supabase.storage.from("uploads").getPublicUrl(storagePath)
-  return Response.json({ status: true, url: publicUrlData.publicUrl })
+  // stored as a bare `uploads`-bucket path on the application row (see
+  // src/lib/mou/types.ts) — the "store paths, sign on read" rule from
+  // src/lib/storage-url.ts. The `uploads` bucket is private (sql/024), so a
+  // public URL here would 404 for the reviewer; GET /api/mou/review/[token]
+  // signs this path into a fresh time-limited URL on every page load instead.
+  return Response.json({ status: true, url: storagePath })
 }

@@ -28,6 +28,7 @@ vi.mock("@/lib/mou/supabase-helpers", () => ({
   getApplicationById: vi.fn(),
 }))
 vi.mock("@/lib/mou/approval-token", () => ({ createApprovalToken: vi.fn().mockResolvedValue("raw-token") }))
+vi.mock("@/lib/mou/edit-token", () => ({ createEditToken: vi.fn().mockResolvedValue("raw-edit-token") }))
 vi.mock("@/lib/mou/notify", () => ({
   sendApplicantConfirmation: vi.fn(),
   sendSecretaryApprovalRequest: vi.fn(),

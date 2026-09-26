@@ -194,3 +194,27 @@ export async function syncEventRegistration(
   const { error } = await supabase.from("events").update(eventUpdate).eq("id", eventId)
   return !error
 }
+
+/**
+ * Push a new date/venue onto an already-created event — used only by the
+ * "Request a change" flow (an approved/completed application's admin-
+ * approved change request), which is the one place post-approval that a
+ * date or venue can legitimately move. Only touches the fields explicitly
+ * passed; omit a field to leave it unchanged. Never throws — same
+ * best-effort posture as createEventForApplication.
+ */
+export async function syncEventDateVenue(
+  supabase: SupabaseClient,
+  eventId: string,
+  changes: { startDate?: string; endDate?: string; venueName?: string; city?: string; state?: string }
+): Promise<boolean> {
+  const eventUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (changes.startDate !== undefined) eventUpdate.start_date = changes.startDate
+  if (changes.endDate !== undefined) eventUpdate.end_date = changes.endDate
+  if (changes.venueName !== undefined) eventUpdate.venue_name = changes.venueName
+  if (changes.city !== undefined) eventUpdate.city = changes.city
+  if (changes.state !== undefined) eventUpdate.state = changes.state
+
+  const { error } = await supabase.from("events").update(eventUpdate).eq("id", eventId)
+  return !error
+}

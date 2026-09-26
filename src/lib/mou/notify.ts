@@ -54,6 +54,17 @@ function reportLinkUrl(application: AcademicEventApplication): string {
   return `${appUrl()}/mou/report/${application.id}`
 }
 
+// `editToken` is optional here: decide/route.ts (which sends the
+// changes_requested outcome email) never has the raw token — only its
+// hash was ever persisted, back at creation time. Landing on this URL
+// without a token still works: src/app/mou/edit/[id]/page.tsx falls back
+// to an OTP-verify prompt (see src/lib/mou/applicant-auth.ts's second
+// credential path), so a bare link is a real fallback, not a dead end.
+function editLinkUrl(application: AcademicEventApplication, editToken?: string): string {
+  const base = `${appUrl()}/mou/edit/${application.id}`
+  return editToken ? `${base}?token=${editToken}` : base
+}
+
 // FYI recipients (President, zone chairs) are notified purely by role slug
 // (see academic_event_role_assignments.role / the zone_chair_<zone> lookup
 // in src/app/api/mou/applications/route.ts) — without this, the email body
@@ -127,7 +138,11 @@ function emailShell(opts: {
 </div>`
 }
 
-export async function sendApplicantConfirmation(application: AcademicEventApplication, confirmationNote?: string): Promise<void> {
+export async function sendApplicantConfirmation(
+  application: AcademicEventApplication,
+  editToken: string,
+  confirmationNote?: string
+): Promise<void> {
   const organizerName = escapeHtml(application.organizer_name)
   const noteHtml = confirmationNote
     ? `<div style="margin:16px 0;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:13px;">${escapeHtml(confirmationNote)}</div>`
@@ -140,8 +155,9 @@ export async function sendApplicantConfirmation(application: AcademicEventApplic
       heading: "Application received",
       bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p>
         <p style="margin:0 0 12px;">Your application (ID ${application.id}) has been received and is under review by the AMASI Hon. Secretary. You'll be notified by email once a decision is made.</p>
-        ${noteHtml}`,
-      cta: { label: "Check application status", url: statusLinkUrl(application) },
+        ${noteHtml}
+        <p style="margin:0;color:#64748b;font-size:13px;">This link is unique to your application — you can use it any time to view or edit your submission while it's under review. Please don't forward it.</p>`,
+      cta: { label: "View / edit your application", url: editLinkUrl(application, editToken) },
     }),
   })
 }
@@ -215,9 +231,11 @@ export async function sendOutcomeEmail(
   const reasonBlock = safeRejectionReason
     ? `<div style="margin:16px 0;padding:12px 16px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:4px;color:#0f172a;font-size:13px;">${safeRejectionReason}</div>`
     : ""
-  const nextStepsLine =
-    `<p style="margin:16px 0 0;">There is no resubmission flow at this time. If you have questions, please contact the AMASI Secretary` +
+  const rejectedNextStepsLine =
+    `<p style="margin:16px 0 0;">There is no resubmission flow for a rejected application. If you have questions, please contact the AMASI Secretary` +
     ` at <a href="mailto:amasi.india@gmail.com" style="color:#0f766e;">amasi.india@gmail.com</a>.</p>`
+  const changesRequestedNextStepsLine =
+    `<p style="margin:16px 0 0;">Use the edit link from your original confirmation email to make the requested changes and resubmit — or use the button below and verify your email if you no longer have that link.</p>`
   const eventBlock = eventDetails
     ? `<div style="margin:16px 0;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:13px;">
         <strong>${escapeHtml(eventDetails.name)}</strong>${eventDetails.startDate ? ` — ${new Date(eventDetails.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : ""}<br/>
@@ -226,8 +244,13 @@ export async function sendOutcomeEmail(
     : ""
   const bodyByOutcome = {
     approved: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">Congratulations — your application has been approved. The signed MOU is attached to this email.</p>${eventBlock}<p style="margin:0;color:#64748b;font-size:13px;">Per the MOU, a comprehensive report with photographs is due within 15 days of the event — you can submit it anytime after from your <a href="${reportLinkUrl(application)}" style="color:#0f766e;">status page</a>.</p>`,
-    rejected: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">Your application was not approved.</p>${reasonBlock}${nextStepsLine}`,
-    changes_requested: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">The Hon. Secretary has requested changes.</p>${reasonBlock}${nextStepsLine}`,
+    rejected: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">Your application was not approved.</p>${reasonBlock}${rejectedNextStepsLine}`,
+    changes_requested: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0;">The Hon. Secretary has requested changes.</p>${reasonBlock}${changesRequestedNextStepsLine}`,
+  }
+  const ctaByOutcome = {
+    approved: { label: "Check application status", url: statusLinkUrl(application) },
+    rejected: { label: "Check application status", url: statusLinkUrl(application) },
+    changes_requested: { label: "Edit and resubmit your application", url: editLinkUrl(application) },
   }
   await sendEmail({
     from: FROM,
@@ -236,7 +259,7 @@ export async function sendOutcomeEmail(
     html: emailShell({
       heading: headingByOutcome[outcome],
       bodyHtml: bodyByOutcome[outcome],
-      cta: { label: "Check application status", url: statusLinkUrl(application) },
+      cta: ctaByOutcome[outcome],
     }),
     ...(mouPdfBuffer
       ? { attachments: [{ filename: `MOU-${application.id}.pdf`, content: mouPdfBuffer.toString("base64") }] }
@@ -315,6 +338,136 @@ export async function sendReportReturnedEmail(
         <div style="margin:0 0 12px;padding:12px 16px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:4px;color:#0f172a;font-size:13px;">${safeNote}</div>
         <p style="margin:0;color:#64748b;font-size:13px;">Please resubmit using the same link below.</p>`,
       cta: { label: "Resubmit report", url: reportLinkUrl(application) },
+    }),
+  })
+}
+
+// Renders a computeFieldDiff()-shaped {field: {from, to}} map for an email.
+// Field names are server-derived (from EDITABLE_MOU_APPLICATION_FIELDS,
+// never client input) and safe unescaped; from/to values are applicant-
+// supplied and always escaped. jsonb fields (faculty, partner_associations,
+// agreements) stringify via JSON.stringify rather than getting their own
+// per-field renderer — good enough for an internal notification email.
+function stringifyDiffValue(value: unknown): string {
+  if (value === null || value === undefined) return "(empty)"
+  if (typeof value === "string") return value
+  if (typeof value === "boolean" || typeof value === "number") return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function renderFieldDiff(changedFields: Record<string, { from: unknown; to: unknown }>): string {
+  const rows = Object.entries(changedFields)
+    .map(([field, change]) => {
+      const from = escapeHtml(stringifyDiffValue(change.from))
+      const to = escapeHtml(stringifyDiffValue(change.to))
+      return `<li><strong>${field}</strong>: ${from} &rarr; ${to}</li>`
+    })
+    .join("")
+  return `<ul style="margin:0 0 12px;padding-left:18px;color:#334155;font-size:13.5px;line-height:1.6;">${rows}</ul>`
+}
+
+// Plain edit while still submitted/under_review — informational only, no
+// status change and no fresh decision token needed (the Secretary's
+// original can_decide token from creation is still live; it's only burned
+// by an actual decision, see markTokenUsed in approval-token.ts).
+export async function sendApplicationUpdatedNotice(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  secretaryEmail: string,
+  changedFields: Record<string, { from: unknown; to: unknown }>
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  await sendEmail({
+    from: FROM,
+    to: secretaryEmail,
+    subject: `Application updated: ${typeLabel} — ${application.organizer_name}`,
+    html: emailShell({
+      heading: "Application updated",
+      bodyHtml: `<p style="margin:0 0 12px;">The <strong>${escapeHtml(typeLabel)}</strong> application from <strong>${organizerName}</strong> was updated by the applicant. Your existing review link already shows the latest data.</p>${renderFieldDiff(changedFields)}`,
+      cta: { label: "View application", url: statusLinkUrl(application) },
+    }),
+  })
+}
+
+// Resubmission after changes_requested — the Secretary's original
+// can_decide token was burned the moment they set changes_requested
+// (markTokenUsed fires unconditionally for every decide action), so this
+// always carries a freshly minted one.
+export async function sendResubmissionNotice(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  secretaryEmail: string,
+  magicLinkUrl: string,
+  changedFields: Record<string, { from: unknown; to: unknown }>
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  await sendEmail({
+    from: FROM,
+    to: secretaryEmail,
+    subject: `Resubmitted: ${typeLabel} — ${application.organizer_name}`,
+    html: emailShell({
+      heading: "Application resubmitted",
+      bodyHtml: `<p style="margin:0 0 12px;">The <strong>${escapeHtml(typeLabel)}</strong> application from <strong>${organizerName}</strong> was updated in response to your requested changes and is ready for another decision. What changed:</p>${renderFieldDiff(changedFields)}`,
+      cta: { label: "Review and decide", url: magicLinkUrl },
+      footerNote: "This link is unique to you — please don't forward it.",
+    }),
+  })
+}
+
+// "Request a change" flow (approved/completed applications) — submitted.
+export async function sendChangeRequestNotice(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  secretaryEmail: string,
+  viewLinkUrl: string,
+  changeRequest: { requestedDate?: string | null; note: string | null }
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const dateLine = changeRequest.requestedDate
+    ? `<p style="margin:0 0 12px;">Requested new date: <strong>${escapeHtml(changeRequest.requestedDate)}</strong></p>`
+    : ""
+  const noteHtml = changeRequest.note
+    ? `<div style="margin:0 0 12px;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:13px;">${escapeHtml(changeRequest.note)}</div>`
+    : ""
+  await sendEmail({
+    from: FROM,
+    to: secretaryEmail,
+    subject: `Change requested: ${typeLabel} — ${application.organizer_name}`,
+    html: emailShell({
+      heading: "Change requested",
+      bodyHtml: `<p style="margin:0 0 12px;">${organizerName} has requested a change to their approved <strong>${escapeHtml(typeLabel)}</strong> application.</p>${dateLine}${noteHtml}`,
+      cta: { label: "Review request", url: viewLinkUrl },
+    }),
+  })
+}
+
+// "Request a change" flow — admin decision, back to the applicant.
+export async function sendChangeRequestOutcomeEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  action: "approved" | "declined",
+  decisionNote?: string | null
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const noteHtml = decisionNote
+    ? `<div style="margin:0 0 12px;padding:12px 16px;background:#f8fafc;border-left:3px solid #64748b;border-radius:4px;color:#0f172a;font-size:13px;">${escapeHtml(decisionNote)}</div>`
+    : ""
+  const bodyLine =
+    action === "approved"
+      ? `Your requested change to your <strong>${escapeHtml(typeLabel)}</strong> application has been approved and applied.`
+      : `Your requested change to your <strong>${escapeHtml(typeLabel)}</strong> application was not approved.`
+  await sendEmail({
+    from: FROM,
+    to: application.email,
+    subject: action === "approved" ? `Change approved — ${typeLabel}` : `Change request declined — ${typeLabel}`,
+    html: emailShell({
+      heading: action === "approved" ? "Change approved" : "Change request declined",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">${bodyLine}</p>${noteHtml}`,
+      cta: { label: "Check application status", url: statusLinkUrl(application) },
     }),
   })
 }

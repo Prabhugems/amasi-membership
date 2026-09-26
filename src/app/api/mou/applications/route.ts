@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { createApplication, getRoleAssignment } from "@/lib/mou/supabase-helpers"
 import { createApprovalToken } from "@/lib/mou/approval-token"
+import { createEditToken } from "@/lib/mou/edit-token"
 import { sendApplicantConfirmation, sendSecretaryApprovalRequest, sendFyiNotification } from "@/lib/mou/notify"
 import { getEventTypeConfig, isMouEventTypeConfig, SHARED_TYPE_SPECIFIC_COLUMN_KEYS } from "@/lib/mou/event-type-config"
 import { validateTypeSpecificFields } from "@/lib/mou/type-specific-validation"
@@ -226,7 +227,8 @@ export async function POST(request: NextRequest) {
   // are captured to Sentry for follow-up, matching the same failure-isolation
   // principle already used for the auto-create-event step in decide/route.ts.
   try {
-    await sendApplicantConfirmation(application, isMouEventTypeConfig(typeConfig) ? typeConfig.confirmationNote : undefined)
+    const editToken = await createEditToken(application.id)
+    await sendApplicantConfirmation(application, editToken, isMouEventTypeConfig(typeConfig) ? typeConfig.confirmationNote : undefined)
   } catch (err) {
     console.error(`[mou-applications] applicant confirmation email failed for application ${application.id}:`, err)
     Sentry.captureException(err, {

@@ -58,7 +58,7 @@ describe("sendApplicantConfirmation", () => {
   })
 
   it("sends one email to the applicant", async () => {
-    await sendApplicantConfirmation(app)
+    await sendApplicantConfirmation(app, "raw-edit-token")
     expect(sendMock).toHaveBeenCalledTimes(1)
     expect(sendMock.mock.calls[0][0].to).toBe("organizer@example.com")
   })
@@ -104,11 +104,11 @@ describe("sendOutcomeEmail", () => {
     expect(html).toContain(`/mou/status/${app.id}`)
   })
 
-  it("includes a 'what happens next' contact line and the status-page link on changes_requested", async () => {
+  it("links to the edit flow (not the status page) on changes_requested", async () => {
     await sendOutcomeEmail(app, "FMAS Course", "changes_requested", "please fix X")
     const html = sendMock.mock.calls[0][0].html as string
-    expect(html).toContain("amasi.india@gmail.com")
-    expect(html).toContain(`/mou/status/${app.id}`)
+    expect(html).toContain(`/mou/edit/${app.id}`)
+    expect(html).not.toContain(`/mou/status/${app.id}`)
   })
 
   it("includes the status-page link on approval too", async () => {
@@ -134,7 +134,7 @@ describe("HTML-injection guard on applicant-supplied fields across all outbound 
 
   it("escapes organizer_name and primary_institution in sendApplicantConfirmation", async () => {
     const malicious = { ...app, organizer_name: `<script>alert(1)</script>` }
-    await sendApplicantConfirmation(malicious)
+    await sendApplicantConfirmation(malicious, "raw-edit-token")
     const html = sendMock.mock.calls[0][0].html as string
     expect(html).not.toContain("<script>alert(1)</script>")
     expect(html).toContain("&lt;script&gt;")

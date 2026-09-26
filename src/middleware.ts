@@ -227,6 +227,11 @@ const PUBLIC_API_ROUTES = [
   "/api/mou/member-lookup",
   "/api/mou/applications",
   "/api/mou/applications/",
+  // Applicant self-service editing: email+OTP lookup of an applicant's own
+  // applications (no per-application UUID known yet, so it can't live
+  // under /api/mou/applications/). The handler re-checks the OTP-verified
+  // window itself — see src/app/api/mou/my-applications/route.ts.
+  "/api/mou/my-applications",
   // Task 9: magic-link review/decide (token in the URL path, verified
   // inside each handler via verifyApprovalToken before any read or write)
   // and the remarks endpoint (token in ?token=, also verified in-handler

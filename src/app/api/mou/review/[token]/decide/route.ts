@@ -1,13 +1,12 @@
 // @auth: public but token-gated — the Hon. Secretary's one decision.
 import { NextRequest } from "next/server"
 import { verifyApprovalToken, markTokenUsed } from "@/lib/mou/approval-token"
-import { getApplicationById, updateApplicationStatus, getRoleAssignment } from "@/lib/mou/supabase-helpers"
+import { getApplicationById, updateApplicationStatus } from "@/lib/mou/supabase-helpers"
 import { generateMouPdf } from "@/lib/mou/mou-pdf"
 import { sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
 import { getEventTypeConfig, isMouEventTypeConfig } from "@/lib/mou/event-type-config"
 import { markCounterSigned } from "@/lib/mou/mou-signature"
-import { createEventForApplication, inviteEventCoordinator, eventAppUrl } from "@/lib/mou/event-routing"
-import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
+import { createEventForApplication, inviteEventCoordinator, notifyEventDirector, eventAppUrl } from "@/lib/mou/event-routing"
 import { createAdminClient } from "@/lib/supabase"
 import type { MouSignature } from "@/lib/mou/types"
 
@@ -110,28 +109,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           )
         }
 
-        const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[application.application_type_id]
-        if (directorRole) {
-          try {
-            const director = await getRoleAssignment(directorRole)
-            if (director) {
-              await inviteEventCoordinator(supabase, {
-                email: director.email,
-                name: director.name,
-                eventId: eventResult.eventId,
-                eventName,
-                tenant: eventResult.tenant,
-              })
-            }
-          } catch (err) {
-            console.error(`[mou-decide] director invite failed for application ${application.id}:`, err)
-            const Sentry = await import("@sentry/nextjs")
-            Sentry.captureException(err, {
-              tags: { component: "mou-decide", op: "invite-director" },
-              extra: { applicationId: application.id, eventId: eventResult.eventId, directorRole },
-            })
-          }
-        }
+        // The National Director is NOT invited as a coordinator here —
+        // reverted 2026-09-29 on explicit instruction: coordinator access
+        // (the "login details" to manage the event) goes to the applicant
+        // only. The director instead gets an FYI-only notice, no access.
+        await notifyEventDirector(application, typeLabel, eventName)
       } else {
         console.error(`[mou-decide] event auto-create failed for application ${application.id}:`, eventResult.error)
         const Sentry = await import("@sentry/nextjs")

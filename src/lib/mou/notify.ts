@@ -204,6 +204,35 @@ export async function sendFyiNotification(
   })
 }
 
+// FYI-only, sent to the National Director when their type's event is
+// actually created (approval, retry-event, or routing turned on) — separate
+// from sendFyiNotification above, which fires once at submission. The
+// director is deliberately NOT made a coordinator/team member here (that
+// used to happen via inviteEventCoordinator and was reverted 2026-09-29 on
+// explicit instruction: directors get information, only the applicant gets
+// added as a team member). No CTA — the director has no event-management
+// access to link them to.
+export async function sendDirectorEventCreatedNotice(
+  email: string,
+  name: string | null,
+  eventName: string,
+  typeLabel: string,
+  organizerName: string
+): Promise<void> {
+  const safeName = name ? escapeHtml(name) : "there"
+  const safeEventName = escapeHtml(eventName)
+  const safeOrganizerName = escapeHtml(organizerName)
+  await sendEmail({
+    from: FROM,
+    to: email,
+    subject: `FYI: ${eventName} has been created`,
+    html: emailShell({
+      heading: "For your information",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${safeName},</p><p style="margin:0;">A <strong>${escapeHtml(typeLabel)}</strong> application from <strong>${safeOrganizerName}</strong> has been approved and <strong>${safeEventName}</strong> is now live. This is for your information only — the applicant has been added as the event's coordinator and no action is needed from you.</p>`,
+    }),
+  })
+}
+
 // Sent by inviteEventCoordinator (src/lib/mou/event-routing.ts) right after
 // a team_invitations row is created for a newly-approved event's organiser
 // or National Director — see that function's own comment for why this

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createAdminClient } from "@/lib/supabase"
+import { getRoleAssignment } from "./supabase-helpers"
+import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "./director-roles"
 import type { AcademicEventApplication, ApplicationTypeId } from "./types"
 
 export type EventRouting = "amasi" | "college" | "none"
@@ -212,6 +214,41 @@ export async function inviteEventCoordinator(
   const inviteLink = `${eventAppUrl(opts.tenant)}/team/accept-invite?token=${data.token}`
   const { sendCoordinatorInviteEmail } = await import("./notify")
   await sendCoordinatorInviteEmail(opts.email, opts.name, opts.eventName, inviteLink)
+}
+
+/**
+ * FYI-only notice to the National Director for this application's type, if
+ * one exists — no team_invitations row, no coordinator access. Reverted to
+ * this 2026-09-29 on explicit instruction, replacing an earlier version
+ * that invited the director as a coordinator via inviteEventCoordinator:
+ * directors get information, only the applicant becomes a team member.
+ * A no-op when the application type has no director seat (see
+ * DIRECTOR_ROLE_BY_APPLICATION_TYPE — only fmas/nextgen/slcp have one) or
+ * when no one is currently assigned to that role. Never throws — same
+ * best-effort posture as the rest of this file; callers don't need their
+ * own try/catch, this one swallows and logs internally since a missed FYI
+ * is lower-stakes than a missed coordinator invite.
+ */
+export async function notifyEventDirector(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  eventName: string
+): Promise<void> {
+  const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[application.application_type_id]
+  if (!directorRole) return
+  try {
+    const director = await getRoleAssignment(directorRole)
+    if (!director) return
+    const { sendDirectorEventCreatedNotice } = await import("./notify")
+    await sendDirectorEventCreatedNotice(director.email, director.name, eventName, typeLabel, application.organizer_name)
+  } catch (err) {
+    console.error(`[notifyEventDirector] failed for application ${application.id}:`, err)
+    const Sentry = await import("@sentry/nextjs")
+    Sentry.captureException(err, {
+      tags: { component: "notify-event-director" },
+      extra: { applicationId: application.id, directorRole },
+    })
+  }
 }
 
 /**

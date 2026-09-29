@@ -8,11 +8,28 @@
 // not just that the DB row exists.
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createMockSupabase } from "./mou-supabase-mock"
+import type { AcademicEventApplication } from "@/lib/mou/types"
 
-const sendCoordinatorInviteEmail = vi.fn()
-vi.mock("@/lib/mou/notify", () => ({ sendCoordinatorInviteEmail }))
+const { sendCoordinatorInviteEmail, sendDirectorEventCreatedNotice, getRoleAssignment } = vi.hoisted(() => ({
+  sendCoordinatorInviteEmail: vi.fn(),
+  sendDirectorEventCreatedNotice: vi.fn(),
+  getRoleAssignment: vi.fn(),
+}))
+vi.mock("@/lib/mou/notify", () => ({ sendCoordinatorInviteEmail, sendDirectorEventCreatedNotice }))
+vi.mock("@/lib/mou/supabase-helpers", () => ({ getRoleAssignment }))
 
-import { inviteEventCoordinator } from "@/lib/mou/event-routing"
+vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }))
+
+import { inviteEventCoordinator, notifyEventDirector } from "@/lib/mou/event-routing"
+
+function app(overrides: Partial<AcademicEventApplication> = {}): AcademicEventApplication {
+  return {
+    id: "app-1",
+    application_type_id: "fmas",
+    organizer_name: "Dr. Organiser",
+    ...overrides,
+  } as unknown as AcademicEventApplication
+}
 
 describe("inviteEventCoordinator", () => {
   beforeEach(() => {
@@ -85,5 +102,48 @@ describe("inviteEventCoordinator", () => {
       })
     ).rejects.toThrow("insert failed")
     expect(sendCoordinatorInviteEmail).not.toHaveBeenCalled()
+  })
+})
+
+// Regression test for the 2026-09-29 policy change: the National Director
+// no longer becomes a team member/coordinator (that was itself a same-day
+// revert of the fix above) — they get an FYI-only email instead, with no
+// team_invitations row and no access.
+describe("notifyEventDirector", () => {
+  beforeEach(() => {
+    sendDirectorEventCreatedNotice.mockClear()
+    getRoleAssignment.mockReset()
+  })
+
+  it("sends an FYI notice to the assigned director, with no DB write", async () => {
+    getRoleAssignment.mockResolvedValue({ name: "Dr. Director", email: "director@example.com", phone: null })
+    await notifyEventDirector(app({ application_type_id: "fmas" }), "FMAS Course", "128 FMAS Course")
+
+    expect(getRoleAssignment).toHaveBeenCalledWith("director_fmas")
+    expect(sendDirectorEventCreatedNotice).toHaveBeenCalledWith(
+      "director@example.com",
+      "Dr. Director",
+      "128 FMAS Course",
+      "FMAS Course",
+      "Dr. Organiser"
+    )
+  })
+
+  it("is a no-op for an application type with no director seat (e.g. mmas)", async () => {
+    await notifyEventDirector(app({ application_type_id: "mmas" }), "MMAS Course", "Some MMAS Event")
+    expect(getRoleAssignment).not.toHaveBeenCalled()
+    expect(sendDirectorEventCreatedNotice).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op when the director role has nobody currently assigned", async () => {
+    getRoleAssignment.mockResolvedValue(null)
+    await notifyEventDirector(app({ application_type_id: "nextgen" }), "NextGen", "31 AMASI NextGen")
+    expect(sendDirectorEventCreatedNotice).not.toHaveBeenCalled()
+  })
+
+  it("swallows a notify failure internally rather than throwing (FYI is lower-stakes than the coordinator invite)", async () => {
+    getRoleAssignment.mockResolvedValue({ name: "Dr. Director", email: "director@example.com", phone: null })
+    sendDirectorEventCreatedNotice.mockRejectedValueOnce(new Error("resend down"))
+    await expect(notifyEventDirector(app(), "FMAS Course", "128 FMAS Course")).resolves.toBeUndefined()
   })
 })

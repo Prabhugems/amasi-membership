@@ -6,10 +6,9 @@
 import { NextRequest } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { getAdminSession } from "@/lib/auth"
-import { getApplicationById, getRoleAssignment } from "@/lib/mou/supabase-helpers"
+import { getApplicationById } from "@/lib/mou/supabase-helpers"
 import { getEventTypeConfig } from "@/lib/mou/event-type-config"
-import { createEventForApplication, inviteEventCoordinator, isEventRoutingLocked } from "@/lib/mou/event-routing"
-import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
+import { createEventForApplication, inviteEventCoordinator, notifyEventDirector, isEventRoutingLocked } from "@/lib/mou/event-routing"
 import { createAdminClient } from "@/lib/supabase"
 import { logAdminAction } from "@/lib/audit-log"
 
@@ -103,23 +102,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       } catch (err) {
         Sentry.captureException(err, { tags: { component: "mou-routing", op: "invite-organiser" }, extra: { applicationId: id } })
       }
-      const directorRole = DIRECTOR_ROLE_BY_APPLICATION_TYPE[application.application_type_id]
-      if (directorRole) {
-        try {
-          const director = await getRoleAssignment(directorRole)
-          if (director) {
-            await inviteEventCoordinator(supabase, {
-              email: director.email,
-              name: director.name,
-              eventId: result.eventId,
-              eventName,
-              tenant: result.tenant,
-            })
-          }
-        } catch (err) {
-          Sentry.captureException(err, { tags: { component: "mou-routing", op: "invite-director" }, extra: { applicationId: id } })
-        }
-      }
+      // The National Director is NOT invited as a coordinator here —
+      // reverted 2026-09-29 on explicit instruction: coordinator access
+      // goes to the applicant only. See decide/route.ts's matching comment.
+      await notifyEventDirector(application, typeLabel, eventName)
     } else {
       console.error(`[mou-routing] event create failed for application ${id}:`, result.error)
       Sentry.captureException(new Error(result.error), { tags: { component: "mou-routing", op: "create-event" }, extra: { applicationId: id } })

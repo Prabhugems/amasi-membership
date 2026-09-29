@@ -8,7 +8,7 @@ import * as Sentry from "@sentry/nextjs"
 import { getAdminSession } from "@/lib/auth"
 import { getApplicationById, getRoleAssignment } from "@/lib/mou/supabase-helpers"
 import { getEventTypeConfig } from "@/lib/mou/event-type-config"
-import { createEventForApplication, isEventRoutingLocked } from "@/lib/mou/event-routing"
+import { createEventForApplication, inviteEventCoordinator, isEventRoutingLocked } from "@/lib/mou/event-routing"
 import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
 import { createAdminClient } from "@/lib/supabase"
 import { logAdminAction } from "@/lib/audit-log"
@@ -91,12 +91,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if ("eventId" in result) {
       newEventId = result.eventId
       eventSynced = true
+      const eventName = application.event_name || `${typeLabel} — ${application.organizer_name}`
       try {
-        await supabase.from("team_invitations").insert({
+        await inviteEventCoordinator(supabase, {
           email: application.email,
           name: application.organizer_name,
-          role: "coordinator",
-          event_ids: [result.eventId],
+          eventId: result.eventId,
+          eventName,
+          tenant: result.tenant,
         })
       } catch (err) {
         Sentry.captureException(err, { tags: { component: "mou-routing", op: "invite-organiser" }, extra: { applicationId: id } })
@@ -106,11 +108,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         try {
           const director = await getRoleAssignment(directorRole)
           if (director) {
-            await supabase.from("team_invitations").insert({
+            await inviteEventCoordinator(supabase, {
               email: director.email,
               name: director.name,
-              role: "coordinator",
-              event_ids: [result.eventId],
+              eventId: result.eventId,
+              eventName,
+              tenant: result.tenant,
             })
           }
         } catch (err) {

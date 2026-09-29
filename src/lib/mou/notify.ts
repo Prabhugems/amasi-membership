@@ -204,6 +204,31 @@ export async function sendFyiNotification(
   })
 }
 
+// Sent by inviteEventCoordinator (src/lib/mou/event-routing.ts) right after
+// a team_invitations row is created for a newly-approved event's organiser
+// or National Director — see that function's own comment for why this
+// email previously never went out at all.
+export async function sendCoordinatorInviteEmail(
+  email: string,
+  name: string | null,
+  eventName: string,
+  inviteLink: string
+): Promise<void> {
+  const safeName = name ? escapeHtml(name) : "there"
+  const safeEventName = escapeHtml(eventName)
+  await sendEmail({
+    from: FROM,
+    to: email,
+    subject: `You've been invited to manage ${eventName}`,
+    html: emailShell({
+      heading: "You've been added as event organiser",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${safeName},</p><p style="margin:0;">You've been invited to manage <strong>${safeEventName}</strong> on the AMASI events platform — set up tickets, view registrations, and print badges from there.</p>`,
+      cta: { label: "Accept invite", url: inviteLink },
+      footerNote: "This link is unique to you and expires in 7 days — please don't forward it.",
+    }),
+  })
+}
+
 export async function sendOutcomeEmail(
   application: AcademicEventApplication,
   typeLabel: string,

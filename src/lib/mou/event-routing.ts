@@ -4,6 +4,23 @@ import type { AcademicEventApplication, ApplicationTypeId } from "./types"
 
 export type EventRouting = "amasi" | "college" | "none"
 
+// Tenant -> live app domain for the created event. Mirrors
+// amasi-faculty-management's own src/lib/tenant.ts, which this app has no
+// equivalent of. Found missing 2026-09-29 while fixing the coordinator
+// invite email below: the outcome email's eventsUrl was hardcoded to
+// events.amasi.org regardless of routing, which is wrong for every
+// 'college'-routed approval (FMAS/MMAS/DMAS default there — see
+// FALLBACK_ROUTING_BY_APPLICATION_TYPE above) since those events actually
+// live on collegeofmas.org.in, not events.amasi.org.
+const APP_URL_BY_TENANT: Record<"amasi" | "college", string> = {
+  amasi: "https://events.amasi.org",
+  college: "https://collegeofmas.org.in",
+}
+
+export function eventAppUrl(tenant: "amasi" | "college"): string {
+  return APP_URL_BY_TENANT[tenant]
+}
+
 // Mirrors sql/048 + sql/050's seed. Used as the default at submission time when the
 // academic_event_types row can't be read, and as a defensive fallback
 // inside createEventForApplication for any pre-migration application row
@@ -107,7 +124,7 @@ function buildEventSlug(name: string, applicationId: string): string {
 export async function createEventForApplication(
   application: AcademicEventApplication,
   typeLabel: string
-): Promise<{ eventId: string } | { error: string }> {
+): Promise<{ eventId: string; tenant: "amasi" | "college" } | { error: string }> {
   const routing = application.event_routing ?? FALLBACK_ROUTING_BY_APPLICATION_TYPE[application.application_type_id] ?? "amasi"
   if (routing === "none") {
     return { error: "event_routing is 'none' — no event should be created for this application" }
@@ -148,7 +165,53 @@ export async function createEventForApplication(
   if (error || !eventRow) {
     return { error: error?.message || "event insert returned no row" }
   }
-  return { eventId: eventRow.id }
+  // Safe cast: the "none" case already returned above, so routing is
+  // narrowed to "amasi" | "college" here.
+  return { eventId: eventRow.id, tenant: routing as "amasi" | "college" }
+}
+
+/**
+ * Insert the team_invitations row for a new event's organiser/director AND
+ * actually send the invite email — previously only the insert happened,
+ * duplicated inline in three places (this function replaces all three: the
+ * approval decide route, the admin "Retry create event" action, and the
+ * admin routing-override route). The applicant/director was told "check
+ * your inbox for that invite" (src/lib/mou/notify.ts's sendOutcomeEmail)
+ * but no such email was ever sent — found 2026-09-29.
+ *
+ * The inserted row's own DB defaults (status='pending', expires_at=+7d, a
+ * fresh random token via team_invitations.token's column default) are
+ * already correct and accepted by amasi-faculty-management's
+ * /api/team/invite/[id]/accept route as-is — confirmed directly against
+ * that route and the live schema — so the only missing piece was this
+ * email, not the row's shape.
+ *
+ * Throws on either the insert or the email failing. Callers already wrap
+ * this in their own try/catch + Sentry.captureException with a call-site-
+ * specific `component` tag (mou-decide / mou-retry-event / mou-routing),
+ * so this stays a thin, throwing helper rather than swallowing errors and
+ * losing that per-route observability.
+ */
+export async function inviteEventCoordinator(
+  supabase: SupabaseClient,
+  opts: { email: string; name: string | null; eventId: string; eventName: string; tenant: "amasi" | "college" }
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("team_invitations")
+    .insert({
+      email: opts.email,
+      name: opts.name,
+      role: "coordinator",
+      event_ids: [opts.eventId],
+    })
+    .select("token")
+    .single()
+  if (error || !data) {
+    throw new Error(error?.message || "team_invitations insert returned no row")
+  }
+  const inviteLink = `${eventAppUrl(opts.tenant)}/team/accept-invite?token=${data.token}`
+  const { sendCoordinatorInviteEmail } = await import("./notify")
+  await sendCoordinatorInviteEmail(opts.email, opts.name, opts.eventName, inviteLink)
 }
 
 /**

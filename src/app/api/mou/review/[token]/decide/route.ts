@@ -6,7 +6,7 @@ import { generateMouPdf } from "@/lib/mou/mou-pdf"
 import { sendOutcomeEmail, sendWhatsAppNudge } from "@/lib/mou/notify"
 import { getEventTypeConfig, isMouEventTypeConfig } from "@/lib/mou/event-type-config"
 import { markCounterSigned } from "@/lib/mou/mou-signature"
-import { createEventForApplication } from "@/lib/mou/event-routing"
+import { createEventForApplication, inviteEventCoordinator, eventAppUrl } from "@/lib/mou/event-routing"
 import { DIRECTOR_ROLE_BY_APPLICATION_TYPE } from "@/lib/mou/director-roles"
 import { createAdminClient } from "@/lib/supabase"
 import type { MouSignature } from "@/lib/mou/types"
@@ -72,10 +72,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const eventResult = await createEventForApplication(application, typeLabel)
       if ("eventId" in eventResult) {
         createdEventId = eventResult.eventId
+        const eventName = application.event_name || `${typeLabel} — ${application.organizer_name}`
         eventDetailsForEmail = {
-          name: application.event_name || `${typeLabel} — ${application.organizer_name}`,
+          name: eventName,
           startDate: application.finalized_date || application.preferred_date_1,
-          eventsUrl: `https://events.amasi.org/events/${eventResult.eventId}`,
+          eventsUrl: `${eventAppUrl(eventResult.tenant)}/events/${eventResult.eventId}`,
         }
 
         // Invite the applicant as organiser of the event they just had
@@ -88,11 +89,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // read directly this session), which would hand out access to
         // every event in the system, not just this one.
         try {
-          await supabase.from("team_invitations").insert({
+          await inviteEventCoordinator(supabase, {
             email: application.email,
             name: application.organizer_name,
-            role: "coordinator",
-            event_ids: [eventResult.eventId],
+            eventId: eventResult.eventId,
+            eventName,
+            tenant: eventResult.tenant,
           })
         } catch (err) {
           console.error(`[mou-decide] organiser invite failed for application ${application.id}:`, err)
@@ -113,11 +115,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           try {
             const director = await getRoleAssignment(directorRole)
             if (director) {
-              await supabase.from("team_invitations").insert({
+              await inviteEventCoordinator(supabase, {
                 email: director.email,
                 name: director.name,
-                role: "coordinator",
-                event_ids: [eventResult.eventId],
+                eventId: eventResult.eventId,
+                eventName,
+                tenant: eventResult.tenant,
               })
             }
           } catch (err) {

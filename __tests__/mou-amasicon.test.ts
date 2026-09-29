@@ -177,6 +177,8 @@ describe("generateMouPdf — amasicon", () => {
     report_reminder_7_sent_at: null,
     report_reminder_15_sent_at: null,
     report_escalation_sent_at: null,
+    setup_status_last_sent_at: null,
+    event_reminder_3day_sent_at: null,
     report_status: null,
     report_reviewed_by: null,
     report_reviewed_at: null,

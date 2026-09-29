@@ -45,7 +45,7 @@ const app: AcademicEventApplication = {
   mou_generated_url: null, mou_version: 0, created_event_id: null,
   reviewed_by: null, reviewed_at: null, rejection_reason: null, admin_notes: null, published_at: null,
   report_documents: [], report_notes: null, report_submitted_at: null,
-  report_reminder_7_sent_at: null, report_reminder_15_sent_at: null, report_escalation_sent_at: null,
+  report_reminder_7_sent_at: null, report_reminder_15_sent_at: null, report_escalation_sent_at: null, setup_status_last_sent_at: null, event_reminder_3day_sent_at: null,
   report_status: null, report_reviewed_by: null, report_reviewed_at: null, report_return_note: null,
   registration_required: null, event_routing: null,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(),

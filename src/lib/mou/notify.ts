@@ -321,6 +321,69 @@ export async function sendOutcomeEmail(
   })
 }
 
+// Weekly to the organiser of an FMAS/MMAS event, from the week it's created
+// until the event happens — src/lib/mou-organiser-reminders.ts's
+// runWeeklySetupStatusEmails. Sent every week regardless of whether
+// anything's still missing (2026-09-29 product decision: not gated on
+// completion, so the organiser always has a current picture rather than
+// the email silently going quiet once one item is fixed). The checklist
+// itself is what reports what's missing.
+export async function sendOrganiserSetupStatusEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  eventName: string,
+  checklist: { label: string; done: boolean }[]
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const safeEventName = escapeHtml(eventName)
+  const itemsHtml = checklist
+    .map(
+      (item) =>
+        `<li style="margin:0 0 6px;color:${item.done ? "#0f766e" : "#b91c1c"};">${item.done ? "✓" : "✗"} <span style="color:#334155;">${escapeHtml(item.label)}</span></li>`
+    )
+    .join("")
+  const allDone = checklist.every((i) => i.done)
+  await sendEmail({
+    from: FROM,
+    to: application.email,
+    subject: `Setup status: ${eventName}`,
+    html: emailShell({
+      heading: "Weekly setup status",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;">Here's the current setup status for <strong>${safeEventName}</strong> (${escapeHtml(typeLabel)}):</p>
+        <ul style="margin:0 0 12px;padding-left:20px;list-style:none;">${itemsHtml}</ul>
+        ${allDone ? `<p style="margin:0;color:#64748b;font-size:13px;">Everything's set up — this weekly email will keep coming until the event date, purely as a status check.</p>` : `<p style="margin:0;color:#64748b;font-size:13px;">Delegates can't complete registration until the items above are done.</p>`}`,
+    }),
+  })
+}
+
+// Once, 3 days before an FMAS/MMAS event's date — src/lib/mou-organiser-
+// reminders.ts's run3DayEventReminders. Deliberately just the delegate
+// count (2026-09-29 product decision) — not venue/logistics/payment, which
+// the organiser already set themselves and doesn't need read back to them.
+export async function sendOrganiserEventReminderEmail(
+  application: AcademicEventApplication,
+  typeLabel: string,
+  eventName: string,
+  startDate: string | null,
+  registeredCount: number
+): Promise<void> {
+  const organizerName = escapeHtml(application.organizer_name)
+  const safeEventName = escapeHtml(eventName)
+  const dateStr = startDate
+    ? new Date(startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : "your event date"
+  await sendEmail({
+    from: FROM,
+    to: application.email,
+    subject: `3 days to go: ${eventName}`,
+    html: emailShell({
+      heading: "3 days to go",
+      bodyHtml: `<p style="margin:0 0 12px;">Dear ${organizerName},</p><p style="margin:0 0 12px;"><strong>${safeEventName}</strong> (${escapeHtml(typeLabel)}) is on ${dateStr} — 3 days from now.</p>
+        <div style="margin:16px 0;padding:12px 16px;background:#f0fdfa;border-left:3px solid #0f766e;border-radius:4px;color:#0f172a;font-size:14px;"><strong>${registeredCount}</strong> delegate${registeredCount === 1 ? "" : "s"} registered so far.</div>`,
+    }),
+  })
+}
+
 // stage "day7": a heads-up before the deadline. stage "day15": the
 // deadline itself, framed as due today/overdue depending on exact timing
 // — day 15 is also when this fires, so "due" reads correctly either way.

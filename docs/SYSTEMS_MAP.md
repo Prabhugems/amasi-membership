@@ -112,7 +112,6 @@ Honest, factual list of gaps in AMASI's current technology operations. Framed as
 
 - **No automated tests on `AMASI-management`.** Verification before deployment is currently manual. `amasi-membership` has unit tests (Vitest) and end-to-end tests (Playwright) for its highest-value flows.
 - **Documentation has historically been minimal.** This map and the new `README.md` files in each repository are the start of a deliberate effort to fix that. Future changes should keep documentation updated alongside the code.
-- **Node.js runtime version under review.** `amasi-membership` is currently configured with a slight mismatch between the local development pin (Node 20) and the hosting platform's runtime (Node 24). This is being reviewed and is not currently causing user-visible issues, but it should be reconciled.
 
 ## 10. Planned systems
 

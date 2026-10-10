@@ -33,7 +33,7 @@ Behind the application flow, the same codebase runs the admin console — review
 - **Vitest** for unit tests, **Playwright** for end-to-end tests
 - **Hosting:** Vercel (Fluid Compute), production at `membership.amasi.org`
 
-Node runtime: `.nvmrc` and `package.json` pin Node 20.x for local development.
+Node runtime: `.nvmrc` and `package.json` pin Node 24.x for local development.
 
 ## External services this app connects to
 
@@ -54,7 +54,7 @@ Node runtime: `.nvmrc` and `package.json` pin Node 20.x for local development.
 
 ## Local development setup
 
-Prerequisites: Node 20.x, npm, a `.env.local` populated with the variables below, and access to the Supabase project (or your own dev project).
+Prerequisites: Node 24.x, npm, a `.env.local` populated with the variables below, and access to the Supabase project (or your own dev project).
 
 ```bash
 git clone https://github.com/Prabhugems/amasi-membership.git

@@ -41,6 +41,11 @@ describe("listApplications — approved+completed view and report filter", () =>
     expect(rows.map((r) => r.id)).toEqual(["rej"])
   })
 
+  it("an unknown status returns no rows instead of reaching Postgres as a bad enum", async () => {
+    expect(await listApplications({ status: "foo" })).toEqual({ rows: [], total: 0 })
+    expect((await listApplications({ status: "foo,rejected" })).rows.map((r) => r.id)).toEqual(["rej"])
+  })
+
   it("filters by report state on the server, with a correct total", async () => {
     expect((await listApplications({ report: "submitted" })).rows.map((r) => r.id)).toEqual(["await"])
     expect((await listApplications({ report: "overdue" })).rows.map((r) => r.id)).toEqual(["missing"])

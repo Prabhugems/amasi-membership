@@ -164,6 +164,8 @@ export async function getRoleAssignment(
   return data
 }
 
+const APPLICATION_STATUSES = ["submitted", "under_review", "changes_requested", "approved", "rejected", "completed"] as const
+
 export async function listApplications(filters: {
   type?: string
   /** One status, or several comma-separated ("approved,completed"). */
@@ -177,8 +179,12 @@ export async function listApplications(filters: {
   let query = supabase.from("academic_event_applications").select("*", { count: "exact" })
   if (filters.type) query = query.eq("application_type_id", filters.type)
   if (filters.status) {
+    // Allowlist: an unknown value would otherwise reach Postgres as an
+    // invalid enum literal and surface as a 500. Unknown => no rows.
     const statuses = filters.status.split(",").map((s) => s.trim()).filter(Boolean)
-    query = statuses.length > 1 ? query.in("status", statuses) : query.eq("status", statuses[0] ?? filters.status)
+    const valid = statuses.filter((s) => (APPLICATION_STATUSES as readonly string[]).includes(s))
+    if (valid.length === 0) return { rows: [], total: 0 }
+    query = valid.length === 1 ? query.eq("status", valid[0]) : query.in("status", valid)
   }
   const limit = filters.limit ?? 50
   const offset = filters.offset ?? 0
@@ -191,6 +197,7 @@ export async function listApplications(filters: {
       .order("created_at", { ascending: false })
       .limit(1000)
     if (error) throw new Error(error.message)
+    if ((data ?? []).length >= 1000) console.warn("[mou-list] report filter hit the 1000-row cap; results may be truncated")
     const now = new Date()
     const matching = ((data ?? []) as AcademicEventApplication[]).filter((a) =>
       matchesReportFilter(getReportStatusView(a, now), filters.report!)
@@ -212,6 +219,7 @@ export async function getReportSummary(now: Date = new Date()): Promise<ReportSu
     .in("status", ["approved", "completed"])
     .limit(2000)
   if (error) throw new Error(error.message)
+  if ((data ?? []).length >= 2000) console.warn("[mou-report-summary] hit the 2000-row cap; counters may be undercounted")
   return summarizeReports((data ?? []) as ReportInput[], now)
 }
 

@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession } from "@/lib/auth"
 import { getEventTypeConfig } from "@/lib/mou/event-type-config"
 import { signApplicationsStorage } from "@/lib/mou/supabase-helpers"
+import { getReportStatusView, reportStateCsvLabel } from "@/lib/mou/report-status"
+import { istDateOf } from "@/lib/mou/event-lifecycle"
 import type { AcademicEventApplication } from "@/lib/mou/types"
 
 function eventDateOf(app: Pick<AcademicEventApplication, "finalized_date" | "preferred_date_1">): string | null {
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
 
   const headers = [
     "Type", "Entity", "Event Name", "Date", "Venue", "City", "State", "Zone",
-    "Organiser", "Registrations", "Report Status", "Report Documents",
+    "Application Status", "Organiser", "Registrations", "Report Status", "Report Submitted On", "Days Since Event", "Report Documents",
   ]
 
   const rows = signedRows.map((a) => {
@@ -86,7 +88,10 @@ export async function GET(request: NextRequest) {
     const entity = a.event_routing === "none" ? "None (MOU only)" : a.event_routing === "college" ? "College of MAS" : a.event_routing === "amasi" ? "AMASI" : ""
     const event = a.created_event_id ? eventById.get(a.created_event_id) : null
     const regCount = a.created_event_id ? regCountByEventId.get(a.created_event_id) ?? 0 : 0
-    const reportStatus = a.report_status ?? (a.report_submitted_at ? "submitted" : "not submitted")
+    // Same state mapping as the admin page column; blank when the event has
+    // not ended yet or the application is not approved/completed.
+    const reportView = getReportStatusView(a, new Date())
+    const reportStatus = reportStateCsvLabel(reportView)
     const docLinks = (a.report_documents ?? []).map((d) => d.fileUrl).filter(Boolean).join("; ")
 
     return [
@@ -98,9 +103,12 @@ export async function GET(request: NextRequest) {
       a.venue_city || event?.city || "",
       a.venue_state || event?.state || "",
       a.zone || "",
+      a.status,
       a.organizer_name,
       regCount,
       reportStatus,
+      istDateOf(a.report_submitted_at) ?? "",
+      reportView && reportView.daysSince >= 1 ? reportView.daysSince : "",
       docLinks,
     ].map(escapeCSV).join(",")
   })

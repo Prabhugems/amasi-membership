@@ -34,6 +34,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       report_documents: signed.report_documents,
       report_notes: application.report_notes,
       report_submitted_at: application.report_submitted_at,
+      report_status: application.report_status,
     },
     remarks: remarks ?? [],
   })

@@ -25,6 +25,17 @@ interface StatusApplication {
   reviewed_at: string | null
   rejection_reason: string | null
   report_submitted_at: string | null
+  report_status: "submitted" | "accepted" | "returned" | null
+}
+
+// "completed" is set automatically once the event date passes — it no longer
+// means the report was accepted, so the wording follows report_status.
+function reportPrompt(app: StatusApplication): string {
+  if (app.report_status === "accepted") return "Post-event report accepted"
+  if (app.report_status === "returned") return "Post-event report returned — please update and resubmit"
+  if (app.report_submitted_at) return "Post-event report submitted, awaiting review"
+  if (app.status === "completed") return "Event completed. Please submit your report"
+  return "Post-event report due within 15 days of the event"
 }
 
 interface Remark {
@@ -139,13 +150,15 @@ export default function MouStatusPage() {
                 )}
                 {(application.status === "approved" || application.status === "completed") && (
                   <div className="flex items-center justify-between gap-2 pt-1">
-                    <span className="text-muted-foreground text-xs">
-                      {application.report_submitted_at ? "Post-event report submitted" : "Post-event report due within 15 days of the event"}
-                    </span>
+                    <span className="text-muted-foreground text-xs">{reportPrompt(application)}</span>
                     <Button asChild variant={application.report_submitted_at ? "outline" : "default"} size="sm">
                       <Link href={`/mou/report/${application.id}`}>
                         <FileText className="h-3.5 w-3.5" />
-                        {application.report_submitted_at ? "View report" : "Submit report"}
+                        {application.report_status === "returned"
+                          ? "Update report"
+                          : application.report_submitted_at
+                            ? "View report"
+                            : "Submit report"}
                       </Link>
                     </Button>
                   </div>

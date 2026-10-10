@@ -32,6 +32,12 @@ import {
 } from "@/lib/mou/event-type-config"
 import type { AcademicEventApplication, ApplicationStatus, ApplicationTypeId } from "@/lib/mou/types"
 import { isSafeHttpUrl } from "@/lib/mou/safe-url"
+import {
+  getReportStatusView,
+  REPORT_FILTERS,
+  type ReportFilter,
+  type ReportSummary,
+} from "@/lib/mou/report-status"
 import { cn } from "@/lib/utils"
 
 // This page is a record/audit view only (per the design spec's Phase 1 scope
@@ -94,15 +100,57 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   rejected: "Rejected",
 }
 
+const REPORT_FILTER_LABELS: Record<ReportFilter, string> = {
+  not_submitted: "Not submitted",
+  overdue: "Overdue (more than 7 days)",
+  submitted: "Submitted, needs review",
+  returned: "Returned to organiser",
+  accepted: "Accepted",
+}
+
 const TYPE_OPTIONS = Object.values(EVENT_TYPE_CONFIG)
 
 const PAGE_SIZE = 50
-// The "approved, sorted by finalized date" view substitutes for a full
+// The "approved + completed, sorted by event date" view substitutes for a full
 // calendar widget per the design spec — fetch a generous page so the
 // client-side date sort covers the whole approved set rather than just one
 // page of it. 200 is the API's own MAX_LIMIT (see
 // src/app/api/admin/mou-applications/route.ts).
 const APPROVED_VIEW_LIMIT = 200
+// Applications flip approved -> completed automatically once the event date
+// passes (cron/mou-auto-complete), so this view must include both or past
+// events would vanish from it.
+const APPROVED_VIEW_STATUSES = "approved,completed"
+
+function eventDateOf(app: AcademicEventApplication): string | null {
+  return app.finalized_date || app.preferred_date_1 || null
+}
+
+function ReportCell({ app }: { app: AcademicEventApplication }) {
+  const view = getReportStatusView(app)
+  if (!view) return <span className="text-muted-foreground">—</span>
+  const tone =
+    view.state === "accepted"
+      ? "bg-success"
+      : view.overdue || view.state === "returned"
+        ? "bg-warning"
+        : view.state === "submitted"
+          ? "bg-primary"
+          : "bg-muted-foreground"
+  return (
+    <div className="flex items-start gap-1.5 max-w-[240px]">
+      <span aria-hidden="true" className={cn("mt-1.5 inline-block h-2 w-2 rounded-full shrink-0", tone)} />
+      <span
+        className={cn(
+          "text-sm text-foreground",
+          view.overdue && "font-medium rounded-md border border-warning/40 bg-warning/15 px-1.5 py-0.5"
+        )}
+      >
+        {view.label}
+      </span>
+    </div>
+  )
+}
 
 function formatDate(s: string | null): string {
   if (!s) return "—"
@@ -743,19 +791,22 @@ export default function AdminMouApplicationsPage() {
   const [typeFilter, setTypeFilter] = useState<ApplicationTypeId | "">("")
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("")
   const [view, setView] = useState<"list" | "approved">("list")
+  const [reportFilter, setReportFilter] = useState<ReportFilter | "">("")
   const [offset, setOffset] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const effectiveStatus = view === "approved" ? "approved" : statusFilter || undefined
+  const effectiveStatus = view === "approved" ? APPROVED_VIEW_STATUSES : statusFilter || undefined
+  const effectiveReport = view === "approved" ? undefined : reportFilter || undefined
   const effectiveLimit = view === "approved" ? APPROVED_VIEW_LIMIT : PAGE_SIZE
   const effectiveOffset = view === "approved" ? 0 : offset
 
   const listQuery = useQuery<ListResponse>({
-    queryKey: ["mou-admin-list", typeFilter, effectiveStatus, effectiveOffset, effectiveLimit],
+    queryKey: ["mou-admin-list", typeFilter, effectiveStatus, effectiveReport, effectiveOffset, effectiveLimit],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (typeFilter) params.set("type", typeFilter)
       if (effectiveStatus) params.set("status", effectiveStatus)
+      if (effectiveReport) params.set("report", effectiveReport)
       params.set("limit", String(effectiveLimit))
       params.set("offset", String(effectiveOffset))
       const res = await fetch(`/api/admin/mou-applications?${params.toString()}`)
@@ -782,17 +833,28 @@ export default function AdminMouApplicationsPage() {
     },
   })
 
+  const reportSummaryQuery = useQuery<ReportSummary>({
+    queryKey: ["mou-admin-report-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/mou-applications/report-summary")
+      if (!res.ok) throw new Error("Failed to load report summary")
+      return res.json()
+    },
+  })
+
   const rows = useMemo(() => {
     const r = listQuery.data?.rows ?? []
     if (view !== "approved") return r
-    // Calendar-substitute sort: finalized_date ascending, undated approved
-    // applications (shouldn't normally happen post-approval, but the column
-    // is nullable) sink to the bottom rather than disappearing.
+    // Calendar-substitute sort: event date ascending (finalized_date, else
+    // the requested date), undated applications (shouldn't happen, the
+    // column is nullable) sink to the bottom rather than disappearing.
     return [...r].sort((a, b) => {
-      if (!a.finalized_date && !b.finalized_date) return 0
-      if (!a.finalized_date) return 1
-      if (!b.finalized_date) return -1
-      return a.finalized_date.localeCompare(b.finalized_date)
+      const ad = eventDateOf(a)
+      const bd = eventDateOf(b)
+      if (!ad && !bd) return 0
+      if (!ad) return 1
+      if (!bd) return -1
+      return ad.localeCompare(bd)
     })
   }, [listQuery.data, view])
 
@@ -801,11 +863,12 @@ export default function AdminMouApplicationsPage() {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1
   const totalAll = STATUSES.reduce((sum, s) => sum + (statsQuery.data?.[s] ?? 0), 0)
 
-  const hasActiveFilters = typeFilter !== "" || statusFilter !== ""
+  const hasActiveFilters = typeFilter !== "" || statusFilter !== "" || reportFilter !== ""
 
   const resetFilters = () => {
     setTypeFilter("")
     setStatusFilter("")
+    setReportFilter("")
     setOffset(0)
   }
 
@@ -852,6 +915,30 @@ export default function AdminMouApplicationsPage() {
         ))}
       </div>
 
+      {/* Post-event report counters */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Stat
+          label="Reports awaiting review"
+          value={reportSummaryQuery.isLoading ? "—" : (reportSummaryQuery.data?.awaitingReview ?? 0).toLocaleString("en-IN")}
+          active={view === "list" && reportFilter === "submitted"}
+          onClick={() => {
+            setView("list")
+            setReportFilter((prev) => (prev === "submitted" ? "" : "submitted"))
+            setOffset(0)
+          }}
+        />
+        <Stat
+          label="Reports overdue"
+          value={reportSummaryQuery.isLoading ? "—" : (reportSummaryQuery.data?.overdue ?? 0).toLocaleString("en-IN")}
+          active={view === "list" && reportFilter === "overdue"}
+          onClick={() => {
+            setView("list")
+            setReportFilter((prev) => (prev === "overdue" ? "" : "overdue"))
+            setOffset(0)
+          }}
+        />
+      </div>
+
       {/* View toggle */}
       <div className="flex items-center gap-2 border-b pb-2">
         <Button
@@ -869,7 +956,7 @@ export default function AdminMouApplicationsPage() {
           size="sm"
           onClick={() => setView("approved")}
         >
-          Approved · by event date
+          Approved &amp; completed · by event date
         </Button>
       </div>
 
@@ -910,6 +997,23 @@ export default function AdminMouApplicationsPage() {
             </option>
           ))}
         </select>
+        <select
+          value={reportFilter}
+          disabled={view === "approved"}
+          aria-label="Post-event report"
+          onChange={(e) => {
+            setReportFilter(e.target.value as ReportFilter | "")
+            setOffset(0)
+          }}
+          className="text-xs h-8 border rounded-md px-2 bg-background hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+        >
+          <option value="">Post-event report: any</option>
+          {REPORT_FILTERS.map((r) => (
+            <option key={r} value={r}>
+              {REPORT_FILTER_LABELS[r]}
+            </option>
+          ))}
+        </select>
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={resetFilters} className="h-8 text-xs gap-1">
             <X className="h-3 w-3" />
@@ -920,7 +1024,7 @@ export default function AdminMouApplicationsPage() {
           {listQuery.isLoading
             ? "Loading…"
             : view === "approved"
-              ? `${rows.length.toLocaleString("en-IN")} approved`
+              ? `${rows.length.toLocaleString("en-IN")} approved or completed`
               : `Showing ${rows.length.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")}`}
         </div>
       </div>
@@ -967,6 +1071,9 @@ export default function AdminMouApplicationsPage() {
                   </th>
                   <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Status
+                  </th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
+                    Post-event report
                   </th>
                   <th className="text-right px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     MOU
@@ -1018,6 +1125,9 @@ export default function AdminMouApplicationsPage() {
                             />
                           )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <ReportCell app={app} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       {(app.status === "approved" || app.status === "completed") && app.mou_generated_url ? (

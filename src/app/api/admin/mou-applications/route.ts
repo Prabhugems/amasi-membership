@@ -2,6 +2,7 @@
 import { NextRequest } from "next/server"
 import { getAdminSession } from "@/lib/auth"
 import { listApplications, signApplicationsStorage } from "@/lib/mou/supabase-helpers"
+import { isReportFilter } from "@/lib/mou/report-status"
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
@@ -31,7 +32,10 @@ export async function GET(request: NextRequest) {
   const limit = parseLimit(request.nextUrl.searchParams.get("limit"))
   const offset = parseOffset(request.nextUrl.searchParams.get("offset"))
 
-  const result = await listApplications({ type, status, limit, offset })
+  const reportParam = request.nextUrl.searchParams.get("report")
+  const report = isReportFilter(reportParam) ? reportParam : undefined
+
+  const result = await listApplications({ type, status, ...(report ? { report } : {}), limit, offset })
   const signedRows = await signApplicationsStorage(result.rows)
   return Response.json({ status: true, ...result, rows: signedRows })
 }

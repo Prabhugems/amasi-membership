@@ -1,6 +1,14 @@
 import { createAdminClient } from "@/lib/supabase"
 import { signRecordsFields, signStorageValues, toStoragePath } from "@/lib/storage-url"
 import type { AcademicEventApplication, ApplicationStatus, NewApplicationInput } from "./types"
+import {
+  getReportStatusView,
+  matchesReportFilter,
+  summarizeReports,
+  type ReportFilter,
+  type ReportInput,
+  type ReportSummary,
+} from "./report-status"
 
 // Flat columns on `academic_event_applications` that hold `uploads`-bucket
 // paths (or, for rows written before sql/024's Phase B flip, legacy public
@@ -158,19 +166,53 @@ export async function getRoleAssignment(
 
 export async function listApplications(filters: {
   type?: string
+  /** One status, or several comma-separated ("approved,completed"). */
   status?: string
+  /** Post-event report state filter (see src/lib/mou/report-status.ts). */
+  report?: ReportFilter
   limit?: number
   offset?: number
 }): Promise<{ rows: AcademicEventApplication[]; total: number }> {
   const supabase = createAdminClient()
   let query = supabase.from("academic_event_applications").select("*", { count: "exact" })
   if (filters.type) query = query.eq("application_type_id", filters.type)
-  if (filters.status) query = query.eq("status", filters.status)
+  if (filters.status) {
+    const statuses = filters.status.split(",").map((s) => s.trim()).filter(Boolean)
+    query = statuses.length > 1 ? query.in("status", statuses) : query.eq("status", statuses[0] ?? filters.status)
+  }
   const limit = filters.limit ?? 50
   const offset = filters.offset ?? 0
+
+  if (filters.report) {
+    // Report state depends on IST date math, so it is computed in JS rather
+    // than SQL: fetch the (small) approved/completed set, filter, then page.
+    const { data, error } = await query
+      .in("status", ["approved", "completed"])
+      .order("created_at", { ascending: false })
+      .limit(1000)
+    if (error) throw new Error(error.message)
+    const now = new Date()
+    const matching = ((data ?? []) as AcademicEventApplication[]).filter((a) =>
+      matchesReportFilter(getReportStatusView(a, now), filters.report!)
+    )
+    return { rows: matching.slice(offset, offset + limit), total: matching.length }
+  }
+
   const { data, error, count } = await query.order("created_at", { ascending: false }).range(offset, offset + limit - 1)
   if (error) throw new Error(error.message)
   return { rows: (data ?? []) as AcademicEventApplication[], total: count ?? 0 }
+}
+
+/** Counters for the admin page's report summary row (approved + completed only). */
+export async function getReportSummary(now: Date = new Date()): Promise<ReportSummary> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("academic_event_applications")
+    .select("status, finalized_date, preferred_date_1, report_status, report_submitted_at")
+    .in("status", ["approved", "completed"])
+    .limit(2000)
+  if (error) throw new Error(error.message)
+  return summarizeReports((data ?? []) as ReportInput[], now)
 }
 
 export async function createRemark(

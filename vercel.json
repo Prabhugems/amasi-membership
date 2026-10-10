@@ -30,6 +30,10 @@
       "schedule": "15 4 * * *"
     },
     {
+      "path": "/api/cron/mou-auto-complete",
+      "schedule": "5 4 * * *"
+    },
+    {
       "path": "/api/cron/mou-organiser-reminders",
       "schedule": "25 4 * * *"
     },

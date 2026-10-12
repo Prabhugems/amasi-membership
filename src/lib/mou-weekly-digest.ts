@@ -77,13 +77,15 @@ export async function buildMouDigestSections(): Promise<MouDigestSections> {
       .in("status", ["submitted", "under_review"])
       .order("created_at", { ascending: true }),
 
-    // Approved but event not created — same condition the admin detail
-    // route (src/app/api/admin/mou-applications/[id]/route.ts) computes
-    // per-application; recomputed here in bulk.
+    // Approved but event not created — the admin detail route
+    // (src/app/api/admin/mou-applications/[id]/route.ts) also flags
+    // 'completed' rows, but the digest is a to-do list: once the event date
+    // has passed (auto-complete) or an admin recorded it retroactively,
+    // there's nothing left to create, so only 'approved' is chased here.
     supabase
       .from("academic_event_applications")
       .select("id, organizer_name, application_type_id, status, event_routing, created_event_id")
-      .in("status", ["approved", "completed"])
+      .eq("status", "approved")
       .not("event_routing", "eq", "none")
       .is("created_event_id", null),
 

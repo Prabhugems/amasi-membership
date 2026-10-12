@@ -108,6 +108,25 @@ describe("buildMouDigestSections", () => {
     expect(sections.awaitingReview.map((r) => r.id)).toEqual(["review-1"])
   })
 
+  it("does not list completed applications as 'approved, no event'", async () => {
+    mockClient.current = createMockSupabase({
+      academic_event_applications: [
+        {
+          id: "completed-unlinked-1",
+          application_type_id: "nextgen",
+          status: "completed",
+          organizer_name: "Dr. Retroactive",
+          created_at: daysAgoISO(25),
+          event_routing: "amasi",
+          created_event_id: null,
+        },
+      ],
+      events: [],
+    })
+    const sections = await buildMouDigestSections()
+    expect(sections.approvedNoEvent).toHaveLength(0)
+  })
+
   it("excludes cancelled events from 'events this week and next'", async () => {
     mockClient.current = createMockSupabase({
       academic_event_applications: [

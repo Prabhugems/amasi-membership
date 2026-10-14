@@ -100,6 +100,18 @@ describe("submit OTP gate", () => {
     expect((await submit()).status).toBe(401)
   })
 
+  it("matches the payment email ignoring case and stray spaces", async () => {
+    payment!.member_email = " Doc@Example.com "
+    otps = [{ email: "doc@example.com", verified: true, created_at: "2026-10-10T09:29:32Z" }]
+    expect((await submit(" doc@example.com")).status).toBe(400)
+  })
+
+  it("stops accepting the stale OTP 7 days after the payment", async () => {
+    otps = [{ email: "doc@example.com", verified: true, created_at: "2026-10-10T09:29:32Z" }]
+    vi.setSystemTime(new Date("2026-10-17T15:06:00Z"))
+    expect((await submit()).status).toBe(401)
+  })
+
   it("refuses an OTP that was never verified", async () => {
     otps = [{ email: "doc@example.com", verified: false, created_at: "2026-10-10T14:30:00Z" }]
     expect((await submit()).status).toBe(401)

@@ -1608,7 +1608,11 @@ function ApplyForm() {
           const verifyData = await verifyRes.json()
 
           if (!verifyData.status) {
-            // Never leave the applicant on "Processing payment..." with no way out.
+            // Never leave the applicant on "Processing payment..." with no way out,
+            // and never offer the Pay button again: the money may already be taken.
+            // Retrying submits with this payment id; the server accepts it only once
+            // the payment is recorded as paid (verify or the Razorpay webhook).
+            setExistingPayment({ gateway_payment_id: response.razorpay_payment_id, reference_number: ref })
             setPhase("review")
             toast.error("We could not confirm your payment yet. If money was deducted, do not pay again — contact support with reference " + ref + ".", { duration: 12000 })
             setSubmitting(false)

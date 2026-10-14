@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     // --- Auth gate 2: verify OTP completion (email and/or mobile) within last 60 min ---
     const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000).toISOString()
-    const emailKey = (formData.email || "").toLowerCase()
+    const emailKey = (formData.email || "").trim().toLowerCase()
     const mobileKey = formData.mobile ? `sms:${formData.mobile}` : null
 
     let emailVerified = false
@@ -164,9 +164,14 @@ export async function POST(request: NextRequest) {
     // payment and left the page on "Processing payment..." (Sentry
     // AMASI-MEMBERSHIP-3A, 14 applicants Sep-Oct 2026). A payer who verified
     // this email in the 24 hours before paying, and whose payment was made with
-    // this same email, is still accepted.
-    if (!emailVerified && emailKey && paymentRow.member_email?.toLowerCase() === emailKey && paymentRow.created_at) {
-      const paidAt = new Date(paymentRow.created_at)
+    // this same email, is still accepted — for 7 days after the payment, so a
+    // leaked payment id cannot be used to submit indefinitely.
+    const paidAt = paymentRow.created_at ? new Date(paymentRow.created_at) : null
+    if (
+      !emailVerified && emailKey && paidAt &&
+      paymentRow.member_email?.trim().toLowerCase() === emailKey &&
+      Date.now() - paidAt.getTime() < 7 * 24 * 60 * 60 * 1000
+    ) {
       const { data: preVerifiedOtp } = await supabase
         .from("otp_codes")
         .select("id")

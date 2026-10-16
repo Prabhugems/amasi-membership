@@ -13,6 +13,9 @@ import {
   Inbox,
   Send,
   CalendarDays,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -123,10 +126,6 @@ const APPROVED_VIEW_LIMIT = 200
 // passes (cron/mou-auto-complete), so this view must include both or past
 // events would vanish from it.
 const APPROVED_VIEW_STATUSES = "approved,completed"
-
-function eventDateOf(app: AcademicEventApplication): string | null {
-  return app.finalized_date || app.preferred_date_1 || null
-}
 
 function ReportCell({ app }: { app: AcademicEventApplication }) {
   const view = getReportStatusView(app)
@@ -794,6 +793,7 @@ export default function AdminMouApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("")
   const [view, setView] = useState<"list" | "approved" | "calendar">("list")
   const [reportFilter, setReportFilter] = useState<ReportFilter | "">("")
+  const [dateSort, setDateSort] = useState<"" | "date_asc" | "date_desc">("")
   const [offset, setOffset] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -804,14 +804,18 @@ export default function AdminMouApplicationsPage() {
   const effectiveReport = isApprovedSet ? undefined : reportFilter || undefined
   const effectiveLimit = isApprovedSet ? APPROVED_VIEW_LIMIT : PAGE_SIZE
   const effectiveOffset = isApprovedSet ? 0 : offset
+  // The approved/calendar sets default to soonest-first; the plain list keeps
+  // newest-submitted-first until the Date header is clicked.
+  const effectiveSort = dateSort || (isApprovedSet ? "date_asc" : "")
 
   const listQuery = useQuery<ListResponse>({
-    queryKey: ["mou-admin-list", typeFilter, effectiveStatus, effectiveReport, effectiveOffset, effectiveLimit],
+    queryKey: ["mou-admin-list", typeFilter, effectiveStatus, effectiveReport, effectiveSort, effectiveOffset, effectiveLimit],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (typeFilter) params.set("type", typeFilter)
       if (effectiveStatus) params.set("status", effectiveStatus)
       if (effectiveReport) params.set("report", effectiveReport)
+      if (effectiveSort) params.set("sort", effectiveSort)
       params.set("limit", String(effectiveLimit))
       params.set("offset", String(effectiveOffset))
       const res = await fetch(`/api/admin/mou-applications?${params.toString()}`)
@@ -847,21 +851,7 @@ export default function AdminMouApplicationsPage() {
     },
   })
 
-  const rows = useMemo(() => {
-    const r = listQuery.data?.rows ?? []
-    if (view === "list") return r
-    // Calendar-substitute sort: event date ascending (finalized_date, else
-    // the requested date), undated applications (shouldn't happen, the
-    // column is nullable) sink to the bottom rather than disappearing.
-    return [...r].sort((a, b) => {
-      const ad = eventDateOf(a)
-      const bd = eventDateOf(b)
-      if (!ad && !bd) return 0
-      if (!ad) return 1
-      if (!bd) return -1
-      return ad.localeCompare(bd)
-    })
-  }, [listQuery.data, view])
+  const rows = useMemo(() => listQuery.data?.rows ?? [], [listQuery.data])
 
   const total = listQuery.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -874,6 +864,7 @@ export default function AdminMouApplicationsPage() {
     setTypeFilter("")
     setStatusFilter("")
     setReportFilter("")
+    setDateSort("")
     setOffset(0)
   }
 
@@ -1087,8 +1078,27 @@ export default function AdminMouApplicationsPage() {
                   <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground hidden md:table-cell">
                     Institution
                   </th>
-                  <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-                    Date
+                  <th
+                    className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground"
+                    aria-sort={effectiveSort === "date_asc" ? "ascending" : effectiveSort === "date_desc" ? "descending" : "none"}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateSort(effectiveSort === "date_asc" ? "date_desc" : "date_asc")
+                        setOffset(0)
+                      }}
+                      className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded-md"
+                    >
+                      Date
+                      {effectiveSort === "date_asc" ? (
+                        <ArrowUp className="h-3 w-3" />
+                      ) : effectiveSort === "date_desc" ? (
+                        <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-50" />
+                      )}
+                    </button>
                   </th>
                   <th className="text-left px-4 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     Status

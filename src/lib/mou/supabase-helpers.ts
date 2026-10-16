@@ -172,6 +172,8 @@ export async function listApplications(filters: {
   status?: string
   /** Post-event report state filter (see src/lib/mou/report-status.ts). */
   report?: ReportFilter
+  /** Sort by event date (confirmed date, else requested date). Default: newest submitted first. */
+  sort?: "date_asc" | "date_desc"
   limit?: number
   offset?: number
 }): Promise<{ rows: AcademicEventApplication[]; total: number }> {
@@ -189,19 +191,32 @@ export async function listApplications(filters: {
   const limit = filters.limit ?? 50
   const offset = filters.offset ?? 0
 
-  if (filters.report) {
-    // Report state depends on IST date math, so it is computed in JS rather
-    // than SQL: fetch the (small) approved/completed set, filter, then page.
-    const { data, error } = await query
-      .in("status", ["approved", "completed"])
-      .order("created_at", { ascending: false })
-      .limit(1000)
+  if (filters.report || filters.sort) {
+    // Report state depends on IST date math, and the event date is
+    // coalesce(finalized_date, preferred_date_1) — neither can be expressed
+    // as a PostgREST order — so both are done in JS: fetch the (small) set,
+    // filter and/or sort, then page.
+    if (filters.report) query = query.in("status", ["approved", "completed"])
+    const { data, error } = await query.order("created_at", { ascending: false }).limit(1000)
     if (error) throw new Error(error.message)
-    if ((data ?? []).length >= 1000) console.warn("[mou-list] report filter hit the 1000-row cap; results may be truncated")
+    if ((data ?? []).length >= 1000) console.warn("[mou-list] filter/sort hit the 1000-row cap; results may be truncated")
     const now = new Date()
-    const matching = ((data ?? []) as AcademicEventApplication[]).filter((a) =>
-      matchesReportFilter(getReportStatusView(a, now), filters.report!)
-    )
+    let matching = (data ?? []) as AcademicEventApplication[]
+    if (filters.report) {
+      matching = matching.filter((a) => matchesReportFilter(getReportStatusView(a, now), filters.report!))
+    }
+    if (filters.sort) {
+      const dir = filters.sort === "date_desc" ? -1 : 1
+      // Undated rows (shouldn't happen) sink to the bottom either way.
+      matching = [...matching].sort((a, b) => {
+        const ad = a.finalized_date || a.preferred_date_1 || null
+        const bd = b.finalized_date || b.preferred_date_1 || null
+        if (!ad && !bd) return 0
+        if (!ad) return 1
+        if (!bd) return -1
+        return ad.localeCompare(bd) * dir
+      })
+    }
     return { rows: matching.slice(offset, offset + limit), total: matching.length }
   }
 

@@ -35,7 +35,17 @@ export async function GET(request: NextRequest) {
   const reportParam = request.nextUrl.searchParams.get("report")
   const report = isReportFilter(reportParam) ? reportParam : undefined
 
-  const result = await listApplications({ type, status, ...(report ? { report } : {}), limit, offset })
+  const sortParam = request.nextUrl.searchParams.get("sort")
+  const sort = sortParam === "date_asc" || sortParam === "date_desc" ? sortParam : undefined
+
+  const result = await listApplications({
+    type,
+    status,
+    ...(report ? { report } : {}),
+    ...(sort ? { sort } : {}),
+    limit,
+    offset,
+  })
   const signedRows = await signApplicationsStorage(result.rows)
   return Response.json({ status: true, ...result, rows: signedRows })
 }

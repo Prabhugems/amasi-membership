@@ -53,6 +53,22 @@ describe("listApplications — approved+completed view and report filter", () =>
     expect(accepted).toMatchObject({ total: 1 })
   })
 
+  it("sorts by event date ascending or descending, preferring the confirmed date, and pages the sorted set", async () => {
+    mockClient.current = createMockSupabase({
+      academic_event_applications: [
+        { ...base, id: "a", status: "approved", preferred_date_1: "2026-11-10" },
+        // Requested 2026-09-01 but confirmed for December — the confirmed date wins.
+        { ...base, id: "b", status: "approved", preferred_date_1: "2026-09-01", finalized_date: "2026-12-05" },
+        { ...base, id: "c", status: "approved", preferred_date_1: "2026-10-20" },
+      ],
+    })
+    expect((await listApplications({ sort: "date_asc" })).rows.map((r) => r.id)).toEqual(["c", "a", "b"])
+    expect((await listApplications({ sort: "date_desc" })).rows.map((r) => r.id)).toEqual(["b", "a", "c"])
+    const page = await listApplications({ sort: "date_desc", limit: 1, offset: 1 })
+    expect(page.rows.map((r) => r.id)).toEqual(["a"])
+    expect(page.total).toBe(3)
+  })
+
   it("getReportSummary counts only approved/completed events that have ended", async () => {
     expect(await getReportSummary()).toEqual({ awaitingReview: 1, overdue: 1, notSubmitted: 1, returned: 0, accepted: 1 })
   })

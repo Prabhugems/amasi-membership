@@ -12,6 +12,7 @@ import {
   Download,
   Inbox,
   Send,
+  CalendarDays,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -23,6 +24,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { StatusBadge } from "@/components/mou/status-badge"
+import { MouCalendar } from "@/components/mou/mou-calendar"
 import {
   EVENT_TYPE_CONFIG,
   getEventTypeConfig,
@@ -790,15 +792,18 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
 export default function AdminMouApplicationsPage() {
   const [typeFilter, setTypeFilter] = useState<ApplicationTypeId | "">("")
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "">("")
-  const [view, setView] = useState<"list" | "approved">("list")
+  const [view, setView] = useState<"list" | "approved" | "calendar">("list")
   const [reportFilter, setReportFilter] = useState<ReportFilter | "">("")
   const [offset, setOffset] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const effectiveStatus = view === "approved" ? APPROVED_VIEW_STATUSES : statusFilter || undefined
-  const effectiveReport = view === "approved" ? undefined : reportFilter || undefined
-  const effectiveLimit = view === "approved" ? APPROVED_VIEW_LIMIT : PAGE_SIZE
-  const effectiveOffset = view === "approved" ? 0 : offset
+  // The "approved" table view and the calendar both want the whole
+  // approved+completed set at once, not a filtered page of it.
+  const isApprovedSet = view !== "list"
+  const effectiveStatus = isApprovedSet ? APPROVED_VIEW_STATUSES : statusFilter || undefined
+  const effectiveReport = isApprovedSet ? undefined : reportFilter || undefined
+  const effectiveLimit = isApprovedSet ? APPROVED_VIEW_LIMIT : PAGE_SIZE
+  const effectiveOffset = isApprovedSet ? 0 : offset
 
   const listQuery = useQuery<ListResponse>({
     queryKey: ["mou-admin-list", typeFilter, effectiveStatus, effectiveReport, effectiveOffset, effectiveLimit],
@@ -844,7 +849,7 @@ export default function AdminMouApplicationsPage() {
 
   const rows = useMemo(() => {
     const r = listQuery.data?.rows ?? []
-    if (view !== "approved") return r
+    if (view === "list") return r
     // Calendar-substitute sort: event date ascending (finalized_date, else
     // the requested date), undated applications (shouldn't happen, the
     // column is nullable) sink to the bottom rather than disappearing.
@@ -958,6 +963,15 @@ export default function AdminMouApplicationsPage() {
         >
           Approved &amp; completed · by event date
         </Button>
+        <Button
+          variant={view === "calendar" ? "secondary" : "ghost"}
+          size="sm"
+          className="gap-1.5"
+          onClick={() => setView("calendar")}
+        >
+          <CalendarDays className="h-3.5 w-3.5" />
+          Calendar
+        </Button>
       </div>
 
       {/* Filters */}
@@ -983,7 +997,7 @@ export default function AdminMouApplicationsPage() {
         </select>
         <select
           value={statusFilter}
-          disabled={view === "approved"}
+          disabled={isApprovedSet}
           onChange={(e) => {
             setStatusFilter(e.target.value as ApplicationStatus | "")
             setOffset(0)
@@ -999,7 +1013,7 @@ export default function AdminMouApplicationsPage() {
         </select>
         <select
           value={reportFilter}
-          disabled={view === "approved"}
+          disabled={isApprovedSet}
           aria-label="Post-event report"
           onChange={(e) => {
             setReportFilter(e.target.value as ReportFilter | "")
@@ -1023,14 +1037,21 @@ export default function AdminMouApplicationsPage() {
         <div className="ml-auto text-xs text-muted-foreground tabular-nums">
           {listQuery.isLoading
             ? "Loading…"
-            : view === "approved"
+            : isApprovedSet
               ? `${rows.length.toLocaleString("en-IN")} approved or completed`
               : `Showing ${rows.length.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")}`}
         </div>
       </div>
 
-      {/* Table */}
-      {listQuery.isLoading ? (
+      {/* Table / calendar */}
+      {view === "calendar" ? (
+        <MouCalendar
+          applications={rows}
+          isLoading={listQuery.isLoading}
+          isError={listQuery.isError}
+          onOpenApplication={setSelectedId}
+        />
+      ) : listQuery.isLoading ? (
         <div className="border rounded-md p-16 text-center bg-card">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground mt-3">Loading applications…</p>
@@ -1048,7 +1069,7 @@ export default function AdminMouApplicationsPage() {
           </div>
           <p className="font-semibold">No applications</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {hasActiveFilters || view === "approved" ? "Try adjusting filters or the view." : "No academic event applications yet."}
+            {hasActiveFilters || isApprovedSet ? "Try adjusting filters or the view." : "No academic event applications yet."}
           </p>
         </div>
       ) : (

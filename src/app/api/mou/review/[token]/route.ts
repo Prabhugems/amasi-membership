@@ -3,6 +3,7 @@ import { NextRequest } from "next/server"
 import { verifyApprovalToken } from "@/lib/mou/approval-token"
 import { getApplicationById, signApplicationStorage } from "@/lib/mou/supabase-helpers"
 import { createAdminClient } from "@/lib/supabase"
+import { getClashesForApplication } from "@/lib/mou/clashes"
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -20,6 +21,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .order("created_at", { ascending: true })
 
   const signedApplication = await signApplicationStorage(application)
+  const clashes = await getClashesForApplication(application)
 
   return Response.json({
     status: true,
@@ -27,5 +29,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     role: verified.row.role,
     application: signedApplication,
     remarks: remarks ?? [],
+    // Same-zone, overlapping-date events — title/date only, so the
+    // token-holder sees the conflict without other organisers' details.
+    clashes: clashes.map((c) => ({ title: c.title, startDate: c.startDate, endDate: c.endDate, zone: c.zone })),
   })
 }

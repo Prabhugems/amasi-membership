@@ -4,7 +4,7 @@ export type ApplicationTypeId =
   | "amasicon" | "blood_donation"
 
 export type ApplicationStatus =
-  | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "completed"
+  | "submitted" | "under_review" | "changes_requested" | "approved" | "rejected" | "completed" | "cancelled"
 
 export interface AcademicEventApplication {
   id: string
@@ -59,6 +59,11 @@ export interface AcademicEventApplication {
   reviewed_by: string | null
   reviewed_at: string | null
   rejection_reason: string | null
+  // Set when an admin cancels an approved MOU (sql/059). Optional so older
+  // row fixtures and partial selects stay valid.
+  cancelled_at?: string | null
+  cancelled_by?: string | null
+  cancellation_reason?: string | null
   admin_notes: string | null
   published_at: string | null
   report_documents: { name: string; fileUrl: string }[]

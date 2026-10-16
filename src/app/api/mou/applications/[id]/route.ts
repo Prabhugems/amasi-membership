@@ -31,6 +31,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       created_at: application.created_at,
       reviewed_at: application.reviewed_at,
       rejection_reason: application.rejection_reason,
+      cancelled_at: application.cancelled_at ?? null,
+      cancellation_reason: application.cancellation_reason ?? null,
       report_documents: signed.report_documents,
       report_notes: application.report_notes,
       report_submitted_at: application.report_submitted_at,

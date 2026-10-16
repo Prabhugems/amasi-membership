@@ -164,7 +164,7 @@ export async function getRoleAssignment(
   return data
 }
 
-const APPLICATION_STATUSES = ["submitted", "under_review", "changes_requested", "approved", "rejected", "completed"] as const
+const APPLICATION_STATUSES = ["submitted", "under_review", "changes_requested", "approved", "rejected", "completed", "cancelled"] as const
 
 export async function listApplications(filters: {
   type?: string

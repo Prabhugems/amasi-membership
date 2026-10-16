@@ -13,6 +13,7 @@ import {
   Inbox,
   Send,
   CalendarDays,
+  Ban,
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
@@ -28,6 +29,9 @@ import {
 } from "@/components/ui/dialog"
 import { StatusBadge } from "@/components/mou/status-badge"
 import { MouCalendar } from "@/components/mou/mou-calendar"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Textarea } from "@/components/ui/textarea"
+import type { CalendarItem } from "@/lib/mou/calendar"
 import {
   EVENT_TYPE_CONFIG,
   getEventTypeConfig,
@@ -79,6 +83,8 @@ interface DetailResponse {
   hasSignature: boolean | null
   eventRoutingLocked: boolean
   eventCreationFailed: boolean
+  // Same-zone events overlapping this one's dates (cancelled ones never count).
+  clashes?: CalendarItem[]
 }
 
 const ROUTING_LABELS: Record<"amasi" | "college" | "none", string> = {
@@ -94,6 +100,7 @@ const STATUSES: ApplicationStatus[] = [
   "approved",
   "completed",
   "rejected",
+  "cancelled",
 ]
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
@@ -103,6 +110,7 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   approved: "Approved",
   completed: "Completed",
   rejected: "Rejected",
+  cancelled: "Cancelled",
 }
 
 const REPORT_FILTER_LABELS: Record<ReportFilter, string> = {
@@ -126,6 +134,9 @@ const APPROVED_VIEW_LIMIT = 200
 // passes (cron/mou-auto-complete), so this view must include both or past
 // events would vanish from it.
 const APPROVED_VIEW_STATUSES = "approved,completed"
+// The calendar also shows cancelled MOUs (greyed out) so a called-off event is
+// still visible with its date rather than silently vanishing.
+const CALENDAR_VIEW_STATUSES = "approved,completed,cancelled"
 
 function ReportCell({ app }: { app: AcademicEventApplication }) {
   const view = getReportStatusView(app)
@@ -295,6 +306,34 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const [showCancel, setShowCancel] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
+  const cancelMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const res = await fetch(`/api/admin/mou-applications/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.status) throw new Error(json.message ?? "Failed to cancel")
+      return json as { eventCancelled: boolean | null }
+    },
+    onSuccess: (json) => {
+      toast.success(
+        json.eventCancelled === false
+          ? "MOU cancelled — but the linked event could not be closed, please check it"
+          : "MOU cancelled"
+      )
+      setShowCancel(false)
+      setCancelReason("")
+      qc.invalidateQueries({ queryKey: ["mou-admin-detail", id] })
+      qc.invalidateQueries({ queryKey: ["mou-admin-list"] })
+      qc.invalidateQueries({ queryKey: ["mou-admin-stats"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const [returnNote, setReturnNote] = useState("")
   const [showReturnInput, setShowReturnInput] = useState(false)
   const reviewMutation = useMutation({
@@ -398,6 +437,18 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
                     Resend to Secretary
                   </Button>
                 )}
+                {app.status === "approved" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-destructive"
+                    onClick={() => setShowCancel(true)}
+                    title="Call off this event. The record is kept with your reason."
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                    Cancel event
+                  </Button>
+                )}
               </div>
               <DialogDescription>
                 {getEventTypeConfig(app.application_type_id)?.label} — submitted by {app.organizer_name}
@@ -405,6 +456,33 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
             </DialogHeader>
 
             <div className="space-y-4">
+              {app.status === "cancelled" && (
+                <div className="rounded-md border border-border bg-muted/30 p-4 text-sm">
+                  <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-1">
+                    Cancelled{app.cancelled_at ? ` on ${formatDate(app.cancelled_at)}` : ""}
+                    {app.cancelled_by ? ` by ${app.cancelled_by}` : ""}
+                  </h3>
+                  <p className="text-foreground">{app.cancellation_reason || "No reason recorded."}</p>
+                </div>
+              )}
+              {app.status !== "cancelled" && app.status !== "rejected" && (data?.clashes?.length ?? 0) > 0 && (
+                <div className="rounded-md border border-border p-4 text-sm">
+                  <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                    Possible date clash · {app.zone} zone
+                  </h3>
+                  <ul className="space-y-1">
+                    {data?.clashes?.map((c) => (
+                      <li key={c.key} className="flex justify-between gap-3">
+                        <span className="truncate">{c.title}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {c.startDate === c.endDate ? formatDate(c.startDate) : `${formatDate(c.startDate)} – ${formatDate(c.endDate)}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="rounded-md border border-border p-4">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-muted-foreground mb-2">
                   Organizer
@@ -784,6 +862,32 @@ function DetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
           </>
         )}
       </DialogContent>
+      <ConfirmDialog
+        open={showCancel}
+        onOpenChange={(open) => {
+          setShowCancel(open)
+          if (!open) setCancelReason("")
+        }}
+        title="Cancel this event?"
+        description="The MOU stays on record as cancelled, any linked event is closed to registration, and the organiser sees your reason on their status page."
+        confirmLabel="Cancel event"
+        cancelLabel="Keep event"
+        variant="destructive"
+        isPending={cancelMutation.isPending}
+        onConfirm={() => {
+          if (cancelReason.trim().length >= 5) cancelMutation.mutate(cancelReason.trim())
+          else toast.error("Please give a reason for cancelling.")
+        }}
+      >
+        <Textarea
+          rows={3}
+          maxLength={1000}
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          placeholder="e.g. Clashes with the Jharkhand chapter's conference; postponed to the last week of January 2027."
+          aria-label="Reason for cancelling"
+        />
+      </ConfirmDialog>
     </Dialog>
   )
 }
@@ -800,7 +904,8 @@ export default function AdminMouApplicationsPage() {
   // The "approved" table view and the calendar both want the whole
   // approved+completed set at once, not a filtered page of it.
   const isApprovedSet = view !== "list"
-  const effectiveStatus = isApprovedSet ? APPROVED_VIEW_STATUSES : statusFilter || undefined
+  const effectiveStatus =
+    view === "calendar" ? CALENDAR_VIEW_STATUSES : isApprovedSet ? APPROVED_VIEW_STATUSES : statusFilter || undefined
   const effectiveReport = isApprovedSet ? undefined : reportFilter || undefined
   const effectiveLimit = isApprovedSet ? APPROVED_VIEW_LIMIT : PAGE_SIZE
   const effectiveOffset = isApprovedSet ? 0 : offset

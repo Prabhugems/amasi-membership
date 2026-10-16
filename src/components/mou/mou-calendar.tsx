@@ -15,7 +15,10 @@ import type { AcademicEventApplication } from "@/lib/mou/types"
 import {
   CALENDAR_CATEGORIES,
   CALENDAR_CATEGORY_LABELS,
+  ZONES,
   buildCalendarItems,
+  findClashes,
+  isZone,
   itemsOnDay,
   monthGrid,
   monthRange,
@@ -23,6 +26,7 @@ import {
   type CalendarCategory,
   type CalendarEntry,
   type CalendarItem,
+  type Zone,
 } from "@/lib/mou/calendar"
 import { cn } from "@/lib/utils"
 
@@ -47,11 +51,12 @@ interface FormState {
   organizer: string
   city: string
   state: string
+  zone: Zone | ""
   notes: string
 }
 
 function emptyForm(startDate: string): FormState {
-  return { title: "", category: "endorsed", start_date: startDate, end_date: "", organizer: "", city: "", state: "", notes: "" }
+  return { title: "", category: "endorsed", start_date: startDate, end_date: "", organizer: "", city: "", state: "", zone: "", notes: "" }
 }
 
 function formFromEntry(entry: CalendarEntry): FormState {
@@ -63,6 +68,7 @@ function formFromEntry(entry: CalendarEntry): FormState {
     organizer: entry.organizer ?? "",
     city: entry.city ?? "",
     state: entry.state ?? "",
+    zone: entry.zone ?? "",
     notes: entry.notes ?? "",
   }
 }
@@ -90,10 +96,23 @@ function Dot({ item }: { item: CalendarItem }) {
     <span
       aria-hidden="true"
       className={cn(
-        "inline-block h-2 w-2 shrink-0 rounded-full border border-primary",
-        item.source === "mou" ? "bg-primary" : "bg-transparent"
+        "inline-block h-2 w-2 shrink-0 rounded-full border",
+        item.cancelled
+          ? "border-muted-foreground bg-muted-foreground/40"
+          : item.source === "mou"
+            ? "border-primary bg-primary"
+            : "border-primary bg-transparent"
       )}
     />
+  )
+}
+
+// Shown next to an event that shares a zone and dates with another one.
+function ClashMark({ others }: { others: CalendarItem[] }) {
+  return (
+    <span title={`Clashes with: ${others.map((o) => o.title).join("; ")}`} className="inline-flex shrink-0">
+      <AlertTriangle className="h-3 w-3 text-warning" aria-label="Date clash in the same zone" />
+    </span>
   )
 }
 
@@ -114,6 +133,8 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
   // null = closed. `editing` set = edit that entry; otherwise create.
   const [dialog, setDialog] = useState<{ editing: CalendarEntry | null; startDate: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<CalendarEntry | null>(null)
+  // "" = all zones, "none" = events with no zone set.
+  const [zoneFilter, setZoneFilter] = useState<"" | Zone | "none">("")
 
   const { from, to } = monthRange(cursor.year, cursor.month)
 
@@ -127,7 +148,16 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
   })
 
   const entries = useMemo(() => entriesQuery.data?.entries ?? [], [entriesQuery.data])
-  const items = useMemo(() => buildCalendarItems(applications, entries), [applications, entries])
+  const allItems = useMemo(() => buildCalendarItems(applications, entries), [applications, entries])
+  // Clashes are found across everything, so the markers stay right while filtered.
+  const clashes = useMemo(() => findClashes(allItems), [allItems])
+  const items = useMemo(
+    () =>
+      zoneFilter === ""
+        ? allItems
+        : allItems.filter((i) => (zoneFilter === "none" ? i.zone === null : i.zone === zoneFilter)),
+    [allItems, zoneFilter]
+  )
   const cells = useMemo(() => monthGrid(cursor.year, cursor.month), [cursor])
   const monthItems = useMemo(() => items.filter((i) => i.startDate <= to && i.endDate >= from), [items, from, to])
 
@@ -193,8 +223,22 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
           </Button>
         </div>
         <h2 className="text-sm font-medium">{monthTitle}</h2>
+        <select
+          value={zoneFilter}
+          aria-label="Filter by zone"
+          onChange={(e) => setZoneFilter(e.target.value as "" | Zone | "none")}
+          className="text-xs h-8 border rounded-md px-2 bg-background hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="">All zones</option>
+          {ZONES.map((z) => (
+            <option key={z} value={z}>
+              {z}
+            </option>
+          ))}
+          <option value="none">No zone set</option>
+        </select>
         <div className="ml-auto flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="hidden lg:flex items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full border border-primary bg-primary" />
               MOU application
@@ -202,6 +246,14 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
             <span className="inline-flex items-center gap-1.5">
               <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full border border-primary bg-transparent" />
               Endorsed event
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full border border-muted-foreground bg-muted-foreground/40" />
+              Cancelled
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <AlertTriangle className="h-3 w-3 text-warning" aria-hidden="true" />
+              Same-zone clash
             </span>
           </div>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setDialog({ editing: null, startDate: today })}>
@@ -277,7 +329,8 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
                           className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                         >
                           <Dot item={item} />
-                          <span className="truncate">{item.title}</span>
+                          <span className={cn("truncate", item.cancelled && "text-muted-foreground line-through")}>{item.title}</span>
+                          {clashes.has(item.key) && <ClashMark others={clashes.get(item.key) ?? []} />}
                         </button>
                       ))}
                       {extra > 0 && <p className="px-1 text-xs text-muted-foreground">+{extra} more</p>}
@@ -311,10 +364,26 @@ export function MouCalendar({ applications, isLoading, isError, onOpenApplicatio
                       <Dot item={item} />
                       <span className="w-28 shrink-0 text-xs tabular-nums text-muted-foreground">{itemDateLabel(item)}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span
+                          className={cn(
+                            "block truncate text-sm font-medium",
+                            item.cancelled && "text-muted-foreground line-through"
+                          )}
+                        >
+                          {item.title}
+                        </span>
                         {item.subtitle && <span className="block truncate text-xs text-muted-foreground">{item.subtitle}</span>}
+                        {clashes.has(item.key) && (
+                          <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                            <ClashMark others={clashes.get(item.key) ?? []} />
+                            Clashes with {(clashes.get(item.key) ?? []).map((o) => o.title).join("; ")}
+                          </span>
+                        )}
                       </span>
-                      <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">{kindLabel(item)}</span>
+                      <span className="hidden shrink-0 text-right text-xs text-muted-foreground sm:block">
+                        {item.cancelled ? "Cancelled" : kindLabel(item)}
+                        {item.zone && <span className="block">{item.zone} zone</span>}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -376,7 +445,7 @@ function EntryDialog({
       const res = await fetch(editing ? `/api/admin/mou-calendar/${editing.id}` : "/api/admin/mou-calendar", {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, end_date: form.end_date || null }),
+        body: JSON.stringify({ ...form, end_date: form.end_date || null, zone: form.zone || null }),
       })
       if (!res.ok) {
         const json = await res.json().catch(() => null)
@@ -426,20 +495,38 @@ function EntryDialog({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="cal-category">Type</Label>
-            <select
-              id="cal-category"
-              value={form.category}
-              onChange={(e) => set("category", e.target.value as CalendarCategory)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {CALENDAR_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {CALENDAR_CATEGORY_LABELS[c]}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cal-category">Type</Label>
+              <select
+                id="cal-category"
+                value={form.category}
+                onChange={(e) => set("category", e.target.value as CalendarCategory)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {CALENDAR_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {CALENDAR_CATEGORY_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cal-zone">Zone</Label>
+              <select
+                id="cal-zone"
+                value={form.zone}
+                onChange={(e) => set("zone", isZone(e.target.value) ? e.target.value : "")}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">Not set</option>
+                {ZONES.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="space-y-1.5">

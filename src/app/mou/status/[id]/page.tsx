@@ -24,6 +24,8 @@ interface StatusApplication {
   created_at: string
   reviewed_at: string | null
   rejection_reason: string | null
+  cancelled_at?: string | null
+  cancellation_reason?: string | null
   report_submitted_at: string | null
   report_status: "submitted" | "accepted" | "returned" | null
 }
@@ -142,6 +144,14 @@ export default function MouStatusPage() {
                   <span className="text-muted-foreground">Last reviewed</span>
                   <span className="text-foreground">{formatDate(application.reviewed_at)}</span>
                 </div>
+                {application.status === "cancelled" && (
+                  <div className="rounded-md border border-border bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Cancelled{application.cancelled_at ? ` on ${formatDate(application.cancelled_at)}` : ""}
+                    </p>
+                    <p className="text-foreground">{application.cancellation_reason || "This event has been cancelled."}</p>
+                  </div>
+                )}
                 {application.rejection_reason && (
                   <div className="rounded-md border border-border bg-muted/30 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Reviewer notes</p>

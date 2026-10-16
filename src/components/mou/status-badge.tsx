@@ -15,6 +15,9 @@ const STATUS_CONFIG: Record<ApplicationStatus, { label: string; dotClassName: st
   // path. Same dot color as approved (both are positive/terminal states);
   // the label is what distinguishes them.
   completed: { label: "completed", dotClassName: "bg-success" },
+  // Called off after approval — the record stays, with who/when/why. Same
+  // destructive dot as rejected, distinguished by the label.
+  cancelled: { label: "cancelled", dotClassName: "bg-destructive" },
 }
 
 export function StatusBadge({

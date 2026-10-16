@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest"
 import {
   applicationToItem,
   buildCalendarItems,
+  clashesForTarget,
   entryToItem,
+  findClashes,
+  itemsClash,
   isIsoDate,
   itemsOnDay,
   monthGrid,
@@ -37,6 +40,7 @@ function entry(overrides: Partial<CalendarEntry>): CalendarEntry {
     organizer: null,
     city: null,
     state: null,
+    zone: null,
     category: "endorsed",
     notes: null,
     created_by: null,
@@ -69,6 +73,7 @@ describe("parseCalendarEntryInput", () => {
         organizer: null,
         city: null,
         state: null,
+        zone: null,
         category: "endorsed",
         notes: null,
       },
@@ -158,5 +163,62 @@ describe("monthGrid / monthRange", () => {
   it("returns the first and last day, including leap February", () => {
     expect(monthRange(2026, 10)).toEqual({ from: "2026-11-01", to: "2026-11-30" })
     expect(monthRange(2028, 1)).toEqual({ from: "2028-02-01", to: "2028-02-29" })
+  })
+})
+
+describe("zone", () => {
+  it("accepts a valid zone, treats blank as none, rejects unknown", () => {
+    const ok = parseCalendarEntryInput({ title: "X", start_date: "2026-12-01", zone: "East" })
+    expect(ok.ok && ok.value.zone).toBe("East")
+    const blank = parseCalendarEntryInput({ title: "X", start_date: "2026-12-01", zone: "" })
+    expect(blank.ok && blank.value.zone).toBeNull()
+    expect(parseCalendarEntryInput({ title: "X", start_date: "2026-12-01", zone: "Mars" }).ok).toBe(false)
+  })
+
+  it("carries the zone and cancelled flag onto calendar items", () => {
+    const a = applicationToItem(app({ zone: "South", status: "cancelled" } as Partial<AcademicEventApplication>))
+    expect(a?.zone).toBe("South")
+    expect(a?.cancelled).toBe(true)
+    expect(entryToItem(entry({ zone: "West" })).zone).toBe("West")
+    expect(applicationToItem(app({ zone: null }))?.zone).toBeNull()
+  })
+})
+
+describe("clashes", () => {
+  const item = (o: Partial<AcademicEventApplication> & { id: string }) => {
+    const i = applicationToItem(app({ zone: "East", ...o }))
+    if (!i) throw new Error("fixture has no date")
+    return i
+  }
+
+  it("flags same-zone events whose dates overlap, including multi-day endorsed events", () => {
+    const a = item({ id: "a", preferred_date_1: "2026-11-21" })
+    const b = entryToItem(entry({ id: "b", zone: "East", start_date: "2026-11-20", end_date: "2026-11-22" }))
+    expect(itemsClash(a, b)).toBe(true)
+    const map = findClashes([a, b])
+    expect(map.get(a.key)?.map((x) => x.key)).toEqual([b.key])
+    expect(map.get(b.key)?.map((x) => x.key)).toEqual([a.key])
+  })
+
+  it("does not flag different zones, different dates, or events with no zone", () => {
+    const a = item({ id: "a", preferred_date_1: "2026-11-21" })
+    expect(itemsClash(a, item({ id: "b", preferred_date_1: "2026-11-21", zone: "West" }))).toBe(false)
+    expect(itemsClash(a, item({ id: "c", preferred_date_1: "2026-11-23" }))).toBe(false)
+    expect(itemsClash(a, item({ id: "d", preferred_date_1: "2026-11-21", zone: null }))).toBe(false)
+    expect(itemsClash(a, a)).toBe(false)
+  })
+
+  it("never counts a cancelled event as a clash — it frees the date", () => {
+    const live = item({ id: "a", preferred_date_1: "2026-11-21" })
+    const cancelled = item({ id: "b", preferred_date_1: "2026-11-21", status: "cancelled" })
+    expect(itemsClash(live, cancelled)).toBe(false)
+    expect(findClashes([live, cancelled]).size).toBe(0)
+  })
+
+  it("clashesForTarget returns only the candidates that clash with one event", () => {
+    const target = item({ id: "t", preferred_date_1: "2026-11-21" })
+    const hit = item({ id: "h", preferred_date_1: "2026-11-21" })
+    const miss = item({ id: "m", preferred_date_1: "2026-12-21" })
+    expect(clashesForTarget(target, [hit, miss]).map((x) => x.id)).toEqual(["h"])
   })
 })

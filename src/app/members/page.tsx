@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Search, Download, Upload, ChevronLeft, ChevronRight, Users, LayoutGrid, List,
   ChevronUp, ChevronDown, ChevronsUpDown, X, Filter,
-  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle, Award,
+  MapPin, GraduationCap, Phone, Mail, CreditCard, Pencil, AlertCircle, Award, Copy, Check,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
@@ -78,9 +78,14 @@ interface Member {
 
 interface HoverState {
   member: Member
-  x: number
-  y: number
+  // Bounding box of the name/photo trigger, in viewport coordinates.
+  anchor: { left: number; top: number; bottom: number }
+  // Left edge of the row's Actions cell; the card must stay left of it.
+  actionsLeft: number
 }
+
+const HOVER_OPEN_DELAY = 200
+const HOVER_CLOSE_DELAY = 200
 
 function SortIcon({ col, activeCol, activeDir }: { col: string; activeCol: SortCol; activeDir: SortDir }) {
   if (activeCol !== col) return <ChevronsUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/40" />
@@ -119,35 +124,72 @@ function FilterSelect({
 }
 
 /* --- Hover preview popup --- */
-function MemberPreview({ hover }: { hover: HoverState }) {
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error("[members] clipboard write failed", err)
+      toast.error(`Couldn't copy ${label.toLowerCase()}`)
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={`Copy ${label.toLowerCase()}`}
+      title={`Copy ${label.toLowerCase()}`}
+      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  )
+}
+
+function MemberPreview({
+  hover,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  hover: HoverState
+  onMouseEnter: () => void
+  onMouseLeave: () => void
+}) {
   const m = hover.member
   const ref = useRef<HTMLDivElement>(null)
-  // hover.x is anchored to the row's right edge; place the card beside it, but
-  // measure the real card size and clamp to the viewport so it never spills off
-  // the right edge on wide screens (flips to the left of the anchor when needed).
-  const [pos, setPos] = useState<{ left: number; top: number }>({ left: hover.x + 16, top: hover.y - 10 })
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  // Anchor below the name/photo trigger. Horizontally, never cross into the
+  // Actions column (the card used to sit on top of the Edit button), and flip
+  // to the left / above when the viewport runs out.
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     const { width, height } = el.getBoundingClientRect()
     const PAD = 8
-    const GAP = 16
+    const GAP = 8
     const vw = window.innerWidth
     const vh = window.innerHeight
-    // Prefer the right of the anchor; flip to the left if that overflows.
-    let left = hover.x + GAP
-    if (left + width > vw - PAD) left = hover.x - width - GAP
-    left = Math.max(PAD, Math.min(left, vw - width - PAD))
-    const top = Math.max(PAD, Math.min(hover.y - 10, vh - height - PAD))
+    const rightLimit = Math.min(vw - PAD, hover.actionsLeft - GAP)
+    let left = hover.anchor.left
+    if (left + width > rightLimit) left = rightLimit - width
+    left = Math.max(PAD, left)
+    let top = hover.anchor.bottom + GAP
+    if (top + height > vh - PAD) top = hover.anchor.top - height - GAP
+    top = Math.max(PAD, top)
     setPos({ left, top })
-  }, [hover.x, hover.y, hover.member])
+  }, [hover])
   return (
     <div
       ref={ref}
-      className="fixed z-50 pointer-events-none"
-      style={{ left: pos.left, top: pos.top }}
+      className="fixed z-50"
+      style={{ left: pos?.left ?? hover.anchor.left, top: pos?.top ?? hover.anchor.bottom, visibility: pos ? "visible" : "hidden" }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
-      <div className="bg-white dark:bg-slate-900 border rounded-xl shadow-xl p-4 w-72 animate-in fade-in-0 zoom-in-95 duration-150">
+      <div className="bg-card text-card-foreground border rounded-lg shadow-lg p-4 w-72 select-text animate-in fade-in-0 zoom-in-95 duration-150">
         <div className="flex items-start gap-3">
           <Avatar className="h-14 w-14 border shadow-sm shrink-0">
             {m.profile_photo && <AvatarImage src={m.profile_photo} alt={m.name || "Member photo"} />}
@@ -179,13 +221,15 @@ function MemberPreview({ hover }: { hover: HoverState }) {
           {m.email && (
             <div className="flex items-center gap-2">
               <Mail className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{m.email}</span>
+              <span className="truncate flex-1 min-w-0">{m.email}</span>
+              <CopyButton value={m.email} label="Email" />
             </div>
           )}
           {m.phone && (
             <div className="flex items-center gap-2">
               <Phone className="h-3.5 w-3.5 shrink-0" />
-              <span>{m.phone}</span>
+              <span className="flex-1 min-w-0">{m.phone}</span>
+              <CopyButton value={m.phone} label="Phone" />
             </div>
           )}
         </div>
@@ -430,20 +474,45 @@ export default function MembersPage() {
     setPage(0)
   }, [])
 
-  const handleRowMouseEnter = useCallback((e: React.MouseEvent, member: Member) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    hoverTimerRef.current = setTimeout(() => {
-      setHover({ member, x: rect.right - 20, y: rect.top })
-    }, 400)
-  }, [])
-
-  const handleRowMouseLeave = useCallback(() => {
+  const clearHoverTimer = useCallback(() => {
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current)
       hoverTimerRef.current = null
     }
-    setHover(null)
   }, [])
+
+  // Hover-intent: open after a short delay on the name/photo only, and close
+  // after a short delay so the cursor can travel into the card (to select or
+  // copy email/phone). Entering the card cancels the pending close.
+  const handleTriggerMouseEnter = useCallback((e: React.MouseEvent, member: Member) => {
+    clearHoverTimer()
+    const trigger = e.currentTarget as HTMLElement
+    hoverTimerRef.current = setTimeout(() => {
+      const rect = trigger.getBoundingClientRect()
+      const actionsCell = trigger.closest("tr")?.querySelector<HTMLElement>("[data-actions-cell]")
+      const actionsLeft = actionsCell?.getBoundingClientRect().left ?? window.innerWidth
+      setHover({ member, anchor: { left: rect.left, top: rect.top, bottom: rect.bottom }, actionsLeft })
+    }, HOVER_OPEN_DELAY)
+  }, [clearHoverTimer])
+
+  const scheduleHoverClose = useCallback(() => {
+    clearHoverTimer()
+    hoverTimerRef.current = setTimeout(() => setHover(null), HOVER_CLOSE_DELAY)
+  }, [clearHoverTimer])
+
+  // The card is position:fixed, so its anchor goes stale on scroll — close it.
+  useEffect(() => {
+    if (!hover) return
+    const close = () => { clearHoverTimer(); setHover(null) }
+    window.addEventListener("scroll", close, true)
+    window.addEventListener("resize", close)
+    return () => {
+      window.removeEventListener("scroll", close, true)
+      window.removeEventListener("resize", close)
+    }
+  }, [hover, clearHoverTimer])
+
+  useEffect(() => clearHoverTimer, [clearHoverTimer])
 
   // Export CSV — calls server API which exports ALL filtered members (not just current page)
   const [exporting, setExporting] = useState(false)
@@ -732,14 +801,16 @@ export default function MembersPage() {
                   <tr
                     key={m.id || m.amasi_number}
                     className={`row-glow hover:bg-primary/5 transition-colors group cursor-default ${idx % 2 === 1 ? "bg-muted/20" : ""}`}
-                    onMouseEnter={(e) => handleRowMouseEnter(e, m)}
-                    onMouseLeave={handleRowMouseLeave}
                   >
                     <td className="px-4 py-3.5 text-xs text-muted-foreground font-mono">
                       {page * PAGE_SIZE + idx + 1}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
+                      <div
+                        className="inline-flex items-center gap-3 max-w-full"
+                        onMouseEnter={(e) => handleTriggerMouseEnter(e, m)}
+                        onMouseLeave={scheduleHoverClose}
+                      >
                         <Avatar className="h-10 w-10 border shadow-sm shrink-0">
                           {m.profile_photo && <AvatarImage src={m.profile_photo} alt={m.name || "Member photo"} />}
                           <AvatarFallback className="text-xs font-semibold bg-primary/5 text-primary">
@@ -789,8 +860,9 @@ export default function MembersPage() {
                         <span className="text-muted-foreground/40 text-xs">{"\u2014"}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td className="px-4 py-3.5 text-right" data-actions-cell>
+                      {/* relative z-[60] keeps Card/Edit above the hover preview (z-50) as a safeguard. */}
+                      <div className="relative z-[60] flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Link href={`/card?id=${encodeURIComponent(m.email)}`}>
                           <Button variant="outline" size="sm" className="text-xs h-7 px-2.5 shadow-sm gap-1">
                             <CreditCard className="h-3 w-3" /> Card
@@ -842,7 +914,7 @@ export default function MembersPage() {
       )}
 
       {/* Hover Preview */}
-      {hover && <MemberPreview hover={hover} />}
+      {hover && <MemberPreview hover={hover} onMouseEnter={clearHoverTimer} onMouseLeave={scheduleHoverClose} />}
 
       {/* Pagination */}
       {totalPages > 1 && (

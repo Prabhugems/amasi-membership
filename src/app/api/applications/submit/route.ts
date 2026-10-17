@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     const { data: paymentRow } = await supabase
       .from("membership_payments")
-      .select("id, status")
+      .select("id, status, member_email, created_at")
       .eq("gateway_payment_id", paymentId)
       .eq("status", "paid")
       .limit(1)
@@ -158,7 +158,37 @@ export async function POST(request: NextRequest) {
       mobileVerified = !!mobileOtp
     }
 
+    // Fallback for applicants who verified OTP, left, and resumed their draft
+    // later (>2h) before paying — create-order has no OTP gate, so the payment
+    // succeeds but the window above would 401 the submit (Sentry
+    // AMASI-MEMBERSHIP-3A: 6 of the last ~35 paid applicants, gaps of 5h–54d).
+    // The paid membership_payments row (server-verified, looked up by the
+    // secret gateway_payment_id) must belong to this same email, and that
+    // email must have completed an OTP at some point up to the payment time.
+    if (!emailVerified && !mobileVerified && emailKey) {
+      const paidEmail = ((paymentRow as { member_email?: string | null }).member_email || "").toLowerCase()
+      const paidAt = (paymentRow as { created_at?: string | null }).created_at
+      if (paidEmail === emailKey && paidAt) {
+        const { data: priorOtp } = await supabase
+          .from("otp_codes")
+          .select("id")
+          .eq("email", emailKey)
+          .eq("verified", true)
+          .lte("created_at", paidAt)
+          .limit(1)
+          .maybeSingle()
+        emailVerified = !!priorOtp
+      }
+    }
+
     if (!emailVerified && !mobileVerified) {
+      // Paid but rejected — make it loud so it is recoverable (AGENTS.md:
+      // crash loudly, not silently). Previously this 401 left no server trace.
+      Sentry.captureMessage("applications/submit: paid applicant rejected, email/mobile not verified", {
+        level: "fatal",
+        tags: { route: "applications/submit", op: "otp_gate_rejected_paid" },
+        extra: { referenceNumber, paymentId },
+      })
       return Response.json({ status: false, message: "Email/mobile not verified" }, { status: 401 })
     }
 

@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     const { data: paymentRow } = await supabase
       .from("membership_payments")
-      .select("id, status")
+      .select("id, status, member_email, created_at")
       .eq("gateway_payment_id", paymentId)
       .eq("status", "paid")
       .limit(1)
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     // --- Auth gate 2: verify OTP completion (email and/or mobile) within last 60 min ---
     const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000).toISOString()
-    const emailKey = (formData.email || "").toLowerCase()
+    const emailKey = (formData.email || "").trim().toLowerCase()
     const mobileKey = formData.mobile ? `sms:${formData.mobile}` : null
 
     let emailVerified = false
@@ -156,6 +156,32 @@ export async function POST(request: NextRequest) {
         .limit(1)
         .maybeSingle()
       mobileVerified = !!mobileOtp
+    }
+
+    // The 2-hour window is measured from now, but the form takes long enough
+    // (document OCR, re-uploads) that applicants routinely pay with an OTP
+    // that is already older than that, and the submit then refused a captured
+    // payment and left the page on "Processing payment..." (Sentry
+    // AMASI-MEMBERSHIP-3A, 14 applicants Sep-Oct 2026). A payer who verified
+    // this email in the 24 hours before paying, and whose payment was made with
+    // this same email, is still accepted — for 7 days after the payment, so a
+    // leaked payment id cannot be used to submit indefinitely.
+    const paidAt = paymentRow.created_at ? new Date(paymentRow.created_at) : null
+    if (
+      !emailVerified && emailKey && paidAt &&
+      paymentRow.member_email?.trim().toLowerCase() === emailKey &&
+      Date.now() - paidAt.getTime() < 7 * 24 * 60 * 60 * 1000
+    ) {
+      const { data: preVerifiedOtp } = await supabase
+        .from("otp_codes")
+        .select("id")
+        .eq("email", emailKey)
+        .eq("verified", true)
+        .gte("created_at", new Date(paidAt.getTime() - 24 * 60 * 60 * 1000).toISOString())
+        .lte("created_at", paidAt.toISOString())
+        .limit(1)
+        .maybeSingle()
+      emailVerified = !!preVerifiedOtp
     }
 
     if (!emailVerified && !mobileVerified) {

@@ -1608,10 +1608,19 @@ function ApplyForm() {
           const verifyData = await verifyRes.json()
 
           if (!verifyData.status) {
-            toast.error("Payment verification failed")
+            // Never leave the applicant on "Processing payment..." with no way out,
+            // and never offer the Pay button again: the money may already be taken.
+            // Retrying submits with this payment id; the server accepts it only once
+            // the payment is recorded as paid (verify or the Razorpay webhook).
+            setExistingPayment({ gateway_payment_id: response.razorpay_payment_id, reference_number: ref })
+            setPhase("review")
+            toast.error("We could not confirm your payment yet. If money was deducted, do not pay again — contact support with reference " + ref + ".", { duration: 12000 })
             setSubmitting(false)
             return
           }
+
+          // From here the payment is verified: any retry must reuse it, never charge again.
+          const paidRetry = { gateway_payment_id: response.razorpay_payment_id, reference_number: ref }
 
           toast.success("Payment successful!")
 
@@ -1713,7 +1722,11 @@ function ApplyForm() {
               tags: { component: "apply-flow", op: "post_payment_submit_failed" },
               extra: { referenceNumber: ref, paymentId: response.razorpay_payment_id, orderId, email: formData.email },
             })
-            toast.error("Your payment is safe but submission didn't complete. We've saved your application and our team will finish it — you can also contact support.", { duration: 9000 })
+            // Back to review with the payment remembered: the button now
+            // resubmits without charging again.
+            setExistingPayment(paidRetry)
+            setPhase("review")
+            toast.error("Your payment is safe but submission didn't complete. Tap \"Submit application\" to try again — you will not be charged again. Our team has also been alerted.", { duration: 12000 })
           }
         } catch (err) {
           // The whole post-payment block threw (verify, save, or submit). The
@@ -1725,7 +1738,9 @@ function ApplyForm() {
             tags: { component: "apply-flow", op: "post_payment_handler_throw" },
             extra: { referenceNumber: ref, email: formData.email },
           })
-          toast.error("Something went wrong. Your payment is safe — please try again or contact support.")
+          setExistingPayment({ gateway_payment_id: response.razorpay_payment_id, reference_number: ref })
+          setPhase("review")
+          toast.error("Something went wrong. Your payment is safe — tap \"Submit application\" to try again; you will not be charged again.", { duration: 12000 })
         }
         setSubmitting(false)
       },
@@ -3800,7 +3815,11 @@ function ApplyForm() {
 
         <div className="space-y-2">
           <Button className="w-full h-13 min-h-[48px] text-base font-bold gap-2 shadow-md" onClick={handleSubmit} disabled={submitting || !termsAccepted || missingCount > 0}>
-            {submitting ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing Payment...</> : <><Send className="h-5 w-5" /> Pay {fee.currency}{fee.totalFee.toLocaleString()} &amp; Submit</>}
+            {submitting
+              ? <><Loader2 className="h-5 w-5 animate-spin" /> {existingPayment ? "Submitting..." : "Processing Payment..."}</>
+              : existingPayment
+                ? <><Send className="h-5 w-5" /> Submit application (already paid)</>
+                : <><Send className="h-5 w-5" /> Pay {fee.currency}{fee.totalFee.toLocaleString()} &amp; Submit</>}
           </Button>
           {!submitting && termsAccepted && missingCount === 0 && (
             <p className="text-[11px] text-muted-foreground text-center">

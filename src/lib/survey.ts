@@ -61,11 +61,22 @@ export function hasAllDetails(row: Pick<SurveyAdminRow, "name" | "hospital" | "c
   return !!(row.name?.trim() && row.hospital?.trim() && row.city?.trim())
 }
 
-/** One CSV cell. Participant-typed text could start with = + - @ and run as a formula in Excel, so those get a leading quote. */
+/**
+ * One CSV cell, always quoted. Participant-typed text starting with = + - @ would run as a formula in Excel, so it
+ * gets a leading quote; so does each ;-separated part, since Excel in some locales splits cells on ;.
+ */
 export function csvCell(value: string | null | undefined): string {
-  let s = (value ?? "").replace(/\r?\n/g, " ")
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
-  return /[",]/.test(s) || s !== s.trim() ? `"${s.replace(/"/g, '""')}"` : s
+  const s = (value ?? "")
+    .replace(/\r?\n/g, " ")
+    .split(";")
+    .map((part) => (/^\s*[=+\-@\t\r]/.test(part) ? `'${part}` : part))
+    .join(";")
+  return `"${s.replace(/"/g, '""')}"`
+}
+
+/** Own keys only, so ?survey=constructor or __proto__ is not a survey. */
+export function isSurveyCode(code: string): boolean {
+  return Object.hasOwn(SURVEY_NAMES, code)
 }
 
 export function surveyCsv(rows: SurveyAdminRow[]): string {

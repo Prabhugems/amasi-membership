@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import * as Sentry from "@sentry/nextjs"
 import { getAdminSession } from "@/lib/auth"
 import { createAdminClient } from "@/lib/supabase"
-import { SURVEY_NAMES, hasAllDetails, surveyCsv, type SurveyAdminRow } from "@/lib/survey"
+import { hasAllDetails, isSurveyCode, surveyCsv, type SurveyAdminRow } from "@/lib/survey"
 
 const PAGE = 1000
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const survey = searchParams.get("survey") || ""
   const status = searchParams.get("status") || ""
-  if (survey && !SURVEY_NAMES[survey]) return NextResponse.json({ error: "Unknown survey" }, { status: 400 })
+  if (survey && !isSurveyCode(survey)) return NextResponse.json({ error: "Unknown survey" }, { status: 400 })
   if (status && status !== "with" && status !== "without") {
     return NextResponse.json({ error: "Unknown status" }, { status: 400 })
   }

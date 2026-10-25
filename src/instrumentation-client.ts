@@ -3,12 +3,17 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { scrubSurveyTokenFromEvent } from "@/lib/scrub-survey-token";
 
 Sentry.init({
   dsn: "https://527b62463e741ecf9eebafa103fd9cb3@o4511263275286528.ingest.de.sentry.io/4511291570520144",
 
   // Add optional integrations for additional features
-  integrations: [Sentry.replayIntegration()],
+  // No session replay on the survey participant link: its URL is a credential.
+  integrations:
+    typeof window !== "undefined" && window.location.pathname.startsWith("/survey/")
+      ? []
+      : [Sentry.replayIntegration()],
 
   // Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
   tracesSampleRate: 1,
@@ -26,6 +31,10 @@ Sentry.init({
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  // Survey link tokens are credentials; keep them out of Sentry.
+  beforeSend: (event) => scrubSurveyTokenFromEvent(event),
+  beforeSendTransaction: (event) => scrubSurveyTokenFromEvent(event),
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

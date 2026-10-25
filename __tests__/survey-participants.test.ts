@@ -53,6 +53,7 @@ vi.mock("@/lib/supabase", () => ({
 import { NextRequest } from "next/server"
 import { GET as getParticipant, POST as postParticipant } from "@/app/api/survey/[token]/route"
 import { GET as getAdmin } from "@/app/api/admin/survey/route"
+import { scrubSurveyToken, scrubSurveyTokenFromEvent } from "@/lib/scrub-survey-token"
 import { csvCell, hasAllDetails, parseSurveyDetails, surveyCsv, surveyTokenHash } from "@/lib/survey"
 
 const TOKEN = "IVJd_21YOMRAxirxDrrFtxFL0oE7mzbDS-hQDfGQlvo"
@@ -104,16 +105,17 @@ describe("lib/survey", () => {
 
   it("stops participant text from running as a spreadsheet formula", () => {
     expect(csvCell("=HYPERLINK(\"x\")")).toBe("\"'=HYPERLINK(\"\"x\"\")\"")
-    expect(csvCell("+91 98400")).toBe("'+91 98400")
+    expect(csvCell("+91 98400")).toBe("\"'+91 98400\"")
+    expect(csvCell("Apollo;=HYPERLINK(1)")).toBe("\"Apollo;'=HYPERLINK(1)\"")
     expect(csvCell("Apollo, Chennai")).toBe("\"Apollo, Chennai\"")
-    expect(csvCell(null)).toBe("")
+    expect(csvCell(null)).toBe("\"\"")
   })
 
   it("exports a header and one line per participant", () => {
     const csv = surveyCsv([{ ...ROW, hospital: "Apollo" }])
     const lines = csv.replace(/^﻿/, "").trim().split("\r\n")
     expect(lines[0]).toBe("Email,Surveys,Name,Hospital,City,Status,Sent by participant,Submitted at")
-    expect(lines[1]).toBe("doc@example.com,DLC + PVH,Rajesh Kumar,Apollo,Chennai,with details,no,")
+    expect(lines[1]).toBe('"doc@example.com","DLC + PVH","Rajesh Kumar","Apollo","Chennai","with details","no",""')
   })
 })
 
@@ -214,6 +216,7 @@ describe("GET /api/admin/survey", () => {
     await getAdmin(req("https://membership.amasi.org/api/admin/survey?survey=PVH"))
     expect(h.calls).toContainEqual({ method: "contains", args: ["surveys", ["PVH"]] })
     expect((await getAdmin(req("https://membership.amasi.org/api/admin/survey?survey=XYZ"))).status).toBe(400)
+    expect((await getAdmin(req("https://membership.amasi.org/api/admin/survey?survey=constructor"))).status).toBe(400)
     expect((await getAdmin(req("https://membership.amasi.org/api/admin/survey?status=maybe"))).status).toBe(400)
   })
 
@@ -221,5 +224,16 @@ describe("GET /api/admin/survey", () => {
     const res = await getAdmin(req("https://membership.amasi.org/api/admin/survey?format=csv&survey=DLC&status=with"))
     expect(res.headers.get("content-type")).toContain("text/csv")
     expect(res.headers.get("content-disposition")).toContain("survey-participants-DLC-with-details.csv")
+  })
+})
+
+describe("scrub-survey-token", () => {
+  it("removes link tokens from URLs and Sentry events", () => {
+    expect(scrubSurveyToken(`https://membership.amasi.org/survey/${TOKEN}?x=1`)).toBe("https://membership.amasi.org/survey/[token]?x=1")
+    expect(scrubSurveyToken(`/api/survey/${TOKEN}`)).toBe("/api/survey/[token]")
+    const event = { request: { url: `https://m.test/api/survey/${TOKEN}` }, breadcrumbs: [{ data: { url: `/survey/${TOKEN}` } }] }
+    expect(JSON.stringify(scrubSurveyTokenFromEvent(event))).not.toContain(TOKEN)
+    const plain = { message: "nothing here" }
+    expect(scrubSurveyTokenFromEvent(plain)).toBe(plain)
   })
 })

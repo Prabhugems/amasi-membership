@@ -98,6 +98,9 @@ const PUBLIC_ROUTES = [
   // /login, same failure mode the API allowlist above (Task 8/9) already
   // guards against for the underlying /api/mou/* routes.
   "/mou",
+  // AMASI Survey Consortium participant-details link (/survey/[token]); the
+  // token in the URL is the credential, checked by /api/survey/[token].
+  "/survey",
 ]
 
 const PUBLIC_API_ROUTES = [
@@ -238,6 +241,10 @@ const PUBLIC_API_ROUTES = [
   // and checked against the :id in the path). The remarks path already
   // matches the "/api/mou/applications/" entry above.
   "/api/mou/review/",
+  // Survey participant-details link: token in the path, hashed and looked up
+  // in-handler; IP rate-limited, POST same-origin only. Admin list lives at
+  // /api/admin/survey (auth-gated).
+  "/api/survey/",
 ]
 
 // Known-dead legacy paths. Confirmed server-side to map to no real flow:

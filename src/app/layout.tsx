@@ -16,8 +16,7 @@ import { ViewTransitions } from "@/components/transitions/view-transitions"
 import { PageTransition } from "@/components/transitions/page-transition"
 import { DynamicTitle } from "@/components/header/dynamic-title"
 import { Toaster } from "sonner"
-import { SpeedInsights } from "@vercel/speed-insights/next"
-import { Analytics } from "@vercel/analytics/next"
+import { VercelTelemetry } from "@/components/providers/vercel-telemetry"
 
 const fraunces = Fraunces({
   variable: "--font-display",
@@ -99,8 +98,7 @@ export default function RootLayout({
           data-agent="b47172c4-340f-48d9-914e-179b520287be"
           async
         />
-        <SpeedInsights />
-        <Analytics />
+        <VercelTelemetry />
       </body>
     </html>
   )

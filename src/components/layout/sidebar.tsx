@@ -34,6 +34,7 @@ import {
   CreditCard,
   AlertCircle,
   Vote,
+  ClipboardList,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
@@ -74,6 +75,7 @@ const sections: NavSection[] = [
       { name: "FMAS Holders", href: "/admin/fmas", icon: Award },
       { name: "MMAS Holders", href: "/admin/mmas", icon: Award },
       { name: "MOU Applications", href: "/admin/mou-applications", icon: ScrollText },
+      { name: "Survey Participants", href: "/admin/survey", icon: ClipboardList },
       { name: "Support Tickets", href: "/tickets", icon: Ticket, badgeKey: "tickets" },
       { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Campaigns", href: "/campaigns", icon: Send },

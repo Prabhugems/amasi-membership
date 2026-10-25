@@ -53,7 +53,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** POST /api/survey/[token] — save name, hospital and city on this link's row. Sending again overwrites. */
+/** POST /api/survey/[token] — save the name on this link's row. Sending again overwrites. */
 export async function POST(request: NextRequest, { params }: Params) {
   const origin = request.headers.get("origin")
   if (!origin || origin !== new URL(request.url).origin) {

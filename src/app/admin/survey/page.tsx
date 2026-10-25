@@ -89,7 +89,7 @@ export default function SurveyParticipantsPage() {
         <h1 className="text-2xl font-bold tracking-tight mt-1">Survey participants</h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
           Participants of the {SURVEY_NAMES.DLC} and the {SURVEY_NAMES.PVH}, for the manuscript&apos;s participant list.
-          &ldquo;With details&rdquo; means name, hospital and city are all filled, from our records or sent by the
+          Only the name is needed. &ldquo;With name&rdquo; means we have it, from our records or sent by the
           participant through their emailed link.
         </p>
       </div>
@@ -111,8 +111,8 @@ export default function SurveyParticipantsPage() {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Participants" value={counts.total} active={status === ""} onClick={() => setStatus("")} />
-        <StatCard label="With details" value={counts.with} active={status === "with"} onClick={() => setStatus("with")} />
-        <StatCard label="Without details" value={counts.without} active={status === "without"} onClick={() => setStatus("without")} />
+        <StatCard label="With name" value={counts.with} active={status === "with"} onClick={() => setStatus("with")} />
+        <StatCard label="Without name" value={counts.without} active={status === "without"} onClick={() => setStatus("without")} />
         <StatCard label="Replied via link" value={counts.replied} />
       </div>
 
@@ -177,7 +177,7 @@ export default function SurveyParticipantsPage() {
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-2 text-xs">
                           <span className={`h-2 w-2 rounded-full ${complete ? "bg-success" : "bg-warning"}`} aria-hidden />
-                          {complete ? "with details" : "without details"}
+                          {complete ? "with name" : "without name"}
                         </span>
                       </td>
                       <td className="px-4 py-3">{r.name || <span className="text-muted-foreground">—</span>}</td>

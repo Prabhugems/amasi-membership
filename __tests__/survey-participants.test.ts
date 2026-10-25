@@ -2,10 +2,10 @@
  * Survey participant details (AMASI Survey Consortium, Oct 2026).
  *
  * Covers:
- *  1. lib/survey: token shape, field parsing, "with details", CSV formula guard.
+ *  1. lib/survey: token shape, name parsing, "with name", CSV formula guard.
  *  2. /api/survey/[token]: a bad or unknown token opens nothing; GET returns only
  *     the link's own row (no id/hash); POST is same-origin only and writes just
- *     the three fields on the hashed row.
+ *     the name on the hashed row.
  *  3. /api/admin/survey: admin session required; status filter; CSV export.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
@@ -88,19 +88,20 @@ describe("lib/survey", () => {
     expect(surveyTokenHash(undefined)).toBeNull()
   })
 
-  it("requires all three fields and ignores anything else", () => {
+  it("requires only the name and ignores anything else", () => {
     expect(parseSurveyDetails({ name: " A  B ", hospital: "H", city: "C", email: "x@y.z" })).toEqual({
       ok: true,
-      value: { name: "A B", hospital: "H", city: "C" },
+      value: { name: "A B" },
     })
-    expect(parseSurveyDetails({ name: "A", city: "C" })).toEqual({ ok: false, error: "Please fill in your hospital." })
-    expect(parseSurveyDetails({ name: "A", hospital: "H".repeat(301), city: "C" }).ok).toBe(false)
+    expect(parseSurveyDetails({ name: "A" })).toEqual({ ok: true, value: { name: "A" } })
+    expect(parseSurveyDetails({ hospital: "H", city: "C" })).toEqual({ ok: false, error: "Please fill in your name." })
+    expect(parseSurveyDetails({ name: "A".repeat(201) }).ok).toBe(false)
   })
 
-  it("counts a row as with details only when name, hospital and city are all filled", () => {
-    expect(hasAllDetails({ name: "A", hospital: "H", city: "C" })).toBe(true)
-    expect(hasAllDetails({ name: "A", hospital: " ", city: "C" })).toBe(false)
-    expect(hasAllDetails({ name: "A", hospital: null, city: "C" })).toBe(false)
+  it("counts a row as with name when the name is filled", () => {
+    expect(hasAllDetails({ name: "A" })).toBe(true)
+    expect(hasAllDetails({ name: " " })).toBe(false)
+    expect(hasAllDetails({ name: null })).toBe(false)
   })
 
   it("stops participant text from running as a spreadsheet formula", () => {
@@ -115,7 +116,7 @@ describe("lib/survey", () => {
     const csv = surveyCsv([{ ...ROW, hospital: "Apollo" }])
     const lines = csv.replace(/^﻿/, "").trim().split("\r\n")
     expect(lines[0]).toBe("Email,Surveys,Name,Hospital,City,Status,Sent by participant,Submitted at")
-    expect(lines[1]).toBe('"doc@example.com","DLC + PVH","Rajesh Kumar","Apollo","Chennai","with details","no",""')
+    expect(lines[1]).toBe('"doc@example.com","DLC + PVH","Rajesh Kumar","Apollo","Chennai","with name","no",""')
   })
 })
 
@@ -173,16 +174,16 @@ describe("POST /api/survey/[token]", () => {
     expect(h.calls.find((c) => c.method === "update")).toBeUndefined()
   })
 
-  it("saves only the three fields on the hashed row", async () => {
+  it("saves only the name on the hashed row, leaving hospital and city alone", async () => {
     const res = await post("https://membership.amasi.org", { name: "A", hospital: "H", city: "C", email: "x@y.z", surveys: ["X"] })
     expect(res.status).toBe(200)
     const update = h.calls.find((c) => c.method === "update")!.args[0] as Record<string, unknown>
-    expect(Object.keys(update).sort()).toEqual(["city", "hospital", "name", "submitted_at", "updated_at"])
+    expect(Object.keys(update).sort()).toEqual(["name", "submitted_at", "updated_at"])
     expect(h.calls).toContainEqual({ method: "eq", args: ["token_hash", HASH] })
   })
 
-  it("rejects a missing field", async () => {
-    const res = await post("https://membership.amasi.org", { name: "A", city: "C" })
+  it("rejects a missing name", async () => {
+    const res = await post("https://membership.amasi.org", { hospital: "H", city: "C" })
     expect(res.status).toBe(400)
   })
 
@@ -200,10 +201,10 @@ describe("GET /api/admin/survey", () => {
     expect(res.status).toBe(401)
   })
 
-  it("lists participants with and without details, filtered by status", async () => {
+  it("lists participants with and without a name, filtered by status", async () => {
     h.rows = [
-      { ...ROW, email: "a@x.in", hospital: "Apollo" },
-      { ...ROW, email: "b@x.in" },
+      { ...ROW, email: "a@x.in" },
+      { ...ROW, email: "b@x.in", name: null },
     ]
     const all = await (await getAdmin(req("https://membership.amasi.org/api/admin/survey"))).json()
     expect(all.rows).toHaveLength(2)

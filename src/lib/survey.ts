@@ -1,8 +1,9 @@
 /**
- * AMASI Survey Consortium: survey participants (DLC and PVH surveys, Oct 2026) send the name, hospital and city to
- * list them under in the manuscript, through a personal link /survey/[token]. The token (32 random bytes, base64url)
+ * AMASI Survey Consortium: survey participants (DLC and PVH surveys, Oct 2026) send the name to list them under in
+ * the manuscript, through a personal link /survey/[token]. Only the name is needed (25 Oct); hospital and city stay as
+ * columns for what our records already held. The token (32 random bytes, base64url)
  * is minted offline and only its sha256 is stored in survey_participant_details; the link opens that one row.
- * Admins see every row, with or without details, at /admin/survey.
+ * Admins see every row, with or without a name, at /admin/survey.
  */
 
 import { createHash } from "node:crypto"
@@ -43,22 +44,18 @@ export function surveyTokenHash(raw: unknown): string | null {
   return createHash("sha256").update(raw).digest("hex")
 }
 
-/** The three fields a participant may send, trimmed, or the first problem with them. Anything else in the body is ignored. */
-export function parseSurveyDetails(body: unknown): { ok: true; value: Record<SurveyField, string> } | { ok: false; error: string } {
+/** The name a participant sends, trimmed, or the problem with it. Anything else in the body is ignored. */
+export function parseSurveyDetails(body: unknown): { ok: true; value: { name: string } } | { ok: false; error: string } {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>
-  const value = {} as Record<SurveyField, string>
-  for (const field of Object.keys(FIELD_LIMITS) as SurveyField[]) {
-    const raw = typeof b[field] === "string" ? (b[field] as string).replace(/\s+/g, " ").trim() : ""
-    if (!raw) return { ok: false, error: `Please fill in ${field === "hospital" ? "your hospital" : `your ${field}`}.` }
-    if (raw.length > FIELD_LIMITS[field]) return { ok: false, error: `That ${field} is too long.` }
-    value[field] = raw
-  }
-  return { ok: true, value }
+  const name = typeof b.name === "string" ? b.name.replace(/\s+/g, " ").trim() : ""
+  if (!name) return { ok: false, error: "Please fill in your name." }
+  if (name.length > FIELD_LIMITS.name) return { ok: false, error: "That name is too long." }
+  return { ok: true, value: { name } }
 }
 
-/** "With details" means all three manuscript fields are filled, whether from our records or from the participant. */
-export function hasAllDetails(row: Pick<SurveyAdminRow, "name" | "hospital" | "city">): boolean {
-  return !!(row.name?.trim() && row.hospital?.trim() && row.city?.trim())
+/** "With details" means the name is filled, whether from our records or from the participant. */
+export function hasAllDetails(row: Pick<SurveyAdminRow, "name">): boolean {
+  return !!row.name?.trim()
 }
 
 /**
@@ -88,7 +85,7 @@ export function surveyCsv(rows: SurveyAdminRow[]): string {
       r.name,
       r.hospital,
       r.city,
-      hasAllDetails(r) ? "with details" : "without details",
+      hasAllDetails(r) ? "with name" : "without name",
       r.submitted_at ? "yes" : "no",
       r.submitted_at ?? "",
     ]

@@ -90,6 +90,14 @@ export async function POST(
       return Response.json({ status: false, message: "No valid changes" }, { status: 400 })
     }
 
+    // Admin membership_type must be a known tier — it drives the certificate
+    // wording and fee/upgrade logic, so reject anything else.
+    if (adminSession && Object.prototype.hasOwnProperty.call(safeChanges, "membership_type")) {
+      if (!["LM", "ALM", "ACM", "ILM"].includes(String(safeChanges.membership_type))) {
+        return Response.json({ status: false, message: "Invalid membership type" }, { status: 400 })
+      }
+    }
+
     // Basic email validation when admin updates it
     if (adminSession && Object.prototype.hasOwnProperty.call(safeChanges, "email")) {
       const newEmail = String(safeChanges.email || "").trim().toLowerCase()
@@ -164,6 +172,20 @@ export async function POST(
         )
       }
       return Response.json({ status: false, message: "Failed to update profile" }, { status: 500 })
+    }
+
+    // Keep the originating application's type in step with the member row
+    // (approve/auto-approve each copy it independently, so drift is easy).
+    if (Object.prototype.hasOwnProperty.call(safeChanges, "membership_type")) {
+      const { error: appSyncErr } = await supabase
+        .from("membership_applications")
+        .update({ membership_type: safeChanges.membership_type, updated_at: safeChanges.updated_at })
+        .eq("member_id", id)
+      if (appSyncErr) {
+        Sentry.captureException(appSyncErr, {
+          tags: { route: "members/[id]/update", op: "application-type-sync" },
+        })
+      }
     }
 
     // Write audit log

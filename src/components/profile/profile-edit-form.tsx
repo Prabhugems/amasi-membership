@@ -38,6 +38,13 @@ const ALL_DOCUMENT_TYPES: { key: keyof ProfileFormData; dbCol: string; label: st
   { key: "letterHod", dbCol: "letter_hod", label: "HOD Letter", required: true, forTypes: ["ACM"] },
 ]
 
+const ADMIN_MEMBERSHIP_TYPES = [
+  { id: "LM", label: "Life Member (LM)" },
+  { id: "ALM", label: "Associate Life Member (ALM)" },
+  { id: "ACM", label: "Associate Candidate Member (ACM)" },
+  { id: "ILM", label: "International Life Member (ILM)" },
+]
+
 const INDIAN_STATES = [
   "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
   "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli", "Daman and Diu", "Delhi",
@@ -613,6 +620,21 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
                   placeholder="9876543210"
                   inputMode="numeric"
                 />
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-xs font-medium">Membership Type</Label>
+                <select
+                  value={data.membership_type}
+                  onChange={(e) => onChange({ ...data, membership_type: e.target.value })}
+                  className="mt-1.5 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {ADMIN_MEMBERSHIP_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Changes the member&apos;s certificate. The AMASI number stays the same.
+                </p>
               </div>
               <p className="sm:col-span-4 text-[11px] text-muted-foreground">
                 Admin session: all identity fields are editable. Every change is recorded in the audit log.

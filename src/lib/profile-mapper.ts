@@ -144,6 +144,7 @@ export function dbToFormData(row: Record<string, any>): ProfileFormData {
 
 // Form field → DB column mapping (only editable fields)
 const formToDbMap: Record<string, string> = {
+  membership_type: "membership_type", // admin-only; the update route drops it for member sessions
   email: "email",
   phone: "phone",
   salutation: "salutation",
@@ -229,6 +230,7 @@ const fieldLabels: Record<string, string> = {
   name: "Full Name",
   email: "Email",
   phone: "Mobile Number",
+  membership_type: "Membership Type",
   salutation: "Salutation",
   father_name: "Father's Name",
   date_of_birth: "Date of Birth",

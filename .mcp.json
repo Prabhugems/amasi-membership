@@ -3,6 +3,13 @@
     "Sentry": {
       "type": "http",
       "url": "https://mcp.sentry.dev/mcp/amasi/amasi-membership"
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
     }
   }
 }

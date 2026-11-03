@@ -10,7 +10,7 @@ import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
 import { validateRequiredDocuments, lookupDocumentLabel } from "@/lib/document-keys"
 import { getMembershipType } from "@/lib/membership-types"
-import { normalizeMiddleName, buildFullName } from "@/lib/normalize-name"
+import { cleanNameParts } from "@/lib/normalize-name"
 
 // Resend + WhatsApp in one request.
 export const maxDuration = 30
@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
     // Normalize middle_name (drops case-insensitive duplicate of first_name) so
     // post-approval members rows never store the "Shivani Shivani Samaiya"
     // pattern — see src/lib/normalize-name.ts header for context.
-    const normalizedMiddleName = normalizeMiddleName(app.first_name, app.middle_name)
-    const fullName = buildFullName(app.first_name, app.middle_name, app.last_name) || app.name || "Member"
+    const nm = cleanNameParts(app.first_name, app.middle_name, app.last_name)
+    const fullName = nm.name || app.name || "Member"
 
     // Idempotency guard: when an application is approved, bumped back to
     // need_clarification, then approved again, member_id and assigned_amasi_number
@@ -158,9 +158,9 @@ export async function POST(request: NextRequest) {
         created_at: nowIso,
         updated_at: nowIso,
         name: fullName,
-        first_name: app.first_name,
-        middle_name: normalizedMiddleName,
-        last_name: app.last_name,
+        first_name: nm.first_name,
+        middle_name: nm.middle_name,
+        last_name: nm.last_name,
         email: app.email,
         phone: app.phone || null,
         mobile_code: app.mobile_code,

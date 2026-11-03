@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { cleanMemberName } from "@/lib/name-cleanup"
+import { cleanMemberName } from "@/lib/clean-member-name"
 
 const row = (name: string, first: string | null, middle: string | null, last: string | null) => ({
   name, first_name: first, middle_name: middle, last_name: last,
@@ -71,5 +71,25 @@ describe("cleanMemberName — leaves legitimate names alone", () => {
       name: first.patch.name!, first_name: first.patch.first_name!, middle_name: first.patch.middle_name ?? null, last_name: first.patch.last_name!,
     })
     expect(again).toBeNull()
+  })
+})
+
+describe("cleanNameParts — write-boundary helper", () => {
+  it("repairs the apply-form shape end to end", async () => {
+    const { cleanNameParts } = await import("@/lib/normalize-name")
+    expect(cleanNameParts("MURTHY", "SANTHOSH", "SANTHOSH  REDDY")).toEqual({
+      first_name: "Murthy", middle_name: null, last_name: "Santhosh Reddy", name: "Murthy Santhosh Reddy",
+    })
+    expect(cleanNameParts("Sunil", "Patil", "Patil")).toEqual({
+      first_name: "Sunil", middle_name: null, last_name: "Patil", name: "Sunil Patil",
+    })
+    expect(cleanNameParts("Shivani", "Shivani", "Samaiya").name).toBe("Shivani Samaiya")
+  })
+
+  it("passes clean and legitimate names through unchanged", async () => {
+    const { cleanNameParts } = await import("@/lib/normalize-name")
+    expect(cleanNameParts("Ramesh", "S.", "S.")).toEqual({ first_name: "Ramesh", middle_name: "S.", last_name: "S.", name: "Ramesh S. S." })
+    expect(cleanNameParts("Anita", null, "Rao")).toEqual({ first_name: "Anita", middle_name: null, last_name: "Rao", name: "Anita Rao" })
+    expect(cleanNameParts("  Anita ", "", "Rao ").name).toBe("Anita Rao")
   })
 })

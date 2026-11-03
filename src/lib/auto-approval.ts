@@ -3,7 +3,7 @@ import { Resend } from "resend"
 import { sendMemberApprovedWhatsApp } from "@/lib/whatsapp"
 import { updateAiDecisionOutcome } from "@/lib/ai-decision-log"
 import { escapeHtml } from "@/lib/html-escape"
-import { normalizeMiddleName, buildFullName } from "@/lib/normalize-name"
+import { cleanNameParts } from "@/lib/normalize-name"
 
 /**
  * Normalized shape used by the auto-approval helper.
@@ -318,7 +318,7 @@ export async function autoApproveApplication(
   }
 
   // 2. Create member row
-  const fullName = buildFullName(input.firstName, input.middleName, input.lastName)
+  const nm = cleanNameParts(input.firstName, input.middleName, input.lastName)
   const memberId = crypto.randomUUID()
   const nowIso = new Date().toISOString()
   const today = nowIso.split("T")[0]
@@ -328,10 +328,10 @@ export async function autoApproveApplication(
     amasi_number: amasiNumber,
     created_at: nowIso,
     updated_at: nowIso,
-    name: fullName,
-    first_name: input.firstName,
-    middle_name: normalizeMiddleName(input.firstName, input.middleName),
-    last_name: input.lastName,
+    name: nm.name,
+    first_name: nm.first_name,
+    middle_name: nm.middle_name,
+    last_name: nm.last_name,
     email: input.email,
     phone: input.phone || null,
     mobile_code: input.mobileCode,
@@ -424,7 +424,7 @@ export async function autoApproveApplication(
   // 4. Notifications — best-effort, never throw
   const displayName = [input.salutation, input.firstName].filter(Boolean).join(" ").trim()
     || input.firstName
-    || fullName
+    || nm.name
 
   try {
     const resend = getResend()

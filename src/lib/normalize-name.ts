@@ -10,6 +10,8 @@
 // salutation + first + middle + last. Cleaned 21 historical members on
 // 2026-06-30 — snapshot at `members_middle_name_dup_2026_06_30_snapshot`.
 
+import { cleanMemberName } from "@/lib/clean-member-name"
+
 function trimOrEmpty(s: string | null | undefined): string {
   return (s ?? "").trim()
 }
@@ -46,4 +48,30 @@ export function buildFullName(
   return [trimOrEmpty(firstName), normalizeMiddleName(firstName, middleName) ?? "", trimOrEmpty(lastName)]
     .filter(Boolean)
     .join(" ")
+}
+
+/**
+ * Write-boundary cleanup for the three name fields + the composed full name.
+ * Applies normalizeMiddleName, then the same conservative repair the nightly
+ * cron uses (whitespace, ALL-CAPS tokens, a word split across adjacent
+ * fields — "MURTHY SANTHOSH SANTHOSH  REDDY"). Legit repeats such as
+ * "Ramesh S. S." and "Nyi Nyi Tun" are left alone. See clean-member-name.ts.
+ */
+export function cleanNameParts(
+  firstName: string | null | undefined,
+  middleName: string | null | undefined,
+  lastName: string | null | undefined,
+): { first_name: string; middle_name: string | null; last_name: string; name: string } {
+  const first = trimOrEmpty(firstName)
+  const middle = normalizeMiddleName(firstName, middleName)
+  const last = trimOrEmpty(lastName)
+  const name = [first, middle ?? "", last].filter(Boolean).join(" ")
+  const fix = cleanMemberName({ name, first_name: first, middle_name: middle, last_name: last })
+  if (!fix) return { first_name: first, middle_name: middle, last_name: last, name }
+  return {
+    first_name: fix.patch.first_name ?? first,
+    middle_name: fix.patch.middle_name !== undefined ? fix.patch.middle_name : middle,
+    last_name: fix.patch.last_name ?? last,
+    name: fix.patch.name ?? name,
+  }
 }

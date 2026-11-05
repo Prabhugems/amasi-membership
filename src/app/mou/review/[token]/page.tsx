@@ -34,6 +34,13 @@ interface Remark {
   created_at: string
 }
 
+interface Clash {
+  title: string
+  startDate: string
+  endDate: string
+  zone: string | null
+}
+
 type DecisionAction = "approved" | "rejected" | "changes_requested"
 
 const DECISION_LABELS: Record<DecisionAction, string> = {
@@ -101,6 +108,7 @@ export default function MouReviewPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [application, setApplication] = useState<AcademicEventApplication | null>(null)
   const [remarks, setRemarks] = useState<Remark[]>([])
+  const [clashes, setClashes] = useState<Clash[]>([])
   const [canDecide, setCanDecide] = useState(false)
   const [role, setRole] = useState<string>("")
   // Set once a decision POST succeeds. The token is burned by that same
@@ -123,6 +131,7 @@ export default function MouReviewPage() {
       }
       setApplication(data.application)
       setRemarks(data.remarks ?? [])
+      setClashes(data.clashes ?? [])
       setCanDecide(!!data.canDecide)
       setRole(data.role ?? "")
       setLoadError(null)
@@ -482,6 +491,32 @@ export default function MouReviewPage() {
                       </div>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {clashes.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-warning" />
+                    Possible date clash
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="text-muted-foreground">
+                    Other events in the same zone overlap these dates. Check before approving.
+                  </p>
+                  <ul className="space-y-1">
+                    {clashes.map((c, i) => (
+                      <li key={`${c.title}-${i}`} className="flex justify-between gap-3">
+                        <span className="truncate">{c.title}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {c.startDate === c.endDate ? formatDate(c.startDate) : `${formatDate(c.startDate)} – ${formatDate(c.endDate)}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
             )}

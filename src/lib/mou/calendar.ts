@@ -14,7 +14,15 @@ export const CALENDAR_CATEGORY_LABELS: Record<CalendarCategory, string> = {
   other: "Other",
 }
 
-// Row shape of `mou_calendar_entries` (sql/058).
+// Same five values as academic_event_applications.zone.
+export const ZONES = ["North", "South", "East", "West", "Central"] as const
+export type Zone = (typeof ZONES)[number]
+
+export function isZone(value: unknown): value is Zone {
+  return typeof value === "string" && (ZONES as readonly string[]).includes(value)
+}
+
+// Row shape of `mou_calendar_entries` (sql/058, zone added in sql/059).
 export interface CalendarEntry {
   id: string
   title: string
@@ -23,6 +31,7 @@ export interface CalendarEntry {
   organizer: string | null
   city: string | null
   state: string | null
+  zone: Zone | null
   category: CalendarCategory
   notes: string | null
   created_by: string | null
@@ -37,6 +46,7 @@ export interface CalendarEntryInput {
   organizer: string | null
   city: string | null
   state: string | null
+  zone: Zone | null
   category: CalendarCategory
   notes: string | null
 }
@@ -52,6 +62,9 @@ export interface CalendarItem {
   subtitle: string | null
   // Application type id for MOU items, entry category for endorsed ones.
   kind: string
+  zone: Zone | null
+  // Cancelled MOU applications stay on the calendar (greyed) but never clash.
+  cancelled: boolean
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -90,6 +103,12 @@ export function parseCalendarEntryInput(body: unknown): ParseResult {
     endDate = b.end_date
   }
 
+  let zone: Zone | null = null
+  if (b.zone !== undefined && b.zone !== null && b.zone !== "") {
+    if (!isZone(b.zone)) return { ok: false, message: "Unknown zone" }
+    zone = b.zone
+  }
+
   const category = (b.category ?? "endorsed") as CalendarCategory
   if (!CALENDAR_CATEGORIES.includes(category)) return { ok: false, message: "Unknown category" }
 
@@ -102,6 +121,7 @@ export function parseCalendarEntryInput(body: unknown): ParseResult {
       organizer: cleanText(b.organizer, 200),
       city: cleanText(b.city, 100),
       state: cleanText(b.state, 100),
+      zone,
       category,
       notes: cleanText(b.notes, 2000),
     },
@@ -127,6 +147,8 @@ export function applicationToItem(app: AcademicEventApplication): CalendarItem |
     endDate: date,
     subtitle: [app.organizer_name, place].filter(Boolean).join(" · ") || null,
     kind: app.application_type_id,
+    zone: isZone(app.zone) ? app.zone : null,
+    cancelled: app.status === "cancelled",
   }
 }
 
@@ -141,6 +163,8 @@ export function entryToItem(entry: CalendarEntry): CalendarItem {
     endDate: entry.end_date && entry.end_date >= entry.start_date ? entry.end_date : entry.start_date,
     subtitle: [entry.organizer, place].filter(Boolean).join(" · ") || null,
     kind: entry.category,
+    zone: isZone(entry.zone) ? entry.zone : null,
+    cancelled: false,
   }
 }
 
@@ -180,4 +204,36 @@ export function monthGrid(year: number, monthIndex: number): (string | null)[] {
 export function monthRange(year: number, monthIndex: number): { from: string; to: string } {
   const last = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
   return { from: toIsoDate(year, monthIndex, 1), to: toIsoDate(year, monthIndex, last) }
+}
+
+export function datesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return aStart <= bEnd && bStart <= aEnd
+}
+
+// Two events clash when they share a zone and their dates overlap. Items with
+// no zone can't be compared, and cancelled items never clash (a cancelled
+// event is exactly what frees the date up).
+export function itemsClash(a: CalendarItem, b: CalendarItem): boolean {
+  if (a.key === b.key || a.cancelled || b.cancelled) return false
+  if (!a.zone || !b.zone || a.zone !== b.zone) return false
+  return datesOverlap(a.startDate, a.endDate, b.startDate, b.endDate)
+}
+
+// For every item that clashes with at least one other, the items it clashes with.
+export function findClashes(items: CalendarItem[]): Map<string, CalendarItem[]> {
+  const out = new Map<string, CalendarItem[]>()
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      if (!itemsClash(items[i], items[j])) continue
+      out.set(items[i].key, [...(out.get(items[i].key) ?? []), items[j]])
+      out.set(items[j].key, [...(out.get(items[j].key) ?? []), items[i]])
+    }
+  }
+  return out
+}
+
+// Items from `candidates` that clash with a single target event (used when
+// reviewing one application, where the target isn't on the calendar yet).
+export function clashesForTarget(target: CalendarItem, candidates: CalendarItem[]): CalendarItem[] {
+  return candidates.filter((c) => itemsClash(target, c))
 }

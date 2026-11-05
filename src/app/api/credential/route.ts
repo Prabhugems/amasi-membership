@@ -39,7 +39,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const template = await getTemplate(db, credential.credentialType, credential.year)
+    const [template, { data: member, error: mErr }] = await Promise.all([
+      getTemplate(db, credential.credentialType, credential.year),
+      db.from("members").select("name, amasi_number").eq("amasi_number", amasiNumber).single(),
+    ])
+
     if (!template) {
       console.error(
         `[api/credential] member ${amasiNumber} has ${typeParam} ${credential.year} but no template`
@@ -50,11 +54,6 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data: member, error: mErr } = await db
-      .from("members")
-      .select("name, amasi_number")
-      .eq("amasi_number", amasiNumber)
-      .single()
     if (mErr || !member) {
       return Response.json({ status: false, message: "Member not found" }, { status: 404 })
     }

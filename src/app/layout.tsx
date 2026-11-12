@@ -70,6 +70,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${interTight.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body className="min-h-screen bg-background">
+        <noscript>
+          <div style={{ padding: "16px", textAlign: "center", fontFamily: "Arial, sans-serif" }}>
+            JavaScript is required to use this site. Please enable JavaScript or open this page in Chrome or Safari.
+          </div>
+        </noscript>
         <QueryProvider>
           <ThemeProvider defaultTheme="system">
             <SidebarProvider>

@@ -508,6 +508,6 @@ async function handleRequest(request: NextRequest): Promise<NextResponse> {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icon.svg|certificates|public).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|amasi-logo.png|certificates|public).*)",
   ],
 }

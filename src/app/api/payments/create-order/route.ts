@@ -281,15 +281,38 @@ export async function POST(request: NextRequest) {
     // Block on the most-recent orphan; tell them to contact support rather
     // than re-pay. Does NOT auto-trigger linking — manual recovery via
     // /api/payments/lookup or a per-applicant script remains the path.
-    const { data: orphanPayment } = await supabase
+    //
+    // The Razorpay account is shared with the AMASI event apps, and the
+    // webhook records EVERY payment.captured into membership_payments. An
+    // applicant who earlier paid for an event under the same email therefore
+    // has an "orphan" row that is not a membership payment at all, and used
+    // to be blocked here with PAID_UNLINKED (2026-11: 148 such rows). Skip
+    // any candidate whose order belongs to the event `payments` table.
+    const { data: orphanCandidates } = await supabase
       .from("membership_payments")
       .select("gateway_payment_id, gateway_order_id, amount, currency, created_at")
       .ilike("member_email", emailKey)
       .eq("status", "paid")
       .is("application_id", null)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(10)
+
+    let orphanPayment: NonNullable<typeof orphanCandidates>[number] | null = null
+    if (orphanCandidates && orphanCandidates.length > 0) {
+      const orderIds = orphanCandidates
+        .map((c) => c.gateway_order_id as string | null)
+        .filter((id): id is string => !!id)
+      const { data: eventOrders, error: eventOrdersErr } = orderIds.length
+        ? await supabase.from("payments").select("razorpay_order_id").in("razorpay_order_id", orderIds)
+        : { data: [] as { razorpay_order_id: string }[], error: null }
+      if (eventOrdersErr) {
+        // Fail closed (keep the guard) but make the failure visible.
+        console.error("create-order: event-payment lookup failed", eventOrdersErr)
+        Sentry.captureException(eventOrdersErr, { tags: { component: "create-order", op: "orphan-event-filter" } })
+      }
+      const eventOrderIds = new Set((eventOrders ?? []).map((r) => r.razorpay_order_id))
+      orphanPayment = orphanCandidates.find((c) => !eventOrderIds.has(c.gateway_order_id as string)) ?? null
+    }
 
     if (orphanPayment) {
       const currencySymbol = orphanPayment.currency === "USD" ? "$" : "₹"

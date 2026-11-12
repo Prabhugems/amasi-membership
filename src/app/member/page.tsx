@@ -23,6 +23,7 @@ import { toast } from "sonner"
 import { formatDate, getInitials } from "@/lib/utils"
 import Link from "next/link"
 import { HelpButton } from "@/components/ui/help-button"
+import { AcmUpgradeForm } from "@/components/member/acm-upgrade-form"
 import { INDIAN_STATES } from "@/lib/membership-types"
 import MemberSupport from "@/components/member-support/MemberSupport"
 
@@ -1466,33 +1467,17 @@ function MemberUpgradeTab({ member, memberType, amasiNum }: { member: MemberRow;
   }
 
   if (isACM) {
-    const subject = `ACM membership upgrade — ${member.name || ""} (AMASI #${amasiNum})`
     return (
       <div className="max-w-2xl space-y-6">
         <div>
           <h2 className="text-2xl font-bold">Upgrade Membership</h2>
           <p className="text-muted-foreground text-sm mt-1">Convert your Associate Candidate Member status</p>
         </div>
-        <Card>
-          <CardContent className="py-10 px-6 text-center space-y-4">
-            <div className="mx-auto w-14 h-14 rounded-md bg-muted border flex items-center justify-center">
-              <Mail className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold">Contact the AMASI office to upgrade</h3>
-              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                As an Associate Candidate Member (AMASI #{amasiNum}), your conversion to <strong>Life Member</strong> or <strong>Associate Life Member</strong> is handled by the AMASI office. Email us with your completion certificate and ASI membership details (if applying for LM), and we will process the upgrade for you.
-              </p>
-            </div>
-            <div className="flex justify-center pt-2">
-              <Button asChild>
-                <a href={`mailto:membership@amasi.org?subject=${encodeURIComponent(subject)}`}>
-                  <Mail className="h-4 w-4 mr-1.5" /> Email membership@amasi.org
-                </a>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <AcmUpgradeForm
+          memberId={String(member._id || member.id)}
+          amasiNumber={amasiNum}
+          hasPending={hasPending}
+        />
       </div>
     )
   }

@@ -133,6 +133,7 @@ const PUBLIC_API_ROUTES = [
   // Without this, /api/v1/* 401s at middleware before the key check runs.
   "/api/v1/",
   "/api/members/search",
+  "/api/members/upgrade/acm", // handler does its own admin-or-member auth + ownership check
   "/api/directory",
   // Public electoral roll (masked email/phone) + objection submission.
   // Admin surface lives under /api/admin/electoral-roll/* (auth-gated).

@@ -26,6 +26,7 @@ import { HelpButton } from "@/components/ui/help-button"
 import { AcmUpgradeForm } from "@/components/member/acm-upgrade-form"
 import { INDIAN_STATES, getMembershipType, type DocType } from "@/lib/membership-types"
 import MemberSupport from "@/components/member-support/MemberSupport"
+import { prepareFileForUpload } from "@/lib/upload-prep"
 
 type Phase = "login" | "otp" | "dashboard"
 type Tab = "overview" | "card" | "certificate" | "profile" | "documents" | "support" | "upgrade"
@@ -1257,20 +1258,26 @@ function DocumentsTab({ member, setMember, memberType }: { member: MemberRow; se
   const isRequired = (field: string) => requiredFields.includes(field)
   const visibleDocs = DOC_SLOTS.filter(doc => isRequired(doc.field) || !!member[doc.field])
 
-  const handleUpload = useCallback(async (file: File, docType: string, field: string) => {
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File too large. Maximum 5 MB.")
-      return
-    }
-
+  const handleUpload = useCallback(async (rawFile: File, docType: string, field: string) => {
     setUploadingField(field)
     try {
+      // Shrink phone photos / convert HEIC before sending: the Vercel body
+      // limit is ~4.5 MB, and a larger request fails with a non-JSON 413.
+      const prep = await prepareFileForUpload(rawFile)
+      if (!prep.ok) {
+        toast.error(prep.userMessage)
+        return
+      }
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", prep.file)
       formData.append("memberId", member.id)
       formData.append("docType", docType)
 
       const res = await fetch("/api/members/upload", { method: "POST", body: formData })
+      if (res.status === 413) {
+        toast.error("This file is too large to upload. Please use a smaller photo or a compressed PDF.")
+        return
+      }
       const data = await res.json()
 
       if (!res.ok || !data.status) {
@@ -1281,7 +1288,8 @@ function DocumentsTab({ member, setMember, memberType }: { member: MemberRow; se
       // Update local member state with the signed URL for immediate display
       setMember({ ...member, [field]: data.url })
       toast.success(`${DOC_SLOTS.find(d => d.field === field)?.label || "Document"} uploaded successfully`)
-    } catch {
+    } catch (err) {
+      console.error("[member upload] failed:", err)
       toast.error("Upload failed. Please try again.")
     } finally {
       setUploadingField(null)

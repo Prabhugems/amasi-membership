@@ -14,6 +14,7 @@ import { Autocomplete } from "@/components/ui/autocomplete"
 import { MEDICAL_COLLEGES_INDIA } from "@/data/medical-colleges-india"
 import { STATE_TO_ZONE } from "@/lib/membership-types"
 import { EducationSection } from "@/components/profile/education-section"
+import { prepareFileForUpload } from "@/lib/upload-prep"
 
 const COUNTRIES = [
   "India", "Nepal", "Sri Lanka", "Bangladesh", "United States", "United Kingdom",
@@ -290,27 +291,37 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
     })
   }
 
-  const handleDocUpload = async (file: File, docType: string, formKey: keyof ProfileFormData) => {
+  const handleDocUpload = async (rawFile: File, docType: string, formKey: keyof ProfileFormData) => {
     if (!data.id) {
       toast.error("Member ID not found")
-      return
-    }
-    // Validate file size (5 MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError("File too large. Maximum size is 5 MB.")
-      setUploadErrorDoc(docType)
       return
     }
     setUploadingDoc(docType)
     setUploadError(null)
     setUploadErrorDoc(null)
     try {
+      // Shrink phone photos / convert HEIC first: Vercel rejects bodies over
+      // ~4.5 MB with a non-JSON 413 that used to surface as a generic failure.
+      const prep = await prepareFileForUpload(rawFile)
+      if (!prep.ok) {
+        setUploadError(prep.userMessage)
+        setUploadErrorDoc(docType)
+        toast.error(prep.userMessage)
+        return
+      }
       const fd = new FormData()
-      fd.append("file", file)
+      fd.append("file", prep.file)
       fd.append("memberId", data.id)
       fd.append("docType", docType)
 
       const res = await fetch("/api/members/upload", { method: "POST", body: fd })
+      if (res.status === 413) {
+        const msg = "This file is too large to upload. Please use a smaller photo or a compressed PDF."
+        setUploadError(msg)
+        setUploadErrorDoc(docType)
+        toast.error(msg)
+        return
+      }
       const result = await res.json()
 
       if (result.status && result.url) {
@@ -323,7 +334,8 @@ export function ProfileEditForm({ data, onChange, onSave, onCancel, isAdmin = fa
         setUploadErrorDoc(docType)
         toast.error(result.message || "Upload failed")
       }
-    } catch {
+    } catch (err) {
+      console.error("[profile upload] failed:", err)
       setUploadError("Upload failed. Please try again.")
       setUploadErrorDoc(docType)
       toast.error("Upload failed. Please try again.")

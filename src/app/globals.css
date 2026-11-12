@@ -577,3 +577,16 @@ body.focus-mode main {
   body.focus-mode header,
   body.focus-mode main { transition: none !important; }
 }
+
+/* Route fade-in. Fail-safe: no `opacity: 0` base style, so content stays
+   visible if animations never run. */
+@keyframes page-enter {
+  from { opacity: 0.01; transform: scale(0.99); }
+  to { opacity: 1; transform: scale(1); }
+}
+.page-enter {
+  animation: page-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-enter { animation: none; }
+}

@@ -162,9 +162,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Scoring: 4 checks
+    // Scoring: 4 checks. Format + "uploaded" are free points, so the score
+    // alone must NOT drive auto-approval (a member's own MCI certificate
+    // contains their name and would reach 3/4). Auto-approval below requires
+    // the three evidence flags that actually bind the document to the claim.
     let score = 0
-    const maxScore = 4
+    let numberMatch = false
+    let nameMatch = false
+    let asiDocLooksValid = false
 
     // Check 1: ASI number format valid
     if (asiFormatValid) {
@@ -188,6 +193,7 @@ export async function POST(request: NextRequest) {
       const asiNumDigits = asiNumTrimmed.replace(/\D/g, "")
       if (ocrText.includes(asiNumClean) || (asiNumDigits.length >= 3 && ocrText.includes(asiNumDigits))) {
         score++
+        numberMatch = true
         aiNotes.push("ASI number found in certificate")
       } else {
         aiNotes.push("ASI number NOT found in certificate text")
@@ -199,6 +205,7 @@ export async function POST(request: NextRequest) {
       const nameMatches = nameParts.filter((p: string) => ocrText.includes(p)).length
       if (nameMatches >= 2 || (nameParts.length === 1 && nameMatches === 1)) {
         score++
+        nameMatch = true
         aiNotes.push("Member name found in certificate")
       } else {
         aiNotes.push("Member name NOT found in certificate text")
@@ -207,6 +214,7 @@ export async function POST(request: NextRequest) {
       // Check if it's actually an ASI document
       const asiKeywords = ["association of surgeons", "asi", "surgeon", "membership"]
       const hasAsiKeyword = asiKeywords.some(k => ocrText.includes(k))
+      asiDocLooksValid = hasAsiKeyword
       if (!hasAsiKeyword) {
         score = Math.max(0, score - 1)
         aiNotes.push("Document may not be an ASI certificate")
@@ -216,10 +224,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine confidence
-    if (score >= 3) {
+    if (score >= 3 && numberMatch && nameMatch && asiDocLooksValid) {
       aiVerified = true
       aiConfidence = "high"
     } else if (score >= 2) {
+      // Includes score>=3 without full evidence: route to admin review.
       aiVerified = false
       aiConfidence = "medium"
     } else {

@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/nextjs"
 import { createAdminClient } from "@/lib/supabase"
 import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
-import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
+import { MEMBER_SELECT, PUBLIC_SELECT, SELF_SELECT } from "@/lib/member-search-fields"
 import { signRecordsFields, MEMBER_DOCUMENT_FIELDS } from "@/lib/storage-url"
 
 // Union of fields the response mapper reads off a Supabase row. Every
@@ -108,6 +108,28 @@ export async function GET(request: NextRequest) {
           .limit(30)
           .throwOnError()
         data = result
+      }
+    }
+
+    // Members get the full profile of THEIR OWN row only (matched on the
+    // session email); every other row stays at MEMBER_SELECT.
+    if (isMember && data && data.length > 0) {
+      const sessionEmail = String((memberSession as { email?: string } | null)?.email ?? "").trim().toLowerCase()
+      if (sessionEmail) {
+        data = await Promise.all(
+          data.map(async (row) => {
+            const r = row as { id?: string; email?: string | null }
+            if (!r.id || (r.email ?? "").trim().toLowerCase() !== sessionEmail) return row
+            const { data: full } = await supabase
+              .from("members")
+              .select(SELF_SELECT)
+              .eq("id", r.id)
+              .limit(1)
+              .throwOnError()
+            const own = full?.[0] as unknown as Record<string, unknown> | undefined
+            return own ? { ...r, ...own } : row
+          })
+        )
       }
     }
 

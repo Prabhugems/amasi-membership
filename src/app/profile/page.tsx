@@ -17,6 +17,14 @@ import type { ProfileFormData, ChangeEntry } from "@/lib/profile-mapper"
 
 type Phase = "identify" | "otp" | "view" | "edit" | "review" | "success"
 
+const IGNORED_FIELD_LABELS: Record<string, string> = {
+  name: "name",
+  email: "email",
+  phone: "mobile number",
+  mci_council_number: "MCI number",
+  membership_type: "membership type",
+}
+
 function ProfileContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams.get("q") || ""
@@ -29,6 +37,7 @@ function ProfileContent() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!!initialQuery) // start loading if auto-search
   const [isSaving, setIsSaving] = useState(false)
+  const [ignoredFields, setIgnoredFields] = useState<string[]>([])
 
   // Check if admin is logged in — skip OTP if so
   useEffect(() => {
@@ -112,6 +121,7 @@ function ProfileContent() {
 
       const result = await res.json()
       if (result.status) {
+        setIgnoredFields(Array.isArray(result.ignored_fields) ? result.ignored_fields : [])
         setPhase("success")
       } else {
         setError(result.message || "Failed to save changes")
@@ -226,6 +236,12 @@ function ProfileContent() {
           <p className="text-muted-foreground">
             Your profile has been updated successfully. Changes will be reflected across all AMASI services.
           </p>
+          {ignoredFields.length > 0 && (
+            <p className="text-sm text-muted-foreground border rounded-md p-3 text-left">
+              Not changed: {ignoredFields.map((f) => IGNORED_FIELD_LABELS[f] || f).join(", ")}. These can only be
+              changed by the AMASI office; please raise a support ticket from the Support section.
+            </p>
+          )}
           <div className="flex justify-center gap-3 pt-4">
             <Button variant="outline" onClick={handleStartOver}>Search Another</Button>
             <Button onClick={() => {

@@ -4,6 +4,7 @@ import { getAdminSession, getMemberSession } from "@/lib/auth"
 import { logAdminAction } from "@/lib/audit-log"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
+import { reportEmailResult } from "@/lib/assert-email-sent"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -184,7 +185,7 @@ export async function POST(
           "admin@amasi.org"
         const resend = new Resend(process.env.RESEND_API_KEY?.trim())
         const adminUrl = `${baseUrl}/admin/tickets/${ticket.ticket_number}`
-        await resend.emails.send({
+        const sendResult = await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
           to: adminEmail,
           subject: `[AMASI] Member reply on ${ticket.ticket_number}: ${ticket.subject}`,
@@ -202,6 +203,7 @@ export async function POST(
             </div>
           `,
         })
+        reportEmailResult(sendResult, "ticket-member-reply-admin-notification")
       } catch (emailErr) {
         console.error("Admin notification email error (member reply):", emailErr)
       }
@@ -211,7 +213,7 @@ export async function POST(
     if (is_admin && ticket.email && !isInternal) {
       try {
         const resend = new Resend(process.env.RESEND_API_KEY?.trim())
-        await resend.emails.send({
+        const sendResult = await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
           to: ticket.email,
           subject: `AMASI Support — Reply on ${ticket.ticket_number}`,
@@ -231,6 +233,7 @@ export async function POST(
             </div>
           `,
         })
+        reportEmailResult(sendResult, "ticket-admin-reply-to-member")
       } catch (emailErr) {
         console.error("Ticket reply email error:", emailErr)
       }

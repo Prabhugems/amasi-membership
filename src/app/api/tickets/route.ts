@@ -4,6 +4,7 @@ import { getAdminSession } from "@/lib/auth"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { Resend } from "resend"
 import { escapeHtml } from "@/lib/html-escape"
+import { reportEmailResult } from "@/lib/assert-email-sent"
 
 function generateTicketNumber(): string {
   const now = new Date()
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
       const resend = new Resend(process.env.RESEND_API_KEY?.trim())
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://membership.amasi.org"
       const adminUrl = `${baseUrl}/admin/tickets/${data.ticket_number}`
-      await resend.emails.send({
+      const sendResult = await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL?.trim() || "AMASI <noreply@amasi.org>",
         to: adminEmail,
         subject: `[AMASI] New support ticket: ${data.subject} (${data.ticket_number})`,
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
           </div>
         `,
       })
+      reportEmailResult(sendResult, "ticket-new-admin-notification")
     } catch (emailErr) {
       console.error("Admin notification email error (new ticket):", emailErr)
     }

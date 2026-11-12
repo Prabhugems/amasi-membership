@@ -24,7 +24,7 @@ import { formatDate, getInitials } from "@/lib/utils"
 import Link from "next/link"
 import { HelpButton } from "@/components/ui/help-button"
 import { AcmUpgradeForm } from "@/components/member/acm-upgrade-form"
-import { INDIAN_STATES } from "@/lib/membership-types"
+import { INDIAN_STATES, getMembershipType, type DocType } from "@/lib/membership-types"
 import MemberSupport from "@/components/member-support/MemberSupport"
 
 type Phase = "login" | "otp" | "dashboard"
@@ -490,9 +490,9 @@ function MemberPortalContent() {
     const canUpgrade = isACM || isALM
 
     // Document counts for badge
-    const docFields = ["profile_photo", "mci_certificate", "pg_degree_certificate", "mbbs_degree_certificate", "asi_member_certificate", "active_license", "letter_hod"]
-    const docsUploaded = docFields.filter(k => member[k]).length
-    const docsRequired = member.membership_type?.toUpperCase() === "ACM" ? 4 : 3
+    const requiredFields = requiredDocFields(member.membership_type || memberType)
+    const docsUploaded = requiredFields.filter(k => member[k]).length
+    const docsRequired = requiredFields.length
     const hasProfilePhoto = !!member.profile_photo
 
     const sidebarItems: { id: Tab; label: string; icon: typeof LayoutDashboard; badge?: string }[] = [
@@ -1211,6 +1211,34 @@ function MemberPortalContent() {
 
 // ===================== DOCUMENTS TAB =====================
 
+// Which document columns a member of this type is expected to have. Driven by
+// MEMBERSHIP_TYPES.requiredDocs so the portal agrees with the apply flow: an
+// ACM (PG trainee) needs MCI + MBBS + HOD letter, NOT a PG degree. The Documents
+// tab used to mark the PG degree required for everyone, so ACMs saw their
+// MBBS degree as optional and a PG degree they cannot have as "Required".
+const DOC_TYPE_TO_FIELD: Record<DocType, string> = {
+  mci_certificate: "mci_certificate",
+  pg_degree_certificate: "pg_degree_certificate",
+  mbbs_degree_certificate: "mbbs_degree_certificate",
+  asi_member_certificate: "asi_member_certificate",
+  active_license: "active_license",
+  letter_hod: "letter_hod",
+  profile: "profile_photo",
+}
+
+function membershipTypeId(display: string | null | undefined): string {
+  const v = (display || "").toUpperCase()
+  if (v.includes("CANDIDATE") || v === "ACM") return "ACM"
+  if (v.includes("INTERNATIONAL") || v === "ILM") return "ILM"
+  if (v === "ALM" || (v.includes("ASSOCIATE") && v.includes("LIFE"))) return "ALM"
+  return "LM"
+}
+
+function requiredDocFields(display: string | null | undefined): string[] {
+  const t = getMembershipType(membershipTypeId(display))
+  return (t?.requiredDocs ?? []).map((d) => DOC_TYPE_TO_FIELD[d])
+}
+
 const DOC_SLOTS = [
   { label: "Profile Photo", field: "profile_photo", docType: "profile_photo", required: true, icon: User, accept: "image/jpeg,image/png" },
   { label: "MCI Certificate", field: "mci_certificate", docType: "mci_certificate", required: true, icon: FileText, accept: "image/jpeg,image/png,application/pdf" },
@@ -1225,14 +1253,9 @@ function DocumentsTab({ member, setMember, memberType }: { member: MemberRow; se
   const [uploadingField, setUploadingField] = useState<string | null>(null)
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
-  const visibleDocs = DOC_SLOTS.filter(doc => {
-    // ASI certificate only required/shown for Life Members
-    if (doc.docType === "asi_member_certificate") {
-      const isLM = memberType === "Life Member" || memberType === "LM"
-      return isLM || !!member[doc.field]
-    }
-    return doc.required || !!member[doc.field]
-  })
+  const requiredFields = requiredDocFields(member.membership_type || memberType)
+  const isRequired = (field: string) => requiredFields.includes(field)
+  const visibleDocs = DOC_SLOTS.filter(doc => isRequired(doc.field) || !!member[doc.field])
 
   const handleUpload = useCallback(async (file: File, docType: string, field: string) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -1299,7 +1322,7 @@ function DocumentsTab({ member, setMember, memberType }: { member: MemberRow; se
                 <div>
                   <p className="text-sm font-medium">{doc.label}</p>
                   <p className="text-xs text-muted-foreground">
-                    {isUploading ? "Uploading..." : url ? "Uploaded" : doc.required ? "Required - Not uploaded" : "Optional - Not uploaded"}
+                    {isUploading ? "Uploading..." : url ? "Uploaded" : isRequired(doc.field) ? "Required - Not uploaded" : "Optional - Not uploaded"}
                   </p>
                 </div>
               </div>

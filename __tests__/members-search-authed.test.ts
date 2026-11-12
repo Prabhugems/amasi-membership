@@ -55,7 +55,7 @@ const h = vi.hoisted(() => {
     phone: 8056536384,
     mobile_code: "+91",
   }
-  const state = { lastSelect: "" }
+  const state = { lastSelect: "", selects: [] as string[] }
 
   // `.select(cols)` records what was asked for and validates every column.
   // Terminal `.throwOnError()` either resolves with a synthetic row or rejects
@@ -63,6 +63,7 @@ const h = vi.hoisted(() => {
   // new throwOnError-based error path is exercised end-to-end.
   function buildQuery(cols: string) {
     state.lastSelect = cols
+    state.selects.push(cols)
     const requested = cols.split(",").map((c) => c.trim()).filter(Boolean)
     const invalid = requested.find((c) => c !== "*" && !KNOWN_MEMBER_COLUMNS.has(c))
     const terminal = {
@@ -131,7 +132,7 @@ vi.mock("@/lib/supabase", () => ({
 
 // Import AFTER mocks
 import { GET } from "@/app/api/members/search/route"
-import { MEMBER_SELECT, PUBLIC_SELECT } from "@/lib/member-search-fields"
+import { MEMBER_SELECT, PUBLIC_SELECT, SELF_SELECT } from "@/lib/member-search-fields"
 import { NextRequest } from "next/server"
 
 function buildRequest(query: string, opts?: { bearer?: string }): NextRequest {
@@ -146,6 +147,7 @@ function buildRequest(query: string, opts?: { bearer?: string }): NextRequest {
 
 beforeEach(() => {
   h.state.lastSelect = ""
+  h.state.selects.length = 0
   h.captureExceptionSpy.mockClear()
   h.getMemberSessionImpl.mockResolvedValue({
     sub: "auth0|test",
@@ -168,13 +170,14 @@ describe("/api/members/search — column-drift regression (49bbbfe)", () => {
     // Mapper preserves the phone-as-mobile compatibility shim.
     expect(body.data[0].mobile).toBe("8056536384")
 
-    // Sanity: the authed branch picked MEMBER_SELECT, not PUBLIC_SELECT or "*".
-    expect(h.state.lastSelect).toBe(MEMBER_SELECT)
+    // Sanity: the list query picked MEMBER_SELECT, not PUBLIC_SELECT or "*".
+    expect(h.state.selects[0]).toBe(MEMBER_SELECT)
     expect(h.captureExceptionSpy).not.toHaveBeenCalled()
   })
 
   it("every column in MEMBER_SELECT and PUBLIC_SELECT exists on the members table", () => {
     const all = [
+      ...SELF_SELECT.split(",").map((c) => c.trim()),
       ...MEMBER_SELECT.split(",").map((c) => c.trim()),
       ...PUBLIC_SELECT.split(",").map((c) => c.trim()),
     ]
@@ -202,5 +205,32 @@ describe("/api/members/search — column-drift regression (49bbbfe)", () => {
     const [err, ctx] = h.captureExceptionSpy.mock.calls[0]
     expect((err as Error).message).toMatch(/made_up_column/)
     expect((ctx as { tags: Record<string, string> }).tags.flow).toBe("members_search")
+  })
+})
+
+describe("/api/members/search — a member reads back their OWN full profile", () => {
+  it("fetches SELF_SELECT for the row whose email matches the session", async () => {
+    const res = await GET(buildRequest("prabhu3693gems@gmail.com", { bearer: "test-token" }))
+    const body = await res.json()
+    expect(body.status).toBe(true)
+    expect(h.state.selects).toEqual([MEMBER_SELECT, SELF_SELECT])
+  })
+
+  it("does NOT fetch the full profile for someone else's row", async () => {
+    h.getMemberSessionImpl.mockResolvedValue({
+      sub: "auth0|other",
+      email: "someone.else@example.com",
+      role: "member",
+    })
+    const res = await GET(buildRequest("Prabhu", { bearer: "test-token" }))
+    const body = await res.json()
+    expect(body.status).toBe(true)
+    expect(h.state.selects).toEqual([MEMBER_SELECT])
+  })
+
+  it("anonymous callers never get the self-profile columns", async () => {
+    h.getMemberSessionImpl.mockResolvedValue(null)
+    await GET(buildRequest("Prabhu"))
+    expect(h.state.selects).toEqual([PUBLIC_SELECT])
   })
 })

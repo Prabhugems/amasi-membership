@@ -86,8 +86,23 @@ export async function POST(
       }
     }
 
+    // Fields the caller asked to change but this role may not. Reported back
+    // instead of dropped silently: the profile form lets members edit their
+    // name/email/phone/MCI number, the server ignored them, and the member was
+    // told "Profile updated" (support tickets "my name change isn't reflecting").
+    const ignoredFields = Object.keys(changes).filter((k) => !allowedColumns.has(k))
+
     if (Object.keys(safeChanges).length === 0) {
-      return Response.json({ status: false, message: "No valid changes" }, { status: 400 })
+      return Response.json(
+        {
+          status: false,
+          message: ignoredFields.length
+            ? "These details can only be changed by the AMASI office. Please raise a support ticket."
+            : "No valid changes",
+          ignored_fields: ignoredFields,
+        },
+        { status: 400 }
+      )
     }
 
     // Admin membership_type must be a known tier — it drives the certificate
@@ -258,7 +273,7 @@ export async function POST(
       console.error("campaign attribution error:", err)
     }
 
-    return Response.json({ status: true, message: "Profile updated successfully" })
+    return Response.json({ status: true, message: "Profile updated successfully", ignored_fields: ignoredFields })
   } catch (error: unknown) {
     console.error("Profile update error:", error)
     return Response.json({ status: false, message: "Update failed" }, { status: 500 })
